@@ -8,8 +8,8 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-constexpr uint8_t SECTION_FILE_VERSION = 5;
-}
+constexpr uint8_t SECTION_FILE_VERSION = 6;
+}  // namespace
 
 void Section::onPageComplete(std::unique_ptr<Page> page) {
   const auto filePath = cachePath + "/page_" + std::to_string(pageCount) + ".bin";
@@ -26,9 +26,8 @@ void Section::onPageComplete(std::unique_ptr<Page> page) {
   pageCount++;
 }
 
-void Section::writeCacheMetadata(const int fontId, const float lineCompression, const int marginTop,
-                                 const int marginRight, const int marginBottom, const int marginLeft,
-                                 const bool extraParagraphSpacing) const {
+void Section::writeCacheMetadata(const int fontId, const float lineCompression, const bool extraParagraphSpacing,
+                                 const int viewportWidth, const int viewportHeight) const {
   File outputFile;
   if (!FsHelpers::openFileForWrite("SCT", cachePath + "/section.bin", outputFile)) {
     return;
@@ -36,18 +35,15 @@ void Section::writeCacheMetadata(const int fontId, const float lineCompression, 
   serialization::writePod(outputFile, SECTION_FILE_VERSION);
   serialization::writePod(outputFile, fontId);
   serialization::writePod(outputFile, lineCompression);
-  serialization::writePod(outputFile, marginTop);
-  serialization::writePod(outputFile, marginRight);
-  serialization::writePod(outputFile, marginBottom);
-  serialization::writePod(outputFile, marginLeft);
   serialization::writePod(outputFile, extraParagraphSpacing);
+  serialization::writePod(outputFile, viewportWidth);
+  serialization::writePod(outputFile, viewportHeight);
   serialization::writePod(outputFile, pageCount);
   outputFile.close();
 }
 
-bool Section::loadCacheMetadata(const int fontId, const float lineCompression, const int marginTop,
-                                const int marginRight, const int marginBottom, const int marginLeft,
-                                const bool extraParagraphSpacing) {
+bool Section::loadCacheMetadata(const int fontId, const float lineCompression, const bool extraParagraphSpacing,
+                                const int viewportWidth, const int viewportHeight) {
   const auto sectionFilePath = cachePath + "/section.bin";
   File inputFile;
   if (!FsHelpers::openFileForRead("SCT", sectionFilePath, inputFile)) {
@@ -65,20 +61,18 @@ bool Section::loadCacheMetadata(const int fontId, const float lineCompression, c
       return false;
     }
 
-    int fileFontId, fileMarginTop, fileMarginRight, fileMarginBottom, fileMarginLeft;
+    int fileFontId, fileViewportWidth, fileViewportHeight;
     float fileLineCompression;
     bool fileExtraParagraphSpacing;
     serialization::readPod(inputFile, fileFontId);
     serialization::readPod(inputFile, fileLineCompression);
-    serialization::readPod(inputFile, fileMarginTop);
-    serialization::readPod(inputFile, fileMarginRight);
-    serialization::readPod(inputFile, fileMarginBottom);
-    serialization::readPod(inputFile, fileMarginLeft);
     serialization::readPod(inputFile, fileExtraParagraphSpacing);
+    serialization::readPod(inputFile, fileViewportWidth);
+    serialization::readPod(inputFile, fileViewportHeight);
 
-    if (fontId != fileFontId || lineCompression != fileLineCompression || marginTop != fileMarginTop ||
-        marginRight != fileMarginRight || marginBottom != fileMarginBottom || marginLeft != fileMarginLeft ||
-        extraParagraphSpacing != fileExtraParagraphSpacing) {
+    if (fontId != fileFontId || lineCompression != fileLineCompression ||
+        extraParagraphSpacing != fileExtraParagraphSpacing || viewportWidth != fileViewportWidth ||
+        viewportHeight != fileViewportHeight) {
       inputFile.close();
       Serial.printf("[%lu] [SCT] Deserialization failed: Parameters do not match\n", millis());
       clearCache();
@@ -113,28 +107,58 @@ bool Section::clearCache() const {
   return true;
 }
 
-bool Section::persistPageDataToSD(const int fontId, const float lineCompression, const int marginTop,
-                                  const int marginRight, const int marginBottom, const int marginLeft,
-                                  const bool extraParagraphSpacing) {
+bool Section::persistPageDataToSD(const int fontId, const float lineCompression, const bool extraParagraphSpacing,
+                                  const int viewportWidth, const int viewportHeight,
+                                  const std::function<void()>& progressSetupFn,
+                                  const std::function<void(int)>& progressFn) {
+  constexpr size_t MIN_SIZE_FOR_PROGRESS = 50 * 1024;  // 50KB
   const auto localPath = epub->getSpineItem(spineIndex).href;
   const auto tmpHtmlPath = epub->getCachePath() + "/.tmp_" + std::to_string(spineIndex) + ".html";
-  File tmpHtml;
-  if (!FsHelpers::openFileForWrite("SCT", tmpHtmlPath, tmpHtml)) {
-    return false;
+
+  // Retry logic for SD card timing issues
+  bool success = false;
+  size_t fileSize = 0;
+  for (int attempt = 0; attempt < 3 && !success; attempt++) {
+    if (attempt > 0) {
+      Serial.printf("[%lu] [SCT] Retrying stream (attempt %d)...\n", millis(), attempt + 1);
+      delay(50);  // Brief delay before retry
+    }
+
+    // Remove any incomplete file from previous attempt before retrying
+    if (SD.exists(tmpHtmlPath.c_str())) {
+      SD.remove(tmpHtmlPath.c_str());
+    }
+
+    File tmpHtml;
+    if (!FsHelpers::openFileForWrite("SCT", tmpHtmlPath, tmpHtml)) {
+      continue;
+    }
+    success = epub->readItemContentsToStream(localPath, tmpHtml, 1024);
+    fileSize = tmpHtml.size();
+    tmpHtml.close();
+
+    // If streaming failed, remove the incomplete file immediately
+    if (!success && SD.exists(tmpHtmlPath.c_str())) {
+      SD.remove(tmpHtmlPath.c_str());
+      Serial.printf("[%lu] [SCT] Removed incomplete temp file after failed attempt\n", millis());
+    }
   }
-  bool success = epub->readItemContentsToStream(localPath, tmpHtml, 1024);
-  tmpHtml.close();
 
   if (!success) {
-    Serial.printf("[%lu] [SCT] Failed to stream item contents to temp file\n", millis());
+    Serial.printf("[%lu] [SCT] Failed to stream item contents to temp file after retries\n", millis());
     return false;
   }
 
-  Serial.printf("[%lu] [SCT] Streamed temp HTML to %s\n", millis(), tmpHtmlPath.c_str());
+  Serial.printf("[%lu] [SCT] Streamed temp HTML to %s (%d bytes)\n", millis(), tmpHtmlPath.c_str(), fileSize);
 
-  ChapterHtmlSlimParser visitor(tmpHtmlPath, renderer, fontId, lineCompression, marginTop, marginRight, marginBottom,
-                                marginLeft, extraParagraphSpacing,
-                                [this](std::unique_ptr<Page> page) { this->onPageComplete(std::move(page)); });
+  // Only show progress bar for larger chapters where rendering overhead is worth it
+  if (progressSetupFn && fileSize >= MIN_SIZE_FOR_PROGRESS) {
+    progressSetupFn();
+  }
+
+  ChapterHtmlSlimParser visitor(
+      tmpHtmlPath, renderer, fontId, lineCompression, extraParagraphSpacing, viewportWidth, viewportHeight,
+      [this](std::unique_ptr<Page> page) { this->onPageComplete(std::move(page)); }, progressFn);
   success = visitor.parseAndBuildPages();
 
   SD.remove(tmpHtmlPath.c_str());
@@ -143,7 +167,7 @@ bool Section::persistPageDataToSD(const int fontId, const float lineCompression,
     return false;
   }
 
-  writeCacheMetadata(fontId, lineCompression, marginTop, marginRight, marginBottom, marginLeft, extraParagraphSpacing);
+  writeCacheMetadata(fontId, lineCompression, extraParagraphSpacing, viewportWidth, viewportHeight);
 
   return true;
 }

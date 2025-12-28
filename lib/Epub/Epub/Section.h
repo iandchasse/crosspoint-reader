@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <memory>
 
 #include "Epub.h"
@@ -12,8 +13,8 @@ class Section {
   GfxRenderer& renderer;
   std::string cachePath;
 
-  void writeCacheMetadata(int fontId, float lineCompression, int marginTop, int marginRight, int marginBottom,
-                          int marginLeft, bool extraParagraphSpacing) const;
+  void writeCacheMetadata(int fontId, float lineCompression, bool extraParagraphSpacing, int viewportWidth,
+                          int viewportHeight) const;
   void onPageComplete(std::unique_ptr<Page> page);
 
  public:
@@ -26,11 +27,12 @@ class Section {
         renderer(renderer),
         cachePath(epub->getCachePath() + "/" + std::to_string(spineIndex)) {}
   ~Section() = default;
-  bool loadCacheMetadata(int fontId, float lineCompression, int marginTop, int marginRight, int marginBottom,
-                         int marginLeft, bool extraParagraphSpacing);
+  bool loadCacheMetadata(int fontId, float lineCompression, bool extraParagraphSpacing, int viewportWidth,
+                         int viewportHeight);
   void setupCacheDir() const;
   bool clearCache() const;
-  bool persistPageDataToSD(int fontId, float lineCompression, int marginTop, int marginRight, int marginBottom,
-                           int marginLeft, bool extraParagraphSpacing);
+  bool persistPageDataToSD(int fontId, float lineCompression, bool extraParagraphSpacing, int viewportWidth,
+                           int viewportHeight, const std::function<void()>& progressSetupFn = nullptr,
+                           const std::function<void(int)>& progressFn = nullptr);
   std::unique_ptr<Page> loadPageFromSD() const;
 };

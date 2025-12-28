@@ -56,7 +56,7 @@ void HomeActivity::loop() {
 
   const int menuCount = getMenuItemCount();
 
-  if (inputManager.wasPressed(InputManager::BTN_CONFIRM)) {
+  if (inputManager.wasReleased(InputManager::BTN_CONFIRM)) {
     if (hasContinueReading) {
       // Menu: Continue Reading, Browse, File transfer, Settings
       if (selectorIndex == 0) {
@@ -106,7 +106,7 @@ void HomeActivity::render() const {
   renderer.drawCenteredText(READER_FONT_ID, 10, "CrossPoint Reader", true, BOLD);
 
   // Draw selection
-  renderer.fillRect(0, 60 + selectorIndex * 30 + 2, pageWidth - 1, 30);
+  renderer.fillRect(0, 60 + selectorIndex * 30 - 2, pageWidth - 1, 30);
 
   int menuY = 60;
   int menuIndex = 0;

@@ -11,6 +11,9 @@
 const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
 constexpr int NUM_HEADER_TAGS = sizeof(HEADER_TAGS) / sizeof(HEADER_TAGS[0]);
 
+// Minimum file size (in bytes) to show progress bar - smaller chapters don't benefit from it
+constexpr size_t MIN_SIZE_FOR_PROGRESS = 50 * 1024;  // 50KB
+
 const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote"};
 constexpr int NUM_BLOCK_TAGS = sizeof(BLOCK_TAGS) / sizeof(BLOCK_TAGS[0]);
 
@@ -152,7 +155,7 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
   if (self->currentTextBlock->size() > 750) {
     Serial.printf("[%lu] [EHP] Text block too long, splitting into multiple pages\n", millis());
     self->currentTextBlock->layoutAndExtractLines(
-        self->renderer, self->fontId, self->marginLeft + self->marginRight,
+        self->renderer, self->fontId, self->viewportWidth,
         [self](const std::shared_ptr<TextBlock>& textBlock) { self->addLineToPage(textBlock); }, false);
   }
 }
@@ -221,6 +224,11 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
     return false;
   }
 
+  // Get file size for progress calculation
+  const size_t totalSize = file.size();
+  size_t bytesRead = 0;
+  int lastProgress = -1;
+
   XML_SetUserData(parser, this);
   XML_SetElementHandler(parser, startElement, endElement);
   XML_SetCharacterDataHandler(parser, characterData);
@@ -247,6 +255,17 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
       XML_ParserFree(parser);
       file.close();
       return false;
+    }
+
+    // Update progress (call every 10% change to avoid too frequent updates)
+    // Only show progress for larger chapters where rendering overhead is worth it
+    bytesRead += len;
+    if (progressFn && totalSize >= MIN_SIZE_FOR_PROGRESS) {
+      const int progress = static_cast<int>((bytesRead * 100) / totalSize);
+      if (lastProgress / 10 != progress / 10) {
+        lastProgress = progress;
+        progressFn(progress);
+      }
     }
 
     done = file.available() == 0;
@@ -282,15 +301,14 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
 
 void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
   const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
-  const int pageHeight = GfxRenderer::getScreenHeight() - marginTop - marginBottom;
 
-  if (currentPageNextY + lineHeight > pageHeight) {
+  if (currentPageNextY + lineHeight > viewportHeight) {
     completePageFn(std::move(currentPage));
     currentPage.reset(new Page());
-    currentPageNextY = marginTop;
+    currentPageNextY = 0;
   }
 
-  currentPage->elements.push_back(std::make_shared<PageLine>(line, marginLeft, currentPageNextY));
+  currentPage->elements.push_back(std::make_shared<PageLine>(line, 0, currentPageNextY));
   currentPageNextY += lineHeight;
 }
 
@@ -302,12 +320,12 @@ void ChapterHtmlSlimParser::makePages() {
 
   if (!currentPage) {
     currentPage.reset(new Page());
-    currentPageNextY = marginTop;
+    currentPageNextY = 0;
   }
 
   const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
   currentTextBlock->layoutAndExtractLines(
-      renderer, fontId, marginLeft + marginRight,
+      renderer, fontId, viewportWidth,
       [this](const std::shared_ptr<TextBlock>& textBlock) { addLineToPage(textBlock); });
   // Extra paragraph spacing if enabled
   if (extraParagraphSpacing) {

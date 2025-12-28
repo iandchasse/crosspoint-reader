@@ -4,6 +4,37 @@
 
 void GfxRenderer::insertFont(const int fontId, EpdFontFamily font) { fontMap.insert({fontId, font}); }
 
+void GfxRenderer::rotateCoordinates(const int x, const int y, int* rotatedX, int* rotatedY) const {
+  switch (orientation) {
+    case Portrait: {
+      // Logical portrait (480x800) → panel (800x480)
+      // Rotation: 90 degrees clockwise
+      *rotatedX = y;
+      *rotatedY = EInkDisplay::DISPLAY_HEIGHT - 1 - x;
+      break;
+    }
+    case LandscapeClockwise: {
+      // Logical landscape (800x480) rotated 180 degrees (swap top/bottom and left/right)
+      *rotatedX = EInkDisplay::DISPLAY_WIDTH - 1 - x;
+      *rotatedY = EInkDisplay::DISPLAY_HEIGHT - 1 - y;
+      break;
+    }
+    case PortraitInverted: {
+      // Logical portrait (480x800) → panel (800x480)
+      // Rotation: 90 degrees counter-clockwise
+      *rotatedX = EInkDisplay::DISPLAY_WIDTH - 1 - y;
+      *rotatedY = x;
+      break;
+    }
+    case LandscapeCounterClockwise: {
+      // Logical landscape (800x480) aligned with panel orientation
+      *rotatedX = x;
+      *rotatedY = y;
+      break;
+    }
+  }
+}
+
 void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
   uint8_t* frameBuffer = einkDisplay.getFrameBuffer();
 
@@ -13,15 +44,14 @@ void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
     return;
   }
 
-  // Rotate coordinates: portrait (480x800) -> landscape (800x480)
-  // Rotation: 90 degrees clockwise
-  const int rotatedX = y;
-  const int rotatedY = EInkDisplay::DISPLAY_HEIGHT - 1 - x;
+  int rotatedX = 0;
+  int rotatedY = 0;
+  rotateCoordinates(x, y, &rotatedX, &rotatedY);
 
-  // Bounds checking (portrait: 480x800)
+  // Bounds checking against physical panel dimensions
   if (rotatedX < 0 || rotatedX >= EInkDisplay::DISPLAY_WIDTH || rotatedY < 0 ||
       rotatedY >= EInkDisplay::DISPLAY_HEIGHT) {
-    Serial.printf("[%lu] [GFX] !! Outside range (%d, %d)\n", millis(), x, y);
+    Serial.printf("[%lu] [GFX] !! Outside range (%d, %d) -> (%d, %d)\n", millis(), x, y, rotatedX, rotatedY);
     return;
   }
 
@@ -55,7 +85,7 @@ void GfxRenderer::drawCenteredText(const int fontId, const int y, const char* te
 
 void GfxRenderer::drawText(const int fontId, const int x, const int y, const char* text, const bool black,
                            const EpdFontStyle style) const {
-  const int yPos = y + getLineHeight(fontId);
+  const int yPos = y + getFontAscenderSize(fontId);
   int xpos = x;
 
   // cannot draw a NULL / empty string
@@ -115,8 +145,11 @@ void GfxRenderer::fillRect(const int x, const int y, const int width, const int 
 }
 
 void GfxRenderer::drawImage(const uint8_t bitmap[], const int x, const int y, const int width, const int height) const {
-  // Flip X and Y for portrait mode
-  einkDisplay.drawImage(bitmap, y, x, height, width);
+  // TODO: Rotate bits
+  int rotatedX = 0;
+  int rotatedY = 0;
+  rotateCoordinates(x, y, &rotatedX, &rotatedY);
+  einkDisplay.drawImage(bitmap, rotatedX, rotatedY, width, height);
 }
 
 void GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, const int maxWidth,
@@ -132,7 +165,9 @@ void GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, con
     isScaled = true;
   }
 
-  const uint8_t outputRowSize = (bitmap.getWidth() + 3) / 4;
+  // Calculate output row size (2 bits per pixel, packed into bytes)
+  // IMPORTANT: Use int, not uint8_t, to avoid overflow for images > 1020 pixels wide
+  const int outputRowSize = (bitmap.getWidth() + 3) / 4;
   auto* outputRow = static_cast<uint8_t*>(malloc(outputRowSize));
   auto* rowBytes = static_cast<uint8_t*>(malloc(bitmap.getRowBytes()));
 
@@ -154,7 +189,7 @@ void GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, con
       break;
     }
 
-    if (bitmap.readRow(outputRow, rowBytes) != BmpReaderError::Ok) {
+    if (bitmap.readRow(outputRow, rowBytes, bmpY) != BmpReaderError::Ok) {
       Serial.printf("[%lu] [GFX] Failed to read row %d from bitmap\n", millis(), bmpY);
       free(outputRow);
       free(rowBytes);
@@ -203,23 +238,34 @@ void GfxRenderer::displayBuffer(const EInkDisplay::RefreshMode refreshMode) cons
   einkDisplay.displayBuffer(refreshMode);
 }
 
-void GfxRenderer::displayWindow(const int x, const int y, const int width, const int height) const {
-  // Rotate coordinates from portrait (480x800) to landscape (800x480)
-  // Rotation: 90 degrees clockwise
-  // Portrait coordinates: (x, y) with dimensions (width, height)
-  // Landscape coordinates: (rotatedX, rotatedY) with dimensions (rotatedWidth, rotatedHeight)
-
-  const int rotatedX = y;
-  const int rotatedY = EInkDisplay::DISPLAY_HEIGHT - 1 - x - width + 1;
-  const int rotatedWidth = height;
-  const int rotatedHeight = width;
-
-  einkDisplay.displayWindow(rotatedX, rotatedY, rotatedWidth, rotatedHeight);
+// Note: Internal driver treats screen in command orientation; this library exposes a logical orientation
+int GfxRenderer::getScreenWidth() const {
+  switch (orientation) {
+    case Portrait:
+    case PortraitInverted:
+      // 480px wide in portrait logical coordinates
+      return EInkDisplay::DISPLAY_HEIGHT;
+    case LandscapeClockwise:
+    case LandscapeCounterClockwise:
+      // 800px wide in landscape logical coordinates
+      return EInkDisplay::DISPLAY_WIDTH;
+  }
+  return EInkDisplay::DISPLAY_HEIGHT;
 }
 
-// Note: Internal driver treats screen in command orientation, this library treats in portrait orientation
-int GfxRenderer::getScreenWidth() { return EInkDisplay::DISPLAY_HEIGHT; }
-int GfxRenderer::getScreenHeight() { return EInkDisplay::DISPLAY_WIDTH; }
+int GfxRenderer::getScreenHeight() const {
+  switch (orientation) {
+    case Portrait:
+    case PortraitInverted:
+      // 800px tall in portrait logical coordinates
+      return EInkDisplay::DISPLAY_WIDTH;
+    case LandscapeClockwise:
+    case LandscapeCounterClockwise:
+      // 480px tall in landscape logical coordinates
+      return EInkDisplay::DISPLAY_HEIGHT;
+  }
+  return EInkDisplay::DISPLAY_WIDTH;
+}
 
 int GfxRenderer::getSpaceWidth(const int fontId) const {
   if (fontMap.count(fontId) == 0) {
@@ -228,6 +274,15 @@ int GfxRenderer::getSpaceWidth(const int fontId) const {
   }
 
   return fontMap.at(fontId).getGlyph(' ', REGULAR)->advanceX;
+}
+
+int GfxRenderer::getFontAscenderSize(const int fontId) const {
+  if (fontMap.count(fontId) == 0) {
+    Serial.printf("[%lu] [GFX] Font %d not found\n", millis(), fontId);
+    return 0;
+  }
+
+  return fontMap.at(fontId).getData(REGULAR)->ascender;
 }
 
 int GfxRenderer::getLineHeight(const int fontId) const {
@@ -245,7 +300,7 @@ void GfxRenderer::drawButtonHints(const int fontId, const char* btn1, const char
   constexpr int buttonWidth = 106;
   constexpr int buttonHeight = 40;
   constexpr int buttonY = 40;     // Distance from bottom
-  constexpr int textYOffset = 5;  // Distance from top of button to text baseline
+  constexpr int textYOffset = 7;  // Distance from top of button to text baseline
   constexpr int buttonPositions[] = {25, 130, 245, 350};
   const char* labels[] = {btn1, btn2, btn3, btn4};
 
@@ -286,12 +341,13 @@ void GfxRenderer::freeBwBufferChunks() {
  * This should be called before grayscale buffers are populated.
  * A `restoreBwBuffer` call should always follow the grayscale render if this method was called.
  * Uses chunked allocation to avoid needing 48KB of contiguous memory.
+ * Returns true if buffer was stored successfully, false if allocation failed.
  */
-void GfxRenderer::storeBwBuffer() {
+bool GfxRenderer::storeBwBuffer() {
   const uint8_t* frameBuffer = einkDisplay.getFrameBuffer();
   if (!frameBuffer) {
     Serial.printf("[%lu] [GFX] !! No framebuffer in storeBwBuffer\n", millis());
-    return;
+    return false;
   }
 
   // Allocate and copy each chunk
@@ -312,7 +368,7 @@ void GfxRenderer::storeBwBuffer() {
                     BW_BUFFER_CHUNK_SIZE);
       // Free previously allocated chunks
       freeBwBufferChunks();
-      return;
+      return false;
     }
 
     memcpy(bwBufferChunks[i], frameBuffer + offset, BW_BUFFER_CHUNK_SIZE);
@@ -320,6 +376,7 @@ void GfxRenderer::storeBwBuffer() {
 
   Serial.printf("[%lu] [GFX] Stored BW buffer in %zu chunks (%zu bytes each)\n", millis(), BW_BUFFER_NUM_CHUNKS,
                 BW_BUFFER_CHUNK_SIZE);
+  return true;
 }
 
 /**
@@ -365,6 +422,17 @@ void GfxRenderer::restoreBwBuffer() {
 
   freeBwBufferChunks();
   Serial.printf("[%lu] [GFX] Restored and freed BW buffer chunks\n", millis());
+}
+
+/**
+ * Cleanup grayscale buffers using the current frame buffer.
+ * Use this when BW buffer was re-rendered instead of stored/restored.
+ */
+void GfxRenderer::cleanupGrayscaleWithFrameBuffer() const {
+  uint8_t* frameBuffer = einkDisplay.getFrameBuffer();
+  if (frameBuffer) {
+    einkDisplay.cleanupGrayscaleBuffers(frameBuffer);
+  }
 }
 
 void GfxRenderer::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp, int* x, const int* y,
@@ -429,4 +497,33 @@ void GfxRenderer::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp,
   }
 
   *x += glyph->advanceX;
+}
+
+void GfxRenderer::getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const {
+  switch (orientation) {
+    case Portrait:
+      *outTop = VIEWABLE_MARGIN_TOP;
+      *outRight = VIEWABLE_MARGIN_RIGHT;
+      *outBottom = VIEWABLE_MARGIN_BOTTOM;
+      *outLeft = VIEWABLE_MARGIN_LEFT;
+      break;
+    case LandscapeClockwise:
+      *outTop = VIEWABLE_MARGIN_LEFT;
+      *outRight = VIEWABLE_MARGIN_TOP;
+      *outBottom = VIEWABLE_MARGIN_RIGHT;
+      *outLeft = VIEWABLE_MARGIN_BOTTOM;
+      break;
+    case PortraitInverted:
+      *outTop = VIEWABLE_MARGIN_BOTTOM;
+      *outRight = VIEWABLE_MARGIN_LEFT;
+      *outBottom = VIEWABLE_MARGIN_TOP;
+      *outLeft = VIEWABLE_MARGIN_RIGHT;
+      break;
+    case LandscapeCounterClockwise:
+      *outTop = VIEWABLE_MARGIN_RIGHT;
+      *outRight = VIEWABLE_MARGIN_BOTTOM;
+      *outBottom = VIEWABLE_MARGIN_LEFT;
+      *outLeft = VIEWABLE_MARGIN_TOP;
+      break;
+  }
 }

@@ -18,14 +18,14 @@ void ParsedText::addWord(std::string word, const EpdFontStyle fontStyle) {
 }
 
 // Consumes data to minimize memory usage
-void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fontId, const int horizontalMargin,
+void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fontId, const int viewportWidth,
                                        const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
                                        const bool includeLastLine) {
   if (words.empty()) {
     return;
   }
 
-  const int pageWidth = renderer.getScreenWidth() - horizontalMargin;
+  const int pageWidth = viewportWidth;
   const int spaceWidth = renderer.getSpaceWidth(fontId);
   const auto wordWidths = calculateWordWidths(renderer, fontId);
   const auto lineBreakIndices = computeLineBreaks(pageWidth, spaceWidth, wordWidths);
@@ -106,21 +106,34 @@ std::vector<size_t> ParsedText::computeLineBreaks(const int pageWidth, const int
         ans[i] = j;  // j is the index of the last word in this optimal line
       }
     }
+
+    // Handle oversized word: if no valid configuration found, force single-word line
+    // This prevents cascade failure where one oversized word breaks all preceding words
+    if (dp[i] == MAX_COST) {
+      ans[i] = i;  // Just this word on its own line
+      // Inherit cost from next word to allow subsequent words to find valid configurations
+      if (i + 1 < static_cast<int>(totalWordCount)) {
+        dp[i] = dp[i + 1];
+      } else {
+        dp[i] = 0;
+      }
+    }
   }
 
   // Stores the index of the word that starts the next line (last_word_index + 1)
   std::vector<size_t> lineBreakIndices;
   size_t currentWordIndex = 0;
-  constexpr size_t MAX_LINES = 1000;
 
   while (currentWordIndex < totalWordCount) {
-    if (lineBreakIndices.size() >= MAX_LINES) {
-      break;
+    size_t nextBreakIndex = ans[currentWordIndex] + 1;
+
+    // Safety check: prevent infinite loop if nextBreakIndex doesn't advance
+    if (nextBreakIndex <= currentWordIndex) {
+      // Force advance by at least one word to avoid infinite loop
+      nextBreakIndex = currentWordIndex + 1;
     }
 
-    size_t nextBreakIndex = ans[currentWordIndex] + 1;
     lineBreakIndices.push_back(nextBreakIndex);
-
     currentWordIndex = nextBreakIndex;
   }
 

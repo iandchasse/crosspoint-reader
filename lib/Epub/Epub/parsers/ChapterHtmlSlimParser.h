@@ -18,6 +18,7 @@ class ChapterHtmlSlimParser {
   const std::string& filepath;
   GfxRenderer& renderer;
   std::function<void(std::unique_ptr<Page>)> completePageFn;
+  std::function<void(int)> progressFn;  // Progress callback (0-100)
   int depth = 0;
   int skipUntilDepth = INT_MAX;
   int boldUntilDepth = INT_MAX;
@@ -31,11 +32,9 @@ class ChapterHtmlSlimParser {
   int16_t currentPageNextY = 0;
   int fontId;
   float lineCompression;
-  int marginTop;
-  int marginRight;
-  int marginBottom;
-  int marginLeft;
   bool extraParagraphSpacing;
+  int viewportWidth;
+  int viewportHeight;
 
   void startNewTextBlock(TextBlock::BLOCK_STYLE style);
   void makePages();
@@ -46,19 +45,19 @@ class ChapterHtmlSlimParser {
 
  public:
   explicit ChapterHtmlSlimParser(const std::string& filepath, GfxRenderer& renderer, const int fontId,
-                                 const float lineCompression, const int marginTop, const int marginRight,
-                                 const int marginBottom, const int marginLeft, const bool extraParagraphSpacing,
-                                 const std::function<void(std::unique_ptr<Page>)>& completePageFn)
+                                 const float lineCompression, const bool extraParagraphSpacing, const int viewportWidth,
+                                 const int viewportHeight,
+                                 const std::function<void(std::unique_ptr<Page>)>& completePageFn,
+                                 const std::function<void(int)>& progressFn = nullptr)
       : filepath(filepath),
         renderer(renderer),
         fontId(fontId),
         lineCompression(lineCompression),
-        marginTop(marginTop),
-        marginRight(marginRight),
-        marginBottom(marginBottom),
-        marginLeft(marginLeft),
         extraParagraphSpacing(extraParagraphSpacing),
-        completePageFn(completePageFn) {}
+        viewportWidth(viewportWidth),
+        viewportHeight(viewportHeight),
+        completePageFn(completePageFn),
+        progressFn(progressFn) {}
   ~ChapterHtmlSlimParser() = default;
   bool parseAndBuildPages();
   void addLineToPage(std::shared_ptr<TextBlock> line);

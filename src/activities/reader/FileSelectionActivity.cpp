@@ -40,8 +40,12 @@ void FileSelectionActivity::loadFiles() {
 
     if (file.isDirectory()) {
       files.emplace_back(filename + "/");
-    } else if (filename.substr(filename.length() - 5) == ".epub") {
-      files.emplace_back(filename);
+    } else {
+      std::string ext4 = filename.length() >= 4 ? filename.substr(filename.length() - 4) : "";
+      std::string ext5 = filename.length() >= 5 ? filename.substr(filename.length() - 5) : "";
+      if (ext5 == ".epub" || ext5 == ".xtch" || ext4 == ".xtc") {
+        files.emplace_back(filename);
+      }
     }
     file.close();
   }
@@ -101,7 +105,7 @@ void FileSelectionActivity::loop() {
 
   const bool skipPage = inputManager.getHeldTime() > SKIP_PAGE_MS;
 
-  if (inputManager.wasPressed(InputManager::BTN_CONFIRM)) {
+  if (inputManager.wasReleased(InputManager::BTN_CONFIRM)) {
     if (files.empty()) {
       return;
     }
@@ -158,20 +162,20 @@ void FileSelectionActivity::displayTaskLoop() {
 void FileSelectionActivity::render() const {
   renderer.clearScreen();
 
-  const auto pageWidth = GfxRenderer::getScreenWidth();
+  const auto pageWidth = renderer.getScreenWidth();
   renderer.drawCenteredText(READER_FONT_ID, 10, "Books", true, BOLD);
 
   // Help text
-  renderer.drawButtonHints(UI_FONT_ID, "« Home", "", "", "");
+  renderer.drawButtonHints(UI_FONT_ID, "« Home", "Open", "", "");
 
   if (files.empty()) {
-    renderer.drawText(UI_FONT_ID, 20, 60, "No EPUBs found");
+    renderer.drawText(UI_FONT_ID, 20, 60, "No books found");
     renderer.displayBuffer();
     return;
   }
 
   const auto pageStartIndex = selectorIndex / PAGE_ITEMS * PAGE_ITEMS;
-  renderer.fillRect(0, 60 + (selectorIndex % PAGE_ITEMS) * 30 + 2, pageWidth - 1, 30);
+  renderer.fillRect(0, 60 + (selectorIndex % PAGE_ITEMS) * 30 - 2, pageWidth - 1, 30);
   for (int i = pageStartIndex; i < files.size() && i < pageStartIndex + PAGE_ITEMS; i++) {
     auto item = files[i];
     int itemWidth = renderer.getTextWidth(UI_FONT_ID, item.c_str());
