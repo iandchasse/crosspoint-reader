@@ -3,7 +3,7 @@
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
 #include <JpegToBmpConverter.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <ZipFile.h>
 
 #include "Epub/parsers/ContainerParser.h"
@@ -135,7 +135,7 @@ bool Epub::parseTocNcxFile() const {
 
   free(ncxBuffer);
   tempNcxFile.close();
-  SD.remove(tmpNcxPath.c_str());
+  SD_MMC.remove(tmpNcxPath.c_str());
 
   Serial.printf("[%lu] [EBP] Parsed TOC items\n", millis());
   return true;
@@ -221,7 +221,7 @@ bool Epub::load() {
 }
 
 bool Epub::clearCache() const {
-  if (!SD.exists(cachePath.c_str())) {
+  if (!SD_MMC.exists(cachePath.c_str())) {
     Serial.printf("[%lu] [EPB] Cache does not exist, no action needed\n", millis());
     return true;
   }
@@ -236,17 +236,17 @@ bool Epub::clearCache() const {
 }
 
 void Epub::setupCacheDir() const {
-  if (SD.exists(cachePath.c_str())) {
+  if (SD_MMC.exists(cachePath.c_str())) {
     return;
   }
 
   // Loop over each segment of the cache path and create directories as needed
   for (size_t i = 1; i < cachePath.length(); i++) {
     if (cachePath[i] == '/') {
-      SD.mkdir(cachePath.substr(0, i).c_str());
+      SD_MMC.mkdir(cachePath.substr(0, i).c_str());
     }
   }
-  SD.mkdir(cachePath.c_str());
+  SD_MMC.mkdir(cachePath.c_str());
 }
 
 const std::string& Epub::getCachePath() const { return cachePath; }
@@ -266,7 +266,7 @@ std::string Epub::getCoverBmpPath() const { return cachePath + "/cover.bmp"; }
 
 bool Epub::generateCoverBmp() const {
   // Already generated, return true
-  if (SD.exists(getCoverBmpPath().c_str())) {
+  if (SD_MMC.exists(getCoverBmpPath().c_str())) {
     return true;
   }
 
@@ -305,11 +305,11 @@ bool Epub::generateCoverBmp() const {
     const bool success = JpegToBmpConverter::jpegFileToBmpStream(coverJpg, coverBmp);
     coverJpg.close();
     coverBmp.close();
-    SD.remove(coverJpgTempPath.c_str());
+    SD_MMC.remove(coverJpgTempPath.c_str());
 
     if (!success) {
       Serial.printf("[%lu] [EBP] Failed to generate BMP from JPG cover image\n", millis());
-      SD.remove(getCoverBmpPath().c_str());
+      SD_MMC.remove(getCoverBmpPath().c_str());
     }
     Serial.printf("[%lu] [EBP] Generated BMP from JPG cover image, success: %s\n", millis(), success ? "yes" : "no");
     return success;
@@ -321,7 +321,7 @@ bool Epub::generateCoverBmp() const {
 }
 
 uint8_t* Epub::readItemContentsToBytes(const std::string& itemHref, size_t* size, const bool trailingNullByte) const {
-  const ZipFile zip("/sd" + filepath);
+  const ZipFile zip("/sdcard" + filepath);
   const std::string path = FsHelpers::normalisePath(itemHref);
 
   const auto content = zip.readFileToMemory(path.c_str(), size, trailingNullByte);
@@ -334,14 +334,14 @@ uint8_t* Epub::readItemContentsToBytes(const std::string& itemHref, size_t* size
 }
 
 bool Epub::readItemContentsToStream(const std::string& itemHref, Print& out, const size_t chunkSize) const {
-  const ZipFile zip("/sd" + filepath);
+  const ZipFile zip("/sdcard" + filepath);
   const std::string path = FsHelpers::normalisePath(itemHref);
 
   return zip.readFileToStream(path.c_str(), out, chunkSize);
 }
 
 bool Epub::getItemSize(const std::string& itemHref, size_t* size) const {
-  const ZipFile zip("/sd" + filepath);
+  const ZipFile zip("/sdcard" + filepath);
   return getItemSize(zip, itemHref, size);
 }
 

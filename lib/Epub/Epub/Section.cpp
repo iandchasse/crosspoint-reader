@@ -1,7 +1,7 @@
 #include "Section.h"
 
 #include <FsHelpers.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <Serialization.h>
 
 #include "Page.h"
@@ -88,12 +88,12 @@ bool Section::loadCacheMetadata(const int fontId, const float lineCompression, c
 
 void Section::setupCacheDir() const {
   epub->setupCacheDir();
-  SD.mkdir(cachePath.c_str());
+  SD_MMC.mkdir(cachePath.c_str());
 }
 
 // Your updated class method (assuming you are using the 'SD' object, which is a wrapper for a specific filesystem)
 bool Section::clearCache() const {
-  if (!SD.exists(cachePath.c_str())) {
+  if (!SD_MMC.exists(cachePath.c_str())) {
     Serial.printf("[%lu] [SCT] Cache does not exist, no action needed\n", millis());
     return true;
   }
@@ -125,8 +125,8 @@ bool Section::persistPageDataToSD(const int fontId, const float lineCompression,
     }
 
     // Remove any incomplete file from previous attempt before retrying
-    if (SD.exists(tmpHtmlPath.c_str())) {
-      SD.remove(tmpHtmlPath.c_str());
+    if (SD_MMC.exists(tmpHtmlPath.c_str())) {
+      SD_MMC.remove(tmpHtmlPath.c_str());
     }
 
     File tmpHtml;
@@ -138,8 +138,8 @@ bool Section::persistPageDataToSD(const int fontId, const float lineCompression,
     tmpHtml.close();
 
     // If streaming failed, remove the incomplete file immediately
-    if (!success && SD.exists(tmpHtmlPath.c_str())) {
-      SD.remove(tmpHtmlPath.c_str());
+    if (!success && SD_MMC.exists(tmpHtmlPath.c_str())) {
+      SD_MMC.remove(tmpHtmlPath.c_str());
       Serial.printf("[%lu] [SCT] Removed incomplete temp file after failed attempt\n", millis());
     }
   }
@@ -161,7 +161,7 @@ bool Section::persistPageDataToSD(const int fontId, const float lineCompression,
       [this](std::unique_ptr<Page> page) { this->onPageComplete(std::move(page)); }, progressFn);
   success = visitor.parseAndBuildPages();
 
-  SD.remove(tmpHtmlPath.c_str());
+  SD_MMC.remove(tmpHtmlPath.c_str());
   if (!success) {
     Serial.printf("[%lu] [SCT] Failed to parse XML and build pages\n", millis());
     return false;

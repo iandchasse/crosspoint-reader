@@ -1,15 +1,15 @@
 #include "FsHelpers.h"
 
-#include <SD.h>
+#include <SD_MMC.h>
 
 #include <vector>
 
 bool FsHelpers::openFileForRead(const char* moduleName, const char* path, File& file) {
-  if (!SD.exists(path)) {
+  if (!SD_MMC.exists(path)) {
     return false;
   }
 
-  file = SD.open(path, FILE_READ);
+  file = SD_MMC.open(path, FILE_READ);
   if (!file) {
     Serial.printf("[%lu] [%s] Failed to open file for reading: %s\n", millis(), moduleName, path);
     return false;
@@ -26,7 +26,7 @@ bool FsHelpers::openFileForRead(const char* moduleName, const String& path, File
 }
 
 bool FsHelpers::openFileForWrite(const char* moduleName, const char* path, File& file) {
-  file = SD.open(path, FILE_WRITE, true);
+  file = SD_MMC.open(path, FILE_WRITE, true);
   if (!file) {
     Serial.printf("[%lu] [%s] Failed to open file for writing: %s\n", millis(), moduleName, path);
     return false;
@@ -44,7 +44,7 @@ bool FsHelpers::openFileForWrite(const char* moduleName, const String& path, Fil
 
 bool FsHelpers::removeDir(const char* path) {
   // 1. Open the directory
-  File dir = SD.open(path);
+  File dir = SD_MMC.open(path);
   if (!dir) {
     return false;
   }
@@ -65,14 +65,14 @@ bool FsHelpers::removeDir(const char* path) {
         return false;
       }
     } else {
-      if (!SD.remove(filePath.c_str())) {
+      if (!SD_MMC.remove(filePath.c_str())) {
         return false;
       }
     }
     file = dir.openNextFile();
   }
 
-  return SD.rmdir(path);
+  return SD_MMC.rmdir(path);
 }
 
 std::string FsHelpers::normalisePath(const std::string& path) {

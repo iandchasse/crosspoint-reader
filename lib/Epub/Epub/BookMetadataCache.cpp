@@ -1,7 +1,7 @@
 #include "BookMetadataCache.h"
 
 #include <HardwareSerial.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <Serialization.h>
 #include <ZipFile.h>
 
@@ -174,11 +174,11 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
 }
 
 bool BookMetadataCache::cleanupTmpFiles() const {
-  if (SD.exists((cachePath + tmpSpineBinFile).c_str())) {
-    SD.remove((cachePath + tmpSpineBinFile).c_str());
+  if (SD_MMC.exists((cachePath + tmpSpineBinFile).c_str())) {
+    SD_MMC.remove((cachePath + tmpSpineBinFile).c_str());
   }
-  if (SD.exists((cachePath + tmpTocBinFile).c_str())) {
-    SD.remove((cachePath + tmpTocBinFile).c_str());
+  if (SD_MMC.exists((cachePath + tmpTocBinFile).c_str())) {
+    SD_MMC.remove((cachePath + tmpTocBinFile).c_str());
   }
   return true;
 }

@@ -2,7 +2,7 @@
 
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <Serialization.h>
 
 // Initialize the static instance
@@ -30,7 +30,7 @@ void WifiCredentialStore::obfuscate(std::string& data) const {
 
 bool WifiCredentialStore::saveToFile() const {
   // Make sure the directory exists
-  SD.mkdir("/.crosspoint");
+  SD_MMC.mkdir("/.crosspoint");
 
   File file;
   if (!FsHelpers::openFileForWrite("WCS", WIFI_FILE, file)) {

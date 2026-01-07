@@ -2,7 +2,7 @@
 
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <Serialization.h>
 
 // Initialize the static instance
@@ -17,7 +17,7 @@ constexpr char SETTINGS_FILE[] = "/.crosspoint/settings.bin";
 
 bool CrossPointSettings::saveToFile() const {
   // Make sure the directory exists
-  SD.mkdir("/.crosspoint");
+  SD_MMC.mkdir("/.crosspoint");
 
   File outputFile;
   if (!FsHelpers::openFileForWrite("CPS", SETTINGS_FILE, outputFile)) {

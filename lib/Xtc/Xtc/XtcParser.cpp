@@ -297,7 +297,7 @@ XtcError XtcParser::loadPageStreaming(uint32_t pageIndex,
 }
 
 bool XtcParser::isValidXtcFile(const char* filepath) {
-  File file = SD.open(filepath, FILE_READ);
+  File file = SD_MMC.open(filepath, FILE_READ);
   if (!file) {
     return false;
   }

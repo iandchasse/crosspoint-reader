@@ -3,7 +3,7 @@
 #include <Epub.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <Xtc.h>
 
 #include <vector>
@@ -58,7 +58,7 @@ void SleepActivity::renderPopup(const char* message) const {
 
 void SleepActivity::renderCustomSleepScreen() const {
   // Check if we have a /sleep directory
-  auto dir = SD.open("/sleep");
+  auto dir = SD_MMC.open("/sleep");
   if (dir && dir.isDirectory()) {
     std::vector<std::string> files;
     // collect all valid BMP files

@@ -9,7 +9,7 @@
 
 #include <FsHelpers.h>
 #include <HardwareSerial.h>
-#include <SD.h>
+#include <SD_MMC.h>
 
 bool Xtc::load() {
   Serial.printf("[%lu] [XTC] Loading XTC: %s\n", millis(), filepath.c_str());
@@ -31,7 +31,7 @@ bool Xtc::load() {
 }
 
 bool Xtc::clearCache() const {
-  if (!SD.exists(cachePath.c_str())) {
+  if (!SD_MMC.exists(cachePath.c_str())) {
     Serial.printf("[%lu] [XTC] Cache does not exist, no action needed\n", millis());
     return true;
   }
@@ -46,17 +46,17 @@ bool Xtc::clearCache() const {
 }
 
 void Xtc::setupCacheDir() const {
-  if (SD.exists(cachePath.c_str())) {
+  if (SD_MMC.exists(cachePath.c_str())) {
     return;
   }
 
   // Create directories recursively
   for (size_t i = 1; i < cachePath.length(); i++) {
     if (cachePath[i] == '/') {
-      SD.mkdir(cachePath.substr(0, i).c_str());
+      SD_MMC.mkdir(cachePath.substr(0, i).c_str());
     }
   }
-  SD.mkdir(cachePath.c_str());
+  SD_MMC.mkdir(cachePath.c_str());
 }
 
 std::string Xtc::getTitle() const {
@@ -91,7 +91,7 @@ std::string Xtc::getCoverBmpPath() const { return cachePath + "/cover.bmp"; }
 
 bool Xtc::generateCoverBmp() const {
   // Already generated
-  if (SD.exists(getCoverBmpPath().c_str())) {
+  if (SD_MMC.exists(getCoverBmpPath().c_str())) {
     return true;
   }
 

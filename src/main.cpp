@@ -12,6 +12,8 @@
 #include <builtinFonts/pixelarial14.h>
 #include <builtinFonts/ubuntu_10.h>
 #include <builtinFonts/ubuntu_bold_10.h>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 
 #include "Battery.h"
 #include "CrossPointSettings.h"
@@ -25,9 +27,6 @@
 #include "activities/util/FullScreenMessageActivity.h"
 #include "config.h"
 
-#include <esp_sleep.h>
-#include <driver/rtc_io.h>
-
 #define SPI_FQ 40000000
 // Display SPI pins (custom pins for MinRead hardware)
 #define EPD_SCLK 13  // SPI Clock
@@ -39,7 +38,12 @@
 
 #define UART0_RXD 20  // Used for USB connection detection
 
-EInkDisplay einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
+// Display Configuration
+// The EInkDisplay library is currently configured for SSD1677 (Original 800x480)
+// by default in its implementation.
+
+// EInkDisplay einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
+EInkDisplay_UC8179 einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
 InputManager inputManager;
 SDCardManager sdCardManager;
 GfxRenderer renderer(einkDisplay);
@@ -168,6 +172,7 @@ void onGoHome() {
 }
 
 void setupDisplayAndFonts() {
+  // Initialize display
   einkDisplay.begin();
   Serial.printf("[%lu] [   ] Display initialized\n", millis());
   renderer.insertFont(READER_FONT_ID, bookerlyFontFamily);
@@ -180,21 +185,24 @@ void setup() {
   t1 = millis();
 
   // Only start serial if USB connected
-  pinMode(UART0_RXD, INPUT);
-  if (digitalRead(UART0_RXD) == HIGH) {
-    Serial.begin(115200);
-  }
+  // pinMode(UART0_RXD, INPUT);
+  // if (digitalRead(UART0_RXD) == HIGH) {
+  Serial.begin(115200);
+  delay(3000);  // Wait for Serial to initialize so we can see startup logs
+  // }
 
   Serial.printf("[%lu] [   ] Starting CrossPoint version " CROSSPOINT_VERSION "\n", millis());
 
   inputManager.begin();
   // Initialize pins
-  pinMode(BAT_GPIO0, INPUT);
+  pinMode(BAT_GPIO1, INPUT);
 
   // Initialize SPI for display (SD card now uses SDMMC, not SPI)
-  SPI.begin(EPD_SCLK, -1, EPD_MOSI, EPD_CS);  // MISO not needed for display-only SPI
+  // Matching GxEPD2: SCLK=13, MISO=8, MOSI=14, CS=12
+  SPI.begin(EPD_SCLK, 8, EPD_MOSI, EPD_CS);
 
   // SD Card Initialization using SDMMC
+
   if (!sdCardManager.begin()) {
     Serial.printf("[%lu] [   ] SD card initialization failed\n", millis());
     setupDisplayAndFonts();
@@ -206,7 +214,7 @@ void setup() {
   SETTINGS.loadFromFile();
 
   // verify power button press duration after we've read settings.
-  verifyWakeupLongPress();
+  // verifyWakeupLongPress();
 
   setupDisplayAndFonts();
 
@@ -247,12 +255,12 @@ void loop() {
     lastActivityTime = millis();  // Reset inactivity timer
   }
 
-  if (millis() - lastActivityTime >= AUTO_SLEEP_TIMEOUT_MS) {
-    Serial.printf("[%lu] [SLP] Auto-sleep triggered after %lu ms of inactivity\n", millis(), AUTO_SLEEP_TIMEOUT_MS);
-    enterDeepSleep();
-    // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
-    return;
-  }
+  // if (millis() - lastActivityTime >= AUTO_SLEEP_TIMEOUT_MS) {
+  //   Serial.printf("[%lu] [SLP] Auto-sleep triggered after %lu ms of inactivity\n", millis(), AUTO_SLEEP_TIMEOUT_MS);
+  //   enterDeepSleep();
+  //   // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
+  //   return;
+  // }
 
   if (inputManager.isPressed(InputManager::BTN_POWER) &&
       inputManager.getHeldTime() > SETTINGS.getPowerButtonDuration()) {

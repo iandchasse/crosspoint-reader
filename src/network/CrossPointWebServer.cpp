@@ -2,7 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <FsHelpers.h>
-#include <SD.h>
+#include <SD_MMC.h>
 #include <WiFi.h>
 
 #include <algorithm>
@@ -170,7 +170,7 @@ void CrossPointWebServer::handleStatus() const {
 }
 
 void CrossPointWebServer::scanFiles(const char* path, const std::function<void(FileInfo)>& callback) const {
-  File root = SD.open(path);
+  File root = SD_MMC.open(path);
   if (!root) {
     Serial.printf("[%lu] [WEB] Failed to open directory: %s\n", millis(), path);
     return;
@@ -334,9 +334,9 @@ void CrossPointWebServer::handleUpload() const {
     filePath += uploadFileName;
 
     // Check if file already exists
-    if (SD.exists(filePath.c_str())) {
+    if (SD_MMC.exists(filePath.c_str())) {
       Serial.printf("[%lu] [WEB] [UPLOAD] Overwriting existing file: %s\n", millis(), filePath.c_str());
-      SD.remove(filePath.c_str());
+      SD_MMC.remove(filePath.c_str());
     }
 
     // Open file for writing
@@ -393,7 +393,7 @@ void CrossPointWebServer::handleUpload() const {
       String filePath = uploadPath;
       if (!filePath.endsWith("/")) filePath += "/";
       filePath += uploadFileName;
-      SD.remove(filePath.c_str());
+      SD_MMC.remove(filePath.c_str());
     }
     uploadError = "Upload aborted";
     Serial.printf("[%lu] [WEB] Upload aborted\n", millis());
@@ -444,13 +444,13 @@ void CrossPointWebServer::handleCreateFolder() const {
   Serial.printf("[%lu] [WEB] Creating folder: %s\n", millis(), folderPath.c_str());
 
   // Check if already exists
-  if (SD.exists(folderPath.c_str())) {
+  if (SD_MMC.exists(folderPath.c_str())) {
     server->send(400, "text/plain", "Folder already exists");
     return;
   }
 
   // Create the folder
-  if (SD.mkdir(folderPath.c_str())) {
+  if (SD_MMC.mkdir(folderPath.c_str())) {
     Serial.printf("[%lu] [WEB] Folder created successfully: %s\n", millis(), folderPath.c_str());
     server->send(200, "text/plain", "Folder created: " + folderName);
   } else {
@@ -500,7 +500,7 @@ void CrossPointWebServer::handleDelete() const {
   }
 
   // Check if item exists
-  if (!SD.exists(itemPath.c_str())) {
+  if (!SD_MMC.exists(itemPath.c_str())) {
     Serial.printf("[%lu] [WEB] Delete failed - item not found: %s\n", millis(), itemPath.c_str());
     server->send(404, "text/plain", "Item not found");
     return;
@@ -512,7 +512,7 @@ void CrossPointWebServer::handleDelete() const {
 
   if (itemType == "folder") {
     // For folders, try to remove (will fail if not empty)
-    File dir = SD.open(itemPath.c_str());
+    File dir = SD_MMC.open(itemPath.c_str());
     if (dir && dir.isDirectory()) {
       // Check if folder is empty
       File entry = dir.openNextFile();
@@ -526,10 +526,10 @@ void CrossPointWebServer::handleDelete() const {
       }
       dir.close();
     }
-    success = SD.rmdir(itemPath.c_str());
+    success = SD_MMC.rmdir(itemPath.c_str());
   } else {
     // For files, use remove
-    success = SD.remove(itemPath.c_str());
+    success = SD_MMC.remove(itemPath.c_str());
   }
 
   if (success) {

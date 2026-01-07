@@ -92,6 +92,9 @@ void WifiSelectionActivity::startWifiScan() {
 
   // Set WiFi mode to station
   WiFi.mode(WIFI_STA);
+  // Disable persistence to prevent auto-connecting to old networks from NVS
+  // and interfering with our manual scan/connect process
+  WiFi.persistent(false);
   WiFi.disconnect();
   delay(100);
 
@@ -107,13 +110,26 @@ void WifiSelectionActivity::processWifiScanResults() {
     return;
   }
 
+  // Scan complete, process results
   if (scanResult == WIFI_SCAN_FAILED) {
+    Serial.printf("[%lu] [WIFI] Scan failed!\n", millis());
+    state = WifiSelectionState::CONNECTION_FAILED;
+    connectionError = "WiFi Scan Failed";
+    updateRequired = true;
+    return;
+  }
+
+  Serial.printf("[%lu] [WIFI] Scan completed, found %d networks\n", millis(), scanResult);
+
+  if (scanResult == 0) {
+    // Explicitly handle 0 networks
+    networks.clear();
     state = WifiSelectionState::NETWORK_LIST;
     updateRequired = true;
     return;
   }
 
-  // Scan complete, process results
+  // Use a map to deduplicate networks by SSID, keeping the strongest signal
   // Use a map to deduplicate networks by SSID, keeping the strongest signal
   std::map<std::string, WifiNetworkInfo> uniqueNetworks;
 

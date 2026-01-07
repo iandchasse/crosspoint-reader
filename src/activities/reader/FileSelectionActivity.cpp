@@ -2,7 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <InputManager.h>
-#include <SD.h>
+#include <SD_MMC.h>
 
 #include "config.h"
 
@@ -30,7 +30,7 @@ void FileSelectionActivity::taskTrampoline(void* param) {
 void FileSelectionActivity::loadFiles() {
   files.clear();
   selectorIndex = 0;
-  auto root = SD.open(basepath.c_str());
+  auto root = SD_MMC.open(basepath.c_str());
   for (File file = root.openNextFile(); file; file = root.openNextFile()) {
     auto filename = std::string(file.name());
     if (filename[0] == '.') {

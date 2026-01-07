@@ -36,8 +36,8 @@ ContentOpfParser::~ContentOpfParser() {
   if (tempItemStore) {
     tempItemStore.close();
   }
-  if (SD.exists((cachePath + itemCacheFile).c_str())) {
-    SD.remove((cachePath + itemCacheFile).c_str());
+  if (SD_MMC.exists((cachePath + itemCacheFile).c_str())) {
+    SD_MMC.remove((cachePath + itemCacheFile).c_str());
   }
 }
 

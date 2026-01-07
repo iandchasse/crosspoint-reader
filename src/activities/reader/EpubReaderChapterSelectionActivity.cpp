@@ -2,7 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <InputManager.h>
-#include <SD.h>
+#include <SD_MMC.h>
 
 #include "config.h"
 

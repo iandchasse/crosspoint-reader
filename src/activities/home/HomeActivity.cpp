@@ -2,7 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <InputManager.h>
-#include <SD.h>
+#include <SD_MMC.h>
 
 #include "CrossPointState.h"
 #include "config.h"
@@ -20,7 +20,7 @@ void HomeActivity::onEnter() {
   renderingMutex = xSemaphoreCreateMutex();
 
   // Check if we have a book to continue reading
-  hasContinueReading = !APP_STATE.openEpubPath.empty() && SD.exists(APP_STATE.openEpubPath.c_str());
+  hasContinueReading = !APP_STATE.openEpubPath.empty() && SD_MMC.exists(APP_STATE.openEpubPath.c_str());
 
   selectorIndex = 0;
 
