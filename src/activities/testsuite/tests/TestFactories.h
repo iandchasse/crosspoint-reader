@@ -33,6 +33,14 @@ std::unique_ptr<Activity> createOrientationTest(const TestInfo& info, GfxRendere
                                                 MappedInputManager& mappedInput);  // T7
 std::unique_ptr<Activity> createSpiClockTest(const TestInfo& info, GfxRenderer& renderer,
                                              MappedInputManager& mappedInput);  // T8
+std::unique_ptr<Activity> createFrontlightTest(const TestInfo& info, GfxRenderer& renderer,
+                                               MappedInputManager& mappedInput);  // T9
+std::unique_ptr<Activity> createLightTripTest(const TestInfo& info, GfxRenderer& renderer,
+                                              MappedInputManager& mappedInput);  // T10
+std::unique_ptr<Activity> createTouchMappingTest(const TestInfo& info, GfxRenderer& renderer,
+                                                 MappedInputManager& mappedInput);  // T11
+std::unique_ptr<Activity> createTouchSleepTest(const TestInfo& info, GfxRenderer& renderer,
+                                               MappedInputManager& mappedInput);  // T12
 
 }  // namespace testsuite
 #endif

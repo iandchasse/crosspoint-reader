@@ -34,6 +34,9 @@ class HalFrontlight {
   void prepareForSleep() { manager.prepareForSleep(); }
 
  private:
+#if CROSSPOINT_TEST_SUITE
+  friend struct TestSuiteAccess;  // the hardware test firmware (src/activities/testsuite/)
+#endif
   HalFrontlight() = default;
 
   FrontlightManager manager;

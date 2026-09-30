@@ -5,8 +5,12 @@
 // without new public API in the reader.
 #if CROSSPOINT_TEST_SUITE
 #include <HalDisplay.h>
+#include <HalFrontlight.h>
+#include <HalGPIO.h>
 
 struct TestSuiteAccess {
   static EInkDisplay& eink(HalDisplay& hal) { return hal.einkDisplay; }
+  static FrontlightManager& frontlight(HalFrontlight& hal) { return hal.manager; }
+  static InputManager& input(HalGPIO& hal) { return hal.inputMgr; }
 };
 #endif

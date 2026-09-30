@@ -18,7 +18,6 @@
 #include "TestCatalog.h"
 #include "TestChoiceActivity.h"
 #include "TestStrings.h"
-#include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -107,9 +106,12 @@ void TestScreen::onExit() {
 
 void TestScreen::loop() {
   if (mappedInput.wasAnyPressed() || mappedInput.wasAnyReleased() || gpio.wasTouchActivity()) lastInputAt = millis();
-  const auto route = routeTouch(mappedInput);
-  if (route.routed && app.invalidated()) requestUpdate();
-  if (route) return;  // a footer button; slotTrampoline handled it
+  const bool touchInput = touchIsTestInput();
+  if (!touchInput) {
+    const auto route = routeTouch(mappedInput);
+    if (route.routed && app.invalidated()) requestUpdate();
+    if (route) return;  // a footer button; slotTrampoline handled it
+  }
 
   using Button = MappedInputManager::Button;
   if (keysAreTestInput()) {
@@ -129,7 +131,8 @@ void TestScreen::loop() {
         break;
       }
     }
-  } else if (mappedInput.wasReleased(Button::Back)) {
+  } else if (mappedInput.wasReleased(Button::Back) && !(touchInput && mappedInput.wasBackGesture())) {
+    // While touch is the test's input, only the Back key leaves.
     exitTest();
     return;
   } else if (mappedInput.wasReleased(Button::Confirm)) {
@@ -188,16 +191,17 @@ void TestScreen::render(RenderLock&&) {
   bands = edgeBands();
   const int width = renderer.getScreenWidth() - bands.left - bands.right;
   renderer.clearScreen();
-  // A test that reads the keys leaves only by Exit or a Back hold, so no header back button.
+  // A test that reads the keys leaves only by Exit or a Back hold, and one that
+  // reads the touch panel only by the Back key, so no header back button.
   GUI.drawHeader(renderer, Rect{bands.left, bands.top + metrics.topPadding, width, metrics.headerHeight}, title,
-                 nullptr, /*backButton=*/!keysAreTestInput());
+                 nullptr, /*backButton=*/!keysAreTestInput() && !touchIsTestInput());
   headerBottom = bands.top + metrics.topPadding + metrics.headerHeight;
   footerTop = renderer.getScreenHeight() - bands.bottom;
   renderUi();
 
   TestPage page(renderer, bands.left + metrics.contentSidePadding, headerBottom + metrics.verticalSpacing,
                 width - 2 * metrics.contentSidePadding, footerTop - metrics.verticalSpacing);
-  drawResult(page);
+  if (showsLastResult()) drawResult(page);
   if (keysAreTestInput()) {
     page.paragraph(text::HOLD_BACK_TO_EXIT, 2);
     page.gap();
@@ -242,19 +246,24 @@ bool TestScreen::confirmLightLoad() {
     LOG_INF("TEST", "%s: no front light in this build or on this board", info.id);
     return false;
   }
-  auto prompt =
-      makeUniqueNoThrow<ConfirmationActivity>(renderer, mappedInput, text::LIGHT_LOAD_TITLE, text::LIGHT_LOAD_BODY);
+  // "No load" first: it is the preselected answer.
+  static constexpr const char* LOADS[] = {text::LIGHT_LOAD_NONE, text::LIGHT_LOAD_J3, text::LIGHT_LOAD_J6};
+  auto prompt = makeUniqueNoThrow<TestChoiceActivity>(renderer, mappedInput, text::LIGHT_LOAD_TITLE,
+                                                      text::LIGHT_LOAD_BODY, LOADS, 3);
   if (!prompt) {
     LOG_ERR("TEST", "OOM: LED load prompt");
     return false;
   }
   startActivityForResult(std::move(prompt), [this](const ActivityResult& result) {
-    if (result.isCancelled) {
-      LOG_INF("TEST", "%s: LED load not confirmed; the light stays off", info.id);
+    const auto* choice = std::get_if<MenuResult>(&result.data);
+    const int answer = result.isCancelled || choice == nullptr ? -1 : choice->action;
+    if (answer != 1 && answer != 2) {
+      LOG_INF("TEST", "%s: no LED load confirmed; the light stays off", info.id);
       return;
     }
-    LOG_INF("TEST", "%s: LED load confirmed by the operator", info.id);
-    onLightLoadConfirmed();
+    LOG_INF("TEST", "%s: LED load confirmed by the operator: %s", info.id,
+            answer == 1 ? text::LIGHT_LOAD_J3 : text::LIGHT_LOAD_J6);
+    onLightLoadConfirmed(answer == 1 ? LightLoad::J3Panel : LightLoad::J6Strip);
   });
   return true;
 }

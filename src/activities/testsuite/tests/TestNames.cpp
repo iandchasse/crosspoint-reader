@@ -58,5 +58,18 @@ const char* rtcTypeName(const BoardConfig::RtcType type) {
   return "?";
 }
 
+const char* touchSleepResultName(const InputManager::TouchSleepResult result) {
+  using Result = InputManager::TouchSleepResult;
+  switch (result) {
+    case Result::NotApplicable:
+      return "NotApplicable";
+    case Result::Asleep:
+      return "Asleep";
+    case Result::NoAnswer:
+      return "NoAnswer";
+  }
+  return "?";
+}
+
 }  // namespace testsuite
 #endif

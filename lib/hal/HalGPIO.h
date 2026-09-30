@@ -39,6 +39,9 @@
 #define QMI8658_WHO_AM_I_VALUE 0x05  // WHO_AM_I expected value
 
 class HalGPIO {
+#if CROSSPOINT_TEST_SUITE
+  friend struct TestSuiteAccess;  // the hardware test firmware (src/activities/testsuite/)
+#endif
 #if CROSSPOINT_EMULATED == 0
   InputManager inputMgr;
 #endif

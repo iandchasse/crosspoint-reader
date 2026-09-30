@@ -13,6 +13,7 @@
 #include "TestResultLog.h"
 #include "TestStrings.h"
 #include "components/UITheme.h"
+#include "tests/LightCheck.h"
 
 namespace fui = freeink::ui;
 namespace text = testsuite::text;
@@ -24,8 +25,9 @@ int lastOpened = 0;
 
 void TestSuiteActivity::onEnter() {
   UiListActivity::onEnter();
-  // Nothing outside a front-light test leaves the boost lit.
+  // Nothing outside a front-light test leaves the boost lit, or the trip level lowered (T10).
   if (Frontlight.isOn()) Frontlight.setOn(false);
+  testsuite::light::restoreTripMv();
   const int count = listCount();
   for (int i = 0; i < count; ++i) {
     const auto& test = testsuite::testAt(static_cast<size_t>(i));

@@ -6,9 +6,6 @@
 #include <Logging.h>
 
 #include <algorithm>
-#include <cstdarg>
-#include <cstdio>
-#include <cstring>
 #include <utility>
 
 #include "CrossPointSettings.h"
@@ -96,19 +93,6 @@ void refreshAsyncFinish(const GfxRenderer& renderer, RefreshSample& sample, cons
 RefreshSample grayTimed(const GfxRenderer& renderer) {
   // The gray waveform has no refresh mode of its own: nothing to compare with.
   return measureRefresh(RefreshSample::NONE, [&renderer] { renderer.displayGrayBuffer(); });
-}
-
-void appendf(char* buffer, const size_t size, const char* format, ...) {
-  const size_t used = strnlen(buffer, size);
-  if (used + 1 >= size) return;
-  va_list args;
-  va_start(args, format);
-  vsnprintf(buffer + used, size - used, format, args);
-  va_end(args);
-}
-
-void addFailure(char* buffer, const size_t size, const char* what) {
-  appendf(buffer, size, "%s%s", buffer[0] != '\0' ? "+" : "", what);
 }
 
 void BusyStats::add(const uint32_t ms) {

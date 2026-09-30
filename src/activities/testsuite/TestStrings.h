@@ -30,8 +30,11 @@ inline constexpr char WRITE_FAILED[] = "Could not write results.csv: in the seri
 
 inline constexpr char LIGHT_LOAD_TITLE[] = "LED load connected?";
 inline constexpr char LIGHT_LOAD_BODY[] =
-    "This test drives the front-light boost. Confirm only if the J3 panel light or a J6 LED strip is connected: "
-    "with no load the boost output rises to its over-voltage limit.";
+    "This test drives the front-light boost. Pick the load that is connected. With no load the boost output rises "
+    "to its over-voltage limit, so pick No load if none is.";
+inline constexpr char LIGHT_LOAD_NONE[] = "No load: cancel";
+inline constexpr char LIGHT_LOAD_J3[] = "J3 panel light";
+inline constexpr char LIGHT_LOAD_J6[] = "J6 LED strip";
 
 inline constexpr char ASLEEP[] = "Test firmware asleep";
 inline constexpr char WAKE_HINT[] = "Hold POWER to wake";

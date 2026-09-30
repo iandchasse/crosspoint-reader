@@ -18,7 +18,7 @@ struct TestInfo;
 class TestPage {
  public:
   TestPage(const GfxRenderer& renderer, int x, int y, int width, int bottom)
-      : renderer(renderer), x(x), y(y), width(width), bottom(bottom) {}
+      : renderer(renderer), x(x), top(y), y(y), width(width), bottom(bottom) {}
 
   void paragraph(const char* text, int maxLines = 8);  // wrapped, small UI font
   void heading(const char* text);                      // bold
@@ -29,6 +29,7 @@ class TestPage {
   void setCompact(bool on) { compact = on; }
   // The page's frame and where the next line goes, for graphics below the text.
   int left() const { return x; }
+  int topY() const { return top; }
   int cursorY() const { return y; }
   int pageWidth() const { return width; }
   int bottomY() const { return bottom; }
@@ -36,6 +37,7 @@ class TestPage {
  private:
   const GfxRenderer& renderer;
   const int x;
+  const int top;
   int y;
   const int width;
   const int bottom;
@@ -48,8 +50,10 @@ class TestPage {
 // keys or from touch. Up/Down step values. Back (the key, the header's back
 // button or the footer's Exit) leaves the test unless onBack() uses it; a test
 // that reads the keys itself sets keysAreTestInput(), and then a front key held
-// for ACTION_HOLD_MS does what its footer button does (Back: leave). Leaving
-// switches the front light and the radio off.
+// for ACTION_HOLD_MS does what its footer button does (Back: leave). A test whose
+// input is the touch panel sets touchIsTestInput(): the footer is not routed and
+// a touch Back (header button, edge swipe) does not leave, so only the keys
+// drive the screen. Leaving switches the front light and the radio off.
 class TestScreen : public Activity, protected UiAppHost {
  public:
   void onEnter() override;
@@ -79,8 +83,13 @@ class TestScreen : public Activity, protected UiAppHost {
   virtual const char* slotLabel(Slot) const { return nullptr; }  // nullptr: slot unused
   virtual void drawBody(TestPage&) const {}
   virtual bool keysAreTestInput() const { return false; }
-  // After the operator confirmed an LED load (confirmLightLoad()).
-  virtual void onLightLoadConfirmed() {}
+  // Every contact is the test's (T11), while it returns true: see the class comment.
+  virtual bool touchIsTestInput() const { return false; }
+  // false: the last result is not drawn above the body (a body that needs the whole band).
+  virtual bool showsLastResult() const { return true; }
+  // The LED load the operator named in confirmLightLoad().
+  enum class LightLoad : uint8_t { J3Panel, J6Strip };
+  virtual void onLightLoadConfirmed(LightLoad) {}
   // The operator's answer to ask(): the answer's index, or -1 after Back.
   virtual void onAnswer(int /*question*/, int /*answer*/) {}
   // Back (the key, the header's back button or Exit): true when the test used
@@ -91,10 +100,11 @@ class TestScreen : public Activity, protected UiAppHost {
   // --- helpers ---------------------------------------------------------------
   // Logs the result (TestResultLog) and shows it at the top of the screen.
   void record(Verdict verdict, const char* detailsFmt, ...) __attribute__((format(printf, 3, 4)));
-  // A front-light test asks this every time before it lights the boost: a
-  // Cancel/Confirm prompt that an LED load (J3 panel light or J6 strip) is
-  // connected. onLightLoadConfirmed() runs only after Confirm. Returns false,
-  // without asking, when the build or the board has no front light.
+  // A front-light test asks this every time before it lights the boost from
+  // dark: which LED load is connected, the J3 panel light or a J6 strip, with
+  // "no load" first and preselected. onLightLoadConfirmed() runs only after a
+  // load is picked. Returns false, without asking, when the build or the board
+  // has no front light.
   bool confirmLightLoad();
   // Asks for something only the operator can observe (an LED, a meter): up to
   // four answers, picked with Up/Down and Confirm or by a tap. onAnswer() gets

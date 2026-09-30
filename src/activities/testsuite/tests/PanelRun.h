@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "TextBuffer.h"
 #include "activities/testsuite/TestScreen.h"
 
 class GfxRenderer;
@@ -71,11 +72,6 @@ RefreshSample refreshAsyncStart(const GfxRenderer& renderer, HalDisplay::Refresh
 void refreshAsyncFinish(const GfxRenderer& renderer, RefreshSample& sample, bool reseed);
 // displayGrayBuffer(): the gray waveform, or no refresh when the pass is skipped.
 RefreshSample grayTimed(const GfxRenderer& renderer);
-
-// Appends to a NUL-terminated buffer, truncating at its end.
-void appendf(char* buffer, size_t size, const char* format, ...) __attribute__((format(printf, 3, 4)));
-// Adds `what` to a "+"-separated list of failed checks.
-void addFailure(char* buffer, size_t size, const char* what);
 
 // Minimum, mean and maximum of BUSY times.
 struct BusyStats {

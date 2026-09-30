@@ -25,15 +25,15 @@ pio run -e silkscreen-test -t upload
 | Settings | `/.crosspoint/settings.json` is read once, then these are pinned in RAM: night mode off, Sunlight Fading Fix off, portrait, Short Power Button = Ignore, light off with no restore on wake, the keys in their default roles, English, the Lyra theme, no SD reader font, and a 10-minute sleep timeout if it was Never. |
 | Card writes | Never under `/.crosspoint/`: every settings, state, Wi-Fi, recent-books, OPDS and KOReader save is a no-op, `state.json` is not read, and the Quick Resume frame is neither written nor removed. The test firmware writes only `/.silkscreen-test/`. |
 | No card | The menu opens with "SD not mounted" and results go to the serial log only. The reader's SD-card error screen and its 60 s timeout are not in the test firmware. |
-| Front light | Off at every boot and after every silent restart, with no light panel (gesture, status-bar tap). Only a front-light test lights it, after the operator confirms a load. The over-voltage trip handling is the reader's. |
+| Front light | Off at every boot and after every silent restart, with no light panel (gesture, status-bar tap). Only a front-light test lights it, after the operator names the load. The over-voltage trip handling is the reader's; T10 lowers its level in RAM for one run. |
 | USB | While a USB data host is attached, auto-sleep is held off (the USB Serial/JTAG host frames, with a 2 s hold). A charger alone or a cell never holds it. The 15-minute ceiling and the 60-minute input cap still apply whenever the `USB_STAT` ladder does not report external power, so a misread ladder shows up as a sleep during a bench session. |
 | Sleep | The same sleep entry, wake source and timeouts as the reader. The sleep screen shows the firmware and board tag. A power-button click does nothing and a hold longer than 400 ms sleeps; waking needs POWER held. |
 
 ## Using it
 
-**The menu.** Up/Down or Left/Right move, Confirm opens. With touch, tap a row, and swipe to scroll. Back does nothing here. The line under the title says where results go (`/.silkscreen-test/results.csv`, or "SD not mounted") and shows the firmware version. Each row shows the test id and name, what it checks (or "Not implemented yet"), and the last result this boot. With touch, a swipe up from the bottom edge returns to the menu from any test.
+**The menu.** Up/Down or Left/Right move, Confirm opens. With touch, tap a row, and swipe to scroll. Back does nothing here. The line under the title says where results go (`/.silkscreen-test/results.csv`, or "SD not mounted") and shows the firmware version. Each row shows the test id and name, what it checks (or "Not implemented yet"), and the last result this boot. With touch, a swipe up from the bottom edge returns to the menu from any test, except while T11's targets or gestures are on.
 
-**A test screen** has the test id and name in the header, the last result recorded on this screen, the test's instructions and live readings, and four touch buttons along the bottom. The buttons sit in the order of the front keys and do what the keys do: Exit (Back), then the test's Confirm, Left and Right actions. Up/Down step values where a test has any. Back, the header's back button or Exit leaves the test. In a test that reads the keys itself (T3), a front key held 1.5 s does what the button above it does (Back: Exit), and the screen says so. Leaving any test switches the front light and the radio off.
+**A test screen** has the test id and name in the header, the last result recorded on this screen, the test's instructions and live readings, and four touch buttons along the bottom. The buttons sit in the order of the front keys and do what the keys do: Exit (Back), then the test's Confirm, Left and Right actions. Up/Down step values where a test has any. Back, the header's back button or Exit leaves the test. In a test that reads the keys itself (T3), a front key held 1.5 s does what the button above it does (Back: Exit), and the screen says so. In a test whose input is the touch panel (T11's targets and gestures), the touch buttons do nothing and the header has no back button: the keys drive the screen, and Back stops. Leaving any test switches the front light and the radio off.
 
 **Questions.** When a result needs something only the operator can see (T2 asks whether D2 is lit), a list of answers opens: Up/Down and Confirm, or tap an answer. Back, or a tap outside the list, records nothing.
 
@@ -63,10 +63,10 @@ The ids are stable; `results.csv` and the serial log use them.
 | T6 | Inversion | B2 | [Built](#t6-inversion), not yet run on a board |
 | T7 | Orientation and bezel ruler | B2 | [Built](#t7-orientation-and-bezel-ruler), not yet run on a board |
 | T8 | 40 MHz panel SPI trial | B2 | [Built](#t8-panel-spi-clock), not yet run on a board |
-| T9 | Front light | B8 | Not implemented yet |
-| T10 | Front-light over-voltage trip | B8 | Not implemented yet |
-| T11 | Touch probe, mapping and gestures | B9 | Not implemented yet |
-| T12 | Touch sleep command | B9 | Not implemented yet |
+| T9 | Front light | B8 | [Built](#t9-front-light), not yet run on a board |
+| T10 | Front-light over-voltage trip | B8 | [Built](#t10-front-light-over-voltage-trip), not yet run on a board |
+| T11 | Touch probe, mapping and gestures | B9 | [Built](#t11-touch-probe-mapping-and-gestures), not yet run on a board |
+| T12 | Touch sleep command | B9 | [Built](#t12-touch-sleep-command), not yet run on a board |
 | T13 | RTC | B7 | Not implemented yet |
 | T14 | RTC across deep sleep | B7 | Not implemented yet |
 | P3 | SD card | B4 | Not implemented yet |
@@ -231,9 +231,94 @@ The clock is set in RAM only, through the SDK's `FreeInkDisplay::setSpiClockTria
 
 PASS: every refresh is in the BUSY window, none was promoted, the gray waveform ran and is in the window, the plain page ran as FAST, and every frame, the chart and the plain page looked as they do at the profile clock. Raise `displaySpiHz` in the profile only after clean runs at the higher clock on more than one board (REQUIREMENTS: the EPD SPI clock is an open question).
 
+### Front-light tests (T9, T10)
+
+Both light the boost only after a question names the load, every time the light goes from dark to lit: "No load: cancel" (preselected), "J3 panel light" or "J6 LED strip". Nothing else in the test firmware lights it. They read `LED_MONIT` (IO2) through `freeink::adc`, and the SDK monitor's record (`FrontlightManager::monitorDiagnostics()`, freeink-sdk README "Bring-up diagnostics"): the trips since boot with the last trip's `LED_SW` and limit, and the monitor's last reading. The main loop's trip handler switches a tripped light off, which clears `fault()`, before any screen runs. So a trip shows as the light dropping out and the record's count rising, never as `fault()`. `LED_SW` is the pin reading × 9.333.
+
+The pads are read from the GPIO registers (`gpio_get_io_config()` and the output register), never set: IO42 (ADIM) on its LEDC carrier while lit, and held LOW by the GPIO output register while dark; IO40 (COLOR_SEL) at the lit string (HIGH = warm), and LOW (cool) while dark.
+
+### T9 Front light
+
+Confirm lights the boost after the load question; Confirm again switches it off. Up/Down step the brightness through 10, 25, 50, 75 and 100 %. That is the SDK's perceptual curve, so about 2, 9, 32, 62 and 100 % duty, or roughly 0.3, 1.3, 4.2, 8.3 and 13.3 mA of LED current (duty × 13.3 mA). Left switches between the cool and warm strings; while lit, the driver goes dark for at least 3 ms and gets its enable pulse again. Take both strings through every step, then Record, which asks what the light did. Record before anything was lit logs INFO with the dark reading.
+
+It shows:
+
+- the dark reading, taken 0.3 s after the screen opens: `LED_SW` one diode below `LDO_IN`, about 0.25-0.55 V at the pin (fl-offstate-reading). Below 100 mV the monitor cannot see `LED_SW` and its trip is blind, so the test does not light and records FAIL;
+- lit, a reading once a second after each change has settled for 0.3 s (fl-monit-settle), kept per string and step in a table of pin mV, and the SDK monitor's own last reading from its 100 ms tick, with its read and skipped counts;
+- the trips on this screen and since boot, and the trip level;
+- IO42 and IO40 as above, and any pull on IO42, IO40 or IO2 (fl-adim-no-pullup, fl-color-drive, fl-monit-pin);
+- the enable pulse, the dark dwell and the carrier from the profile, for the optional scope check: IO42 LOW for at least 3 ms, HIGH for about 150 µs, then the 25 kHz carrier; IO40 changes only while IO42 is LOW, at least 3 ms after it fell.
+
+50, 100 and 200 ms after every light-up, and at every reading, `LED_SW` above 22 V (2357 mV at the pin) switches the light off at once and records FAIL: an open load or a miswired J3 (fl-j3-mapping-risk). The SDK's own trip is at 23 V, below U10's 24.25 V OVP.
+
+PASS:
+
+- the dark reading between 100 and 700 mV at the pin (above 700 mV, `LED_SW` is above any `LDO_IN`: the boost runs while it should be dark);
+- every lit reading below 22 V; with J3, 11-18 V `LED_SW` (about 15 V at full current, less at 10 %; proposal); with J6, at least 1 V above the dark rail;
+- no trip and no 22 V switch-off;
+- both strings measured at least once;
+- 0.3 s after switching off, the reading back below 700 mV;
+- the pads as above;
+- the operator saw each string light, get brighter at every step, and not flicker.
+
+### T10 Front-light over-voltage trip
+
+This replaces the rebuild with a lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` in PORTING.md B8. Confirm, after the load question, runs about 5 s. Back stops it, and a stopped run records nothing.
+
+| Step | What happens | Expect |
+|---|---|---|
+| 1 | Cool string at 50 % with the profile's trip level (23 V), for 0.6 s | no trip; the monitor's lit reading is kept |
+| 2 | The trip level is lowered in RAM to the lit reading less 2 V or a fifth, whichever is more (12 V for a 15 V string) | a trip within 300 ms; IO42 held LOW by the GPIO register; `LED_MONIT` back below 700 mV |
+| 3 | 2 s | dark: no relight, no second trip, IO42 held LOW |
+| 4 | Switched on again, level still lowered | a second trip within 300 ms |
+| 5 | The profile's level back, switched on, for 1 s | lit, no trip |
+
+It then asks whether the light did that. The trip time runs from the lowering (or the switch-on) to the trip in the SDK's record. A failed step ends the run with FAIL.
+
+The level only ever goes down, never above the profile's. It goes back at the end of every run, on Back, when the screen closes (a sleep included) and whenever the menu opens; a restart restores it anyway.
+
+PASS: every step as in the table, the level back at the profile's, and the operator's yes.
+
+### T11 Touch probe, mapping and gestures
+
+The screen opens on the probe and the mapping:
+
+- the controller and the address it answered at; the probe's result (fresh, or from the RTC cache after a deep-sleep wake; primary or GT911 fallback); for a FocalTech controller, the ID bytes the probe read (0xA3 chip id, 0xA6 firmware, 0xA8 panel id); and the reset pulses this boot;
+- the mapping in force (`swapXY`, `flipX`, `flipY`, and the raw range of each axis after the swap), and whether it is the profile's;
+- the last contact in raw controller units, and where the last tap lands (a cross).
+
+Up/Down step through the eight swap/flip combinations; the ranges follow the raw axis when `swapXY` changes. Keys always work here.
+
+- **Calibrate** (Confirm). Tap five targets one at a time: the corners of the area between the header and the buttons, then its centre. Each tap keeps the raw point of its touch-down, whatever the mapping in force makes of it. After the fifth, the test works out which raw axis follows each panel axis (`swapXY`) and fits a straight line through the five points for each. The line's ends at the panel's edges give `rawMin`/`rawMax`, and a falling line gives a flip. Both lines must correlate at 0.95 or better and span at least 100 raw units; otherwise the calibration fails and nothing changes. The fit goes into force in RAM (`InputManager::setTouchMapping()`), it is logged as INFO with its values, and the check follows. Left puts the profile's mapping back.
+- **Check** (Left, and after a calibration). The five targets again, each tap measured where the mapping in force lands it. PASS: every target within 24 px on each axis (proposal). The record carries `swapXY`, `flipX`, `flipY` and the four ranges for the SDK profile, where they are still a guess (BoardConfig `SILKSCREEN.touch`).
+- **Gestures** (Right). Tap, long-press, drag slowly, and swipe left, right, up and down. Start a drag moving: a finger held still for 0.5 s is a long press. Confirm records, Left clears. PASS: a tap; a long press that fired 0.5 s after the touch-down (20 ms early to 150 ms late); a swipe in each direction; and a drag of at least 8 points with no gap over 40 px between two samples (proposal). The last drag is drawn as a trail.
+
+While the targets or gestures are on, every contact is the test's: the touch buttons do nothing, there is no header back button, and swipes from the left and bottom edges are gestures, not Back or Home. Back stops, and Confirm starts the targets again.
+
+The mapping stays in force until the next boot, so the menu uses it. With no controller found, Record asks whether a tail is fitted: none is a PASS (the board runs touchless, touch-optional); a fitted one is a FAIL.
+
+### T12 Touch sleep command
+
+J4's 3V3 is not switched, so every sleep entry has to put a fitted FT6336U into hibernate (`0xA5 = 0x03`, TP-01).
+
+- **The sleep entry.** Opening T12 after a deep-sleep wake logs the sleep entry that boot woke from, once per boot. That is the result of `prepareTouchForSleep()`, which the sleep path runs through `HalGPIO::prepareForSleep()`, from the SDK's RTC record, with whether its first command was NACKed and needed the reset and a second one (TP-02). Hold POWER to sleep, wake, then open T12. PASS: Asleep.
+- **Hibernate** (Confirm): the same call, now. **Reset+hib** (Left): `resetAndHibernateTouch()`, the path of a sleep after repeated resets (a `TP_RST` pulse, the 300 ms settle, one command; a GT911 has none and is SKIP). Each probes the address before (for information: an FT6336U in Monitor mode may not answer), runs the call and probes again. PASS: Asleep (the command was ACKed), then the address does not answer.
+- After either, touch is off until a restart. **Restart** (Right) asks first. The restarted boot probes the controller with a reset (a software restart does not use the RTC probe cache), so touch works again in the menu.
+
+J4 pin 2 current: a µA meter in place of R42 (3V3 to pin 2), or a 100 Ω resistor there and a meter across it (55 µA = 5.5 mV).
+
+| State | J4 pin 2 |
+|---|---|
+| Awake, untouched for 10 s (Monitor mode) | about 220 µA |
+| Hibernated (after Hibernate, and in deep sleep) | about 55 µA |
+| `TP_RST` (IO11) LOW: a fault, the reset line's ~3 kΩ pull-up in the controller | about 1.1 mA |
+
+`IO11` reads 3.3 V on a meter in every state. No test holds `TP_RST` LOW or writes a controller configuration register.
+
 ## Safety
 
-- **Front light.** The TPS923610 boost must never run without a load. A front-light test asks, every time, that the J3 panel light or a J6 strip is connected, and lights nothing until the operator confirms. Nothing else in the test firmware can light it.
+- **Front light.** The TPS923610 boost must never run without a load. A front-light test asks, every time it lights the boost from dark, which load is connected (the J3 panel light or a J6 strip, with "No load" preselected), and lights nothing without an answer. T9 does not light when `LED_MONIT` reads nothing in the dark, and switches the light off above 22 V. T10 lowers the trip level in RAM only, never raises it, and puts it back on every way out. Nothing else in the test firmware can light it.
+- **Touch.** `TP_RST` is pulsed only by the SDK's own reset (the boot probe, T12's reset path); no test holds it LOW or writes a controller configuration register. T11's mapping changes are in RAM only.
 - **Pins.** Tests never call `pinMode` or `gpio_reset_pin` on IO1, IO2, IO4, IO8, IO9, IO10, IO18, IO40, IO42 or the SD pins (POWER.md ADC-01, REQUIREMENTS PWR-19), and every ADC read goes through `freeink::adc`.
 - **Battery.** A screen that holds auto-sleep off also holds the CPU at full clock. Live readings on battery run for a bounded time or only on USB. The 15-minute ceiling, the 60-minute input cap and the low-battery cutoff are the reader's and still apply on battery.
 - **Sleep and wake.** No new sleep or wake source; `scripts/check_sleep_wake_sources.sh` is unchanged and covers the test code. Timing across a sleep uses a power-button wake and a stopwatch.
@@ -251,12 +336,13 @@ PASS: every refresh is in the BUSY window, none was promoted, the gray waveform 
 - Derive from `testsuite::TestScreen` (`src/activities/testsuite/TestScreen.h`): draw the body in `drawBody()`, name the Confirm/Left/Right actions in `slotLabel()`, act in `onSlot()`, `onStep()` and `onTick()`, and record results with `record(Verdict, "key=%d ...", ...)`. One file per test in `src/activities/testsuite/tests/`; declare its factory in `tests/TestFactories.h` and set it in `TestCatalog.cpp`.
 - `drawBody()` runs on the render task. Take readings, I2C traffic and `usbHostAttached()` in `onStart()`, `onTick()` or `onSlot()` (the loop task), and draw from what they stored.
 - A live reading repaints at most every few seconds (T1 and T2 use 5 s): every repaint runs at the full clock, and a screen that repaints often keeps the board off its idle clock on battery. Never hold auto-sleep off for a live reading.
-- Helpers: `ask()` puts a question to the operator and answers through `onAnswer()`; `msSinceInput()` gives the time since the last key or touch input; `TestPage::setCompact()` switches rows to the small font. A test whose input is the keys returns true from `keysAreTestInput()` and reads `HalGPIO` itself; its Confirm/Left/Right actions then run on a 1.5 s hold as well as on the touch buttons.
+- Helpers: `ask()` puts a question to the operator and answers through `onAnswer()`; `msSinceInput()` gives the time since the last key or touch input; `TestPage::setCompact()` switches rows to the small font; `appendf()` and `addFailure()` (`tests/TextBuffer.h`) build a record's text. A test whose input is the keys returns true from `keysAreTestInput()` and reads `HalGPIO` itself; its Confirm/Left/Right actions then run on a 1.5 s hold as well as on the touch buttons.
+- A test whose input is the touch panel returns true from `touchIsTestInput()` while it is (T11): the touch buttons are not routed and a touch Back (header button, left-edge swipe) does not leave, so only the keys drive the screen. It can keep the bottom-edge swipe from going home by overriding `handleHomeGesture()`. `showsLastResult()` returning false leaves the whole band to the body.
 - UI text is English `constexpr` strings in the test code, not `tr()` keys. This is a deliberate exception to AGENTS.md rule 5: `gen_i18n.py` collects `STR_` keys from every source file whatever its `#if`, so test-only keys would ship in every reader image. Shared screens (popups, Wi-Fi, keyboard) keep `tr()`, with the language pinned to English.
 - The env builds the SDK with `-DFREEINK_DIAGNOSTICS=1`, so the bring-up records in the freeink-sdk README ("Bring-up diagnostics") are available.
 - The main loop and the render task re-apply `SETTINGS.fadingFix` and `SETTINGS.screenInverted` on every pass: a display test changes those fields in RAM, never the renderer or the HAL directly.
 - A display test derives from `PanelRunTest` (`tests/PanelRun.h`). `startRun(steps)` starts a run. `runStep()` draws one frame and refreshes it on the render task. `afterStep()` stores the measurement, and calls `pauseRun()` to hold the frame. `onRunEnd()` asks and records after the closing HALF repaint. `restorePanel()` puts back anything the run changed on the panel. `refreshTimed()`, `refreshAsyncStart()`/`refreshAsyncFinish()` and `grayTimed()` return a `RefreshSample` with what the driver ran. `tests/PanelPatterns.h` has the frames, and `tests/GrayPass.h` has the reader's gray-pass routes.
 - `TestScreen` also offers `onBack()` (use Back for a sub-mode, or to stop a run), `edgeBands()` (edge bands the test draws itself, such as T7's rulers) and `requestCleanRepaint()` (the next repaint is a HALF).
-- A test that needs an SDK object behind the HAL uses `TestSuiteAccess` (`src/activities/testsuite/TestSuiteAccess.h`). The HAL class declares it a friend under `#if CROSSPOINT_TEST_SUITE`, so the reader gains no API. `HalDisplay` does so today.
-- A front-light test calls `confirmLightLoad()` and lights the boost only in `onLightLoadConfirmed()`.
+- A test that needs an SDK object behind the HAL uses `TestSuiteAccess` (`src/activities/testsuite/TestSuiteAccess.h`). The HAL class declares it a friend under `#if CROSSPOINT_TEST_SUITE`, so the reader gains no API. `HalDisplay` (the panel driver), `HalGPIO` (`InputManager`) and `HalFrontlight` (`FrontlightManager`) do so today.
+- A front-light test calls `confirmLightLoad()` and lights the boost only in `onLightLoadConfirmed(load)`, which says whether J3 or J6 was named. `tests/LightCheck.h` reads `LED_MONIT` and the SDK monitor's record, reads a pad's drive from the registers, and lowers and restores the trip level.
 - Scratch files go in `/.silkscreen-test/` and end in `.tmp`, never `.txt` (a book type).
