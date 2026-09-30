@@ -25,6 +25,11 @@ class HalClock {
   // True if an RTC is present on this device
   bool isAvailable() const { return _available; }
 
+  // True if the RTC is present and holds a valid time. Reads the RTC (not the
+  // cache): false while the oscillator-stop / voltage-low flag is set, i.e.
+  // until the time has been set again.
+  bool hasValidTime() const;
+
   // Set the POSIX TZ rule (e.g. "CET-1CEST,M3.5.0,M10.5.0/3") applied to every
   // read. nullptr/empty falls back to UTC. Drops the read cache so the change
   // shows immediately.

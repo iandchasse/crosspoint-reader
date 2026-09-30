@@ -1,5 +1,6 @@
 #include "HalClock.h"
 
+#include <BoardConfig.h>
 #include <Logging.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
@@ -10,6 +11,17 @@ HalClock halClock;  // Singleton instance
 void HalClock::begin() {
   _available = _sdkRtc.begin();
   LOG_INF("CLK", _available ? "SDK RTC found" : "RTC not found");
+  // Boards whose RTC has no backup supply lose the time routinely; say so, since
+  // the clock stays hidden until NTP or a manual set restores it.
+  if (_available && BoardConfig::ACTIVE.sensors.rtcResyncWhenInvalid && !hasValidTime()) {
+    LOG_INF("CLK", "RTC time invalid (oscillator stopped); it is set again on the next Wi-Fi connection");
+  }
+}
+
+bool HalClock::hasValidTime() const {
+  if (!_available) return false;
+  Rtc::DateTime dt;
+  return _sdkRtc.now(dt);
 }
 
 namespace {

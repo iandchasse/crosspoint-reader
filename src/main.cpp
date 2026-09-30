@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <Epub.h>
 #include <FontCacheManager.h>
@@ -20,6 +21,7 @@
 #include <WiFi.h>
 #include <XteinkDetect.h>
 #include <builtinFonts/all.h>
+#include <esp_system.h>
 
 #include <cstring>
 
@@ -300,6 +302,43 @@ void enterDeepSleep(bool fromTimeout = false) {
   powerManager.startDeepSleep(gpio);
 }
 
+// Low-battery cutoff at boot (PowerConfig::lowBatteryCutoffMv; 0 on boards
+// without one). A normal boot pays for one averaged reading. Only a reading near
+// the cutoff takes the slow path: wait for the battery divider (after a cold
+// power-on its reservoir capacitor is still charging) and the charge-status
+// ladder to settle, then take BatteryMonitor::CUTOFF_SAMPLES readings a second
+// apart. A board still below the cutoff goes back to sleep before SD or the
+// panel draw any current.
+void sleepIfBatteryEmptyAtBoot() {
+  const uint16_t cutoffMv = BoardConfig::ACTIVE.power.lowBatteryCutoffMv;
+  if (cutoffMv == 0) return;
+  constexpr uint16_t kQuickCheckMarginMv = 100;
+  const BatteryMonitor battery;
+  const uint16_t quickMv = battery.readMillivoltsAveraged(16);
+  if (quickMv >= cutoffMv + kQuickCheckMarginMv) return;
+
+  const unsigned long dividerSettledAt = esp_reset_reason() == ESP_RST_POWERON ? 2500 : 0;
+  const unsigned long ladderSettledAt =
+      BoardConfig::hasChargeStatusLadder() ? BoardConfig::ACTIVE.chargeLadder.settleAfterBootMs : 0;
+  const unsigned long waitUntil = dividerSettledAt > ladderSettledAt ? dividerSettledAt : ladderSettledAt;
+  LOG_INF("PWR", "Battery reads %u mV at boot; checking it against the %u mV cutoff", quickMv, cutoffMv);
+  while (millis() < waitUntil) delay(10);
+
+  bool below = false;
+  for (uint8_t i = 0; i < BatteryMonitor::CUTOFF_SAMPLES; ++i) {
+    if (i > 0) delay(1010);  // BatteryMonitor takes at most one reading per second
+    BatteryMonitor::pollChargeStatus();
+    bool known = false;
+    uint16_t mv = 0;
+    below = battery.isBelowCutoff(&known, &mv);
+    if (!known || mv > cutoffMv) break;  // external power, no cell, or above the cutoff
+  }
+  if (!below) return;
+  LOG_ERR("PWR", "Battery below the %u mV cutoff at boot; sleeping", cutoffMv);
+  Storage.prepareForDeepSleep();
+  powerManager.startDeepSleep(gpio);
+}
+
 void setupDisplayAndFonts(bool seamless = false) {
 #if !FREEINK_MCU_C3
   // C3 resolves its controller in HalGPIO::begin() before SPI claims the
@@ -402,6 +441,8 @@ void setup() {
   LOG_INF("MAIN", "Device: %s", BoardConfig::ACTIVE.name);
 #endif
 
+  sleepIfBatteryEmptyAtBoot();
+
   // SD Card Initialization
   // We need 6 open files concurrently when parsing a new chapter
   if (!Storage.begin()) {
@@ -470,7 +511,11 @@ void setup() {
       // POWERON (native-USB), so a flash would otherwise be misclassified as a
       // USB-power cold boot and sleep. Sleeping any of these here would strand
       // the device in a USB-replug boot loop (or sleep right after a flash).
-      // Silkscreen has no hardware off (3V3 always live) and restarts only on USB after a battery-protection trip.
+      // Silkscreen has no hardware off (3V3 always live) and, after a battery-
+      // protection trip, restarts only when USB is plugged in. Its USB presence
+      // comes from the USB_STAT ladder, which is still unknown this early in
+      // boot, so a USB cold boot classifies as Other and boots normally; this
+      // term keeps that outcome should the ladder ever be known at boot.
       break;
 #else
       Storage.prepareForDeepSleep();
@@ -726,6 +771,25 @@ void loop() {
     enterDeepSleep(true);
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
+  }
+
+  // Low-battery cutoff (PowerConfig::lowBatteryCutoffMv; 0 on boards without
+  // one). Checked once a second, only with the radio off: the divider reads low
+  // under Wi-Fi TX load. BatteryMonitor needs several consecutive readings at or
+  // below the cutoff and never fires while external power carries the load.
+  if (BoardConfig::ACTIVE.power.lowBatteryCutoffMv > 0 && WiFi.getMode() == WIFI_MODE_NULL) {
+    static unsigned long lastCutoffCheckMs = 0;
+    if (millis() - lastCutoffCheckMs >= 1000) {
+      lastCutoffCheckMs = millis();
+      static const BatteryMonitor cutoffBattery;
+      uint16_t mv = 0;
+      if (cutoffBattery.isBelowCutoff(nullptr, &mv)) {
+        LOG_ERR("PWR", "Battery at %u mV, below the %u mV cutoff; sleeping", mv,
+                BoardConfig::ACTIVE.power.lowBatteryCutoffMv);
+        enterDeepSleep();
+        return;
+      }
+    }
   }
 
   // A hold that woke the device must be released before it can count as a new

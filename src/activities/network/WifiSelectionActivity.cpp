@@ -1,5 +1,6 @@
 #include "WifiSelectionActivity.h"
 
+#include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <HalClock.h>
 #include <I18n.h>
@@ -519,8 +520,11 @@ void WifiSelectionActivity::checkConnectionStatus() {
 
     // Sync RTC from NTP on the first successful WiFi connection only. The DS3231
     // drifts ~2 ppm so one sync is enough; users can force a re-sync from
-    // Settings > System > Clock > Sync clock now.
-    if (halClock.isAvailable() && !SETTINGS.clockHasBeenSynced) {
+    // Settings > System > Clock > Sync clock now. Boards whose RTC has no backup
+    // supply lose the time routinely, so they also re-sync whenever it is invalid.
+    const bool clockLost =
+        BoardConfig::ACTIVE.sensors.rtcResyncWhenInvalid && halClock.isAvailable() && !halClock.hasValidTime();
+    if (halClock.isAvailable() && (!SETTINGS.clockHasBeenSynced || clockLost)) {
       if (halClock.syncFromNTP()) {
         SETTINGS.clockHasBeenSynced = 1;
         SETTINGS.saveToFile();

@@ -141,6 +141,9 @@ void HalGPIO::begin() {
 
 void HalGPIO::update() {
   inputMgr.update();
+  // Boards with an analog charge-status ladder sample it here, rate-limited by
+  // the SDK; every other caller (setup, render task) only reads its cache.
+  if (BoardConfig::hasChargeStatusLadder()) BatteryMonitor::pollChargeStatus();
   const bool connected = isUsbConnected();
   usbStateChanged = (connected != lastUsbConnected);
   lastUsbConnected = connected;
@@ -162,9 +165,13 @@ bool HalGPIO::rawInputActive() {
   if (inputMgr.isPowerButtonPhysicallyPressed()) return true;
   InputManager::ButtonAdcSample g1{}, g2{};
   inputMgr.readButtonAdc(g1, g2);
-  // The Xteink ladder idles at the ADC full-scale rail (~4095); every button band sits below 3900.
+  // ADC ladders idle at the full-scale rail (~4095); Xteink button bands sit below 3900. A decoded key also
+  // counts, for ladder keys that read close to the rail.
   constexpr int kIdleRailMin = 4000;
-  return (g1.raw >= 0 && g1.raw < kIdleRailMin) || (g2.raw >= 0 && g2.raw < kIdleRailMin);
+  const auto active = [](const InputManager::ButtonAdcSample& g) {
+    return g.button >= 0 || (g.raw >= 0 && g.raw < kIdleRailMin);
+  };
+  return active(g1) || active(g2);
 }
 
 unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
@@ -254,6 +261,15 @@ bool HalGPIO::isUsbConnected() const {
       delay(2);
     }
     return false;
+  }
+  if (BoardConfig::hasChargeStatusLadder()) {
+    // No VBUS sense: infer USB from the decoded charge-status ladder (charger idle,
+    // charging or complete). Until it decodes (first ~1.5 s, unknown band), keep the
+    // last known answer, which starts as "not connected" at boot.
+    static const BatteryMonitor ladderBattery;
+    bool known = false;
+    const bool present = ladderBattery.isExternalPowerPresent(&known);
+    return known ? present : lastUsbConnected;
   }
   if (BoardConfig::ACTIVE.usbDetect >= 0) {
     return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;

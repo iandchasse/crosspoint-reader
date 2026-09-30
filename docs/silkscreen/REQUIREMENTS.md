@@ -27,7 +27,7 @@ Derived from `de-link_pcb/docs/HARDWARE.md` (authoritative) and `de-link_pcb/DES
 | GPIO15 | SD CMD (via R23 33 Ohm) | 10k pull-up to SD_VDD. Also XTAL_32K_P, so no external 32k crystal. HARDWARE.md:1231 |
 | GPIO16 | SD DAT3 (via R22 33 Ohm) | 10k pull-up to SD_VDD. Also XTAL_32K_N. HARDWARE.md:1232 |
 | GPIO17 | SD DAT2 (via R21 33 Ohm) | 10k pull-up to SD_VDD. HARDWARE.md:1233 |
-| GPIO18 | PWR_BUTTON (active HIGH): power/wake | SW10 to 3V3 through R62 10k; R76 100k pull-down; pressed ~3.0 V. No internal pulls. ext0 wake on HIGH. HARDWARE.md:1035-1038, 1234 |
+| GPIO18 | PWR_BUTTON (active HIGH): power/wake | SW10 to 3V3 through R62 10k; R76 100k pull-down; pressed ~3.0 V. No internal pulls. ext0 or ext1 ANY_HIGH wake on HIGH. HARDWARE.md:1035-1038, 1234 |
 | GPIO19 | USB D- | Native USB (USB-Serial-JTAG / OTG). Do not reconfigure. HARDWARE.md:530-532, 1236 |
 | GPIO20 | USB D+ | Native USB. HARDWARE.md:530-532, 1237 |
 | GPIO21 | EPD DC (via R32 33 Ohm) | Required: BS=GND selects 4-wire SPI. HARDWARE.md:652, 1246 |
