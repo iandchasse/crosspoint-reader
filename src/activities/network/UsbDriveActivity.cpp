@@ -1,6 +1,8 @@
 #include "UsbDriveActivity.h"
 
 #include <Arduino.h>
+#include <BatteryMonitor.h>
+#include <BoardConfig.h>
 #include <HalStorage.h>
 #include <I18n.h>
 
@@ -45,6 +47,12 @@ void UsbDriveActivity::loop() {
       state = nextState;
       requestUpdate();
     }
+  }
+
+  if (cablePulledOnBattery()) {
+    LOG_INF("USB", "USB cable gone (charge status on battery); ending USB Drive session");
+    restartToHome();
+    return;
   }
 
   // A battery-powered USB device may stay mounted after cable removal. End
@@ -181,6 +189,25 @@ void UsbDriveActivity::buildDriveScreen(UiScreen& screen) const {
   if (secondaryDetail) {
     screen.target().text(screen.takeTop(secondaryDetailHeight), secondaryDetail, detailStyle);
   }
+}
+
+// There is no VBUS sense, and TinyUSB may never see a detach on battery, so a
+// board with an analog charge-status ladder watches the cable through it: once
+// it has shown external power this session (the ladder samples at 1 Hz and
+// debounces), a steady "on battery" means the cable left.
+bool UsbDriveActivity::cablePulledOnBattery() {
+  if (!BoardConfig::hasChargeStatusLadder()) return false;
+  using BoardConfig::ChargeState;
+  const ChargeState charge = BatteryMonitor::chargeStatus();
+  if (charge == ChargeState::ExternalIdle || charge == ChargeState::Charging || charge == ChargeState::Complete) {
+    sawExternalPower = true;
+  }
+  if (!sawExternalPower || charge != ChargeState::OnBattery) {
+    onBatterySince = 0;
+    return false;
+  }
+  if (onBatterySince == 0) onBatterySince = millis() | 1UL;
+  return millis() - onBatterySince >= CABLE_PULLED_TIMEOUT_MS;
 }
 
 void UsbDriveActivity::restartToHome() {

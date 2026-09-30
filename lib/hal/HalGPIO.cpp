@@ -113,7 +113,7 @@ HalGPIO::DeviceType detectDeviceTypeWithFingerprint() {
 
 }  // namespace
 
-void HalGPIO::begin() {
+void HalGPIO::begin(const bool deferTouch) {
 #if FREEINK_MCU_C3
   _deviceType = detectDeviceTypeWithFingerprint();
   BoardConfig::selectDevice(deviceIsX3() ? BoardConfig::Board::XteinkX3 : BoardConfig::Board::XteinkX4);
@@ -136,8 +136,10 @@ void HalGPIO::begin() {
 #else
   _deviceType = DeviceType::X4;
 #endif
-  inputMgr.begin();
+  inputMgr.begin(/*startTouch=*/!deferTouch);
 }
+
+void HalGPIO::startTouch() { inputMgr.startTouch(); }
 
 void HalGPIO::update() {
   inputMgr.update();

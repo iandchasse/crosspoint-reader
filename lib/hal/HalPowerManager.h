@@ -23,6 +23,9 @@ class HalPowerManager {
   enum LockMode { None, NormalSpeed };
   LockMode currentLockMode = None;
   SemaphoreHandle_t modeMutex = nullptr;  // Protect access to currentLockMode
+  unsigned long lastClientTrafficMs = 0;  // noteClientTraffic()
+
+  [[noreturn]] void sleepImpl(HalGPIO& gpio, bool sleepCommands) const;
 
  public:
 #if BOARD_HAS_PSRAM
@@ -41,6 +44,22 @@ class HalPowerManager {
   // Setup wake up GPIO and enter deep sleep
   // Should be called inside main loop() to handle the currentLockMode
   void startDeepSleep(HalGPIO& gpio) const;
+  // Deep sleep without a word to any peripheral (no touch sleep command): for a
+  // boot that sleeps before starting them, or that must not rerun code that may
+  // have crashed it. Pins and rails are parked exactly as startDeepSleep() does.
+  void startDeepSleepMinimal(HalGPIO& gpio) const;
+
+  // A network client talked to the device (web server request or WebSocket
+  // frame). PowerConfig::awakeCeilingMin counts idle time from the later of this
+  // and the last input.
+  void noteClientTraffic() { lastClientTrafficMs = millis(); }
+  unsigned long msSinceClientTraffic() const { return millis() - lastClientTrafficMs; }
+
+  // True when writing a firmware image now could brown out: on battery below
+  // PowerConfig::firmwareUpdateMinMv (less PowerConfig::cutoffRadioAllowanceMv
+  // while the radio is on). False on boards without the check, on external
+  // power, and with no cell fitted.
+  bool firmwareUpdateBlockedByBattery() const;
 
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;

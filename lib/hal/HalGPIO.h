@@ -66,8 +66,11 @@ class HalGPIO {
   // Keyed off the active BoardConfig profile, not the X3/X4 runtime detection.
   bool hasEdgeSideButtons() const;
 
-  // Start button GPIO and setup SPI for screen and SD card
-  void begin();
+  // Start button GPIO and setup SPI for screen and SD card. deferTouch leaves the
+  // touch probe to startTouch(), so a wake can be judged before any I2C traffic.
+  void begin(bool deferTouch = false);
+  // Probe and start the touch panel after begin(true). No-op once started.
+  void startTouch();
 
   // Button input methods
   void update();

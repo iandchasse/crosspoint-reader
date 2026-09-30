@@ -29,9 +29,15 @@ class OtaUpdateActivity : public Activity {
   // Cancel/Update confirmation over the version info (replaces the old
   // hand-rolled bottom tap rects).
   OptionPopup confirmPopup;
+  // Wi-Fi was switched off at a terminal state (PowerConfig::radioOffWhenIdle);
+  // onExit() still restarts to clear the heap the radio left fragmented.
+  bool radioReleased = false;
 
   void onWifiSelectionComplete(bool success);
   void runUpdateInstall();
+  // Enter NO_UPDATE or FAILED: nothing left to do but leave the screen.
+  void finishCheck(State terminalState, const char* detail = nullptr);
+  static bool radioOffWhenIdle();
 
  public:
   explicit OtaUpdateActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -41,5 +47,9 @@ class OtaUpdateActivity : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override { return state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS; }
-  bool skipLoopDelay() override { return true; }  // Prevent power-saving mode
+  // Prevent power-saving mode while the update works. With
+  // PowerConfig::radioOffWhenIdle only then: a result screen needs no spinning.
+  bool skipLoopDelay() override {
+    return !radioOffWhenIdle() || state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS;
+  }
 };

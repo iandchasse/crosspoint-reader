@@ -68,11 +68,17 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+void HalPowerManager::startDeepSleep(HalGPIO& gpio) const { sleepImpl(gpio, /*sleepCommands=*/true); }
+
+void HalPowerManager::startDeepSleepMinimal(HalGPIO& gpio) const { sleepImpl(gpio, /*sleepCommands=*/false); }
+
+void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
   // A touch controller on an always-on rail goes to sleep, then the shared I2C
   // bus is released with nothing in flight (no-ops on boards without them). Both
-  // before the serial teardown below, so their logs still reach the host.
-  gpio.prepareForSleep();
+  // before the serial teardown below, so their logs still reach the host. The
+  // bus release is GPIO-level only (it frees a line a slave holds LOW), so even
+  // a minimal sleep entry runs it.
+  if (sleepCommands) gpio.prepareForSleep();
   if (!freeink::i2c::releaseSensorBusForSleep()) {
     LOG_ERR("PWR", "I2C SDA still held LOW after bus recovery");
   }
@@ -146,6 +152,21 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
   // Waits for the power button to be physically released (so holding it doesn't
   // immediately wake the device again), then arms the wake source and sleeps.
   freeink::PowerManager::deepSleepUntilPowerButton();
+}
+
+bool HalPowerManager::firmwareUpdateBlockedByBattery() const {
+  const uint16_t minMv = BoardConfig::ACTIVE.power.firmwareUpdateMinMv;
+  if (minMv == 0) return false;
+  const BatteryMonitor battery;
+  bool known = false;
+  if (battery.isExternalPowerPresent(&known) && known) return false;  // USB carries the write
+  const uint16_t mv = battery.readMillivoltsAveraged(16);
+  if (mv < BatteryMonitor::CELL_PRESENT_MIN_MV) return false;  // no cell: USB powers the board
+  const uint16_t allowanceMv = WiFi.getMode() != WIFI_MODE_NULL ? BoardConfig::ACTIVE.power.cutoffRadioAllowanceMv : 0;
+  if (mv + allowanceMv >= minMv) return false;
+  LOG_ERR("PWR", "Battery at %u mV (+%u mV radio allowance), below the %u mV a firmware write needs", mv, allowanceMv,
+          minMv);
+  return true;
 }
 
 uint16_t HalPowerManager::getBatteryPercentage() const {

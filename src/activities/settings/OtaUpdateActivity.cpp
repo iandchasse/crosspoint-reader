@@ -1,6 +1,8 @@
 #include "OtaUpdateActivity.h"
 
+#include <BoardConfig.h>
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 #include <WiFi.h>
 
@@ -10,6 +12,24 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/OtaUpdater.h"
+
+bool OtaUpdateActivity::radioOffWhenIdle() { return BoardConfig::ACTIVE.power.radioOffWhenIdle; }
+
+void OtaUpdateActivity::finishCheck(const State terminalState, const char* detail) {
+  {
+    RenderLock lock(*this);
+    failedDetail = detail;
+    state = terminalState;
+  }
+  // PowerConfig::radioOffWhenIdle: the result screen only waits for the user to
+  // leave, so the radio goes off now instead of when they do.
+  if (radioOffWhenIdle() && WiFi.getMode() != WIFI_MODE_NULL) {
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    radioReleased = true;
+    LOG_DBG("OTA", "Update check over; Wi-Fi off");
+  }
+}
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
@@ -31,27 +51,18 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   // (expected until per-board assets are published) — not a failure.
   if (res == OtaUpdater::NO_UPDATE) {
     LOG_DBG("OTA", "No firmware asset for this board in latest release");
-    {
-      RenderLock lock(*this);
-      state = NO_UPDATE;
-    }
+    finishCheck(NO_UPDATE);
     return;
   }
   if (res != OtaUpdater::OK) {
     LOG_DBG("OTA", "Update check failed: %d", res);
-    {
-      RenderLock lock(*this);
-      state = FAILED;
-    }
+    finishCheck(FAILED);
     return;
   }
 
   if (!updater.isUpdateNewer()) {
     LOG_DBG("OTA", "No new update available");
-    {
-      RenderLock lock(*this);
-      state = NO_UPDATE;
-    }
+    finishCheck(NO_UPDATE);
     return;
   }
 
@@ -64,6 +75,13 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   // matching the pre-popup layout (Back = cancel, Confirm = update).
   confirmPopup.show(tr(STR_NEW_UPDATE), options, 2, 1, [this](const int idx) {
     if (idx == 1) {
+      // PowerConfig::firmwareUpdateMinMv: a write that browns out halfway is
+      // worse than no update.
+      if (powerManager.firmwareUpdateBlockedByBattery()) {
+        finishCheck(FAILED, tr(STR_BATTERY_TOO_LOW_FOR_UPDATE));
+        requestUpdate();
+        return;
+      }
       runUpdateInstall();
     } else {
       finish();
@@ -91,10 +109,13 @@ void OtaUpdateActivity::onExit() {
   // Success path reboots via the SHUTTING_DOWN state's plain ESP.restart()
   // (loop() above) so the new firmware boots normally. Back-out paths land
   // here with wifi still active; silent-restart to free the LWIP/mbedTLS
-  // fragmentation, same as the other wifi activities.
-  if (WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    delay(30);
+  // fragmentation, same as the other wifi activities. A radio already switched
+  // off at a terminal state still leaves that fragmentation behind.
+  if (WiFi.getMode() != WIFI_MODE_NULL || radioReleased) {
+    if (WiFi.getMode() != WIFI_MODE_NULL) {
+      WiFi.disconnect(false);
+      delay(30);
+    }
     silentRestart();
   }
 }
@@ -190,11 +211,7 @@ void OtaUpdateActivity::runUpdateInstall() {
 
   if (res != OtaUpdater::OK) {
     LOG_DBG("OTA", "Update failed: %d", res);
-    {
-      RenderLock lock(*this);
-      failedDetail = res == OtaUpdater::WRONG_DEVICE_ERROR ? tr(STR_FIRMWARE_WRONG_DEVICE) : nullptr;
-      state = FAILED;
-    }
+    finishCheck(FAILED, res == OtaUpdater::WRONG_DEVICE_ERROR ? tr(STR_FIRMWARE_WRONG_DEVICE) : nullptr);
     requestUpdate();
     return;
   }

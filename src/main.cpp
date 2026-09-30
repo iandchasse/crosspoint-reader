@@ -16,6 +16,7 @@
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <PowerManager.h>
 #include <SPI.h>
 #include <VectorFontSupport.h>
 #include <WiFi.h>
@@ -145,6 +146,19 @@ constexpr uint32_t SILENT_REBOOT_TARGET_READER = 1;
 constexpr uint32_t SILENT_REBOOT_TARGET_SETTINGS = 2;
 constexpr uint32_t SILENT_REBOOT_TARGET_MAX = SILENT_REBOOT_TARGET_SETTINGS;
 constexpr uint32_t SILENT_REBOOT_LIGHT_ON = 1U << 0;
+
+// PowerConfig::earlyWakeDecision: Short Power Button Press lives on SD, which the
+// early sleep-or-boot decision must not wait for. Every sleep entry that had the
+// settings loaded leaves its wake rule here (RTC memory survives deep sleep);
+// any other value, such as a power-on's garbage, means unknown.
+RTC_NOINIT_ATTR uint32_t sleepWakePolicy;
+constexpr uint32_t WAKE_POLICY_HOLD = 0x57414B48;   // "WAKH": the button must still be held at verification
+constexpr uint32_t WAKE_POLICY_CLICK = 0x57414B43;  // "WAKC": a click wakes (Short Power Button Press = Sleep)
+static bool settingsLoaded = false;
+
+// PowerConfig::abnormalResetLimit counts resets in a row; a session that stays up
+// this long ends the run.
+constexpr unsigned long HEALTHY_UPTIME_MS = 60UL * 1000UL;
 
 // How the device is coming back to life, resolved once at boot. Both resume
 // flows suppress the splash and leave the panel holding its pre-boot frame; a
@@ -299,7 +313,51 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+  if (BoardConfig::ACTIVE.power.earlyWakeDecision && settingsLoaded) {
+    sleepWakePolicy =
+        SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ? WAKE_POLICY_CLICK : WAKE_POLICY_HOLD;
+  }
   powerManager.startDeepSleep(gpio);
+}
+
+// PowerConfig::abnormalResetLimit (0 on boards without one): after that many
+// panics, watchdog resets, brown-outs or aborted sleep entries in a row, go back
+// to deep sleep at once, before SD, touch, the panel or the radio start and with
+// no peripheral command (any of them may be what crashed). A crash or brown-out
+// loop then costs one short boot per power-button press instead of boot after
+// boot at tens of mA; the press's deep-sleep wake starts a new count.
+static void sleepIfResetLoop() {
+  const uint8_t limit = BoardConfig::ACTIVE.power.abnormalResetLimit;
+  if (limit == 0) return;
+  const auto aborted = freeink::PowerManager::takeAbortedSleepInfo();
+  if (aborted.aborted) {
+    LOG_ERR("PWR", "The last deep-sleep entry aborted (wake cause %d, power pin %d)", aborted.wakeupCause,
+            aborted.wakePinLevel);
+  }
+  const uint8_t count = freeink::PowerManager::countAbnormalResets(aborted.aborted);
+  if (count < limit) {
+    if (count > 0) LOG_INF("PWR", "Abnormal reset %u in a row (limit %u)", count, limit);
+    return;
+  }
+  LOG_ERR("PWR", "%u abnormal resets in a row; sleeping until the power button", count);
+  freeink::PowerManager::clearAbnormalResets();
+  powerManager.startDeepSleepMinimal(gpio);
+}
+
+// The panel controller probe some boards need before display.begin().
+static void resolvePanelController() {
+#if !FREEINK_MCU_C3
+  // C3 resolves its controller in HalGPIO::begin() before SPI claims the
+  // display pins. X4 Pro skips that C3-only path, so probe here before
+  // display.begin() selects and initializes its panel driver.
+  static bool controllerResolved = false;
+  if (!controllerResolved) {
+    controllerResolved = true;
+    if (freeink::applyXteinkDisplayController()) {
+      LOG_DBG("MAIN", "Panel controller: UltraChip UC81xx variant detected");
+    }
+  }
+#endif
 }
 
 // Low-battery cutoff at boot (PowerConfig::lowBatteryCutoffMv; 0 on boards
@@ -335,24 +393,20 @@ void sleepIfBatteryEmptyAtBoot() {
   }
   if (!below) return;
   LOG_ERR("PWR", "Battery below the %u mV cutoff at boot; sleeping", cutoffMv);
+  if (esp_reset_reason() != ESP_RST_DEEPSLEEP) {
+    // No sleep entry put the panel into deep sleep before this boot (power-on,
+    // brown-out, crash), so it may still be in normal mode. Begin it without a
+    // refresh and send it the deep-sleep command.
+    resolvePanelController();
+    display.begin(/*seamless=*/true);
+    display.deepSleep();
+  }
   Storage.prepareForDeepSleep();
   powerManager.startDeepSleep(gpio);
 }
 
 void setupDisplayAndFonts(bool seamless = false) {
-#if !FREEINK_MCU_C3
-  // C3 resolves its controller in HalGPIO::begin() before SPI claims the
-  // display pins. X4 Pro skips that C3-only path, so probe here before
-  // display.begin() selects and initializes its panel driver.
-  static bool controllerResolved = false;
-  if (!controllerResolved) {
-    controllerResolved = true;
-    if (freeink::applyXteinkDisplayController()) {
-      LOG_DBG("MAIN", "Panel controller: UltraChip UC81xx variant detected");
-    }
-  }
-#endif
-
+  resolvePanelController();
   display.begin(seamless);
   renderer.begin();
   activityManager.begin();
@@ -400,6 +454,14 @@ void setup() {
 #endif
 #endif
 
+  // PowerConfig::releaseWaitMaxMs: the last sleep began with the power button
+  // still held and woke on its release, which asks for nothing. Sleep again
+  // before any peripheral starts.
+  if (freeink::PowerManager::takeReleaseWake()) {
+    LOG_DBG("MAIN", "Woke on the power button's release; sleeping again");
+    powerManager.startDeepSleepMinimal(gpio);
+  }
+
   HalSystem::begin();
   // checkPanic() clears the watchdog capture marker after a successful SD
   // dump, so retain the boot classification for the later activity route.
@@ -415,7 +477,10 @@ void setup() {
   silentRebootTarget = 0;
   silentRebootPayload = 0;
 
-  gpio.begin();
+  sleepIfResetLoop();
+
+  const bool earlyWakeDecision = BoardConfig::ACTIVE.power.earlyWakeDecision;
+  gpio.begin(/*deferTouch=*/earlyWakeDecision);
   powerManager.begin();
 
   const auto wakeupReason = gpio.getWakeupReason();
@@ -424,6 +489,18 @@ void setup() {
   // click-to-wake is a setting, and an X4 battery power-off cuts all power, so
   // only SD state survives to the next boot.
   const bool wakeHoldVerified = wakeupReason != HalGPIO::WakeupReason::PowerButton || gpio.verifyPowerButtonWakeup();
+  const bool unverifiedWake = wakeupReason == HalGPIO::WakeupReason::PowerButton && !wakeHoldVerified;
+  if (earlyWakeDecision) {
+    // PowerConfig::earlyWakeDecision: decide now, before touch, the RTC, SD, the
+    // settings, the light, the panel or the radio start, from the wake rule the
+    // last sleep entry left in RTC memory. An unknown rule waits for the
+    // settings below, as on other boards.
+    if (unverifiedWake && sleepWakePolicy == WAKE_POLICY_HOLD) {
+      LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
+      powerManager.startDeepSleep(gpio);
+    }
+    gpio.startTouch();
+  }
 
   // X4 Pro and X4 Classic both map BTN_UP to GPIO0 — an ESP32-S3 boot strap — so
   // gate recovery on the non-strap Down key (GPIO7) to avoid a stuck-in-recovery loop.
@@ -447,6 +524,13 @@ void setup() {
   // We need 6 open files concurrently when parsing a new chapter
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
+    if (earlyWakeDecision && unverifiedWake && sleepWakePolicy != WAKE_POLICY_CLICK) {
+      // No settings can show that a click wakes this device, so an unverified
+      // wake is a ghost wake, SD card or not.
+      LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
+      Storage.prepareForDeepSleep();
+      powerManager.startDeepSleep(gpio);
+    }
     setupDisplayAndFonts(isSilentReboot);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
     return;
@@ -471,6 +555,7 @@ void setup() {
     SETTINGS.readerMenuStyle = CrossPointSettings::READER_MENU_TOOLBAR;
   }
   SETTINGS.loadFromFile();
+  settingsLoaded = true;
   // Push the saved timezone's POSIX rule into the clock (migrating the legacy
   // UTC-offset setting on first boot after the update).
   timezones::applyToClock();
@@ -690,10 +775,21 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
-  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity() ||
-      activityManager.preventAutoSleep()) {
+  static unsigned long lastInputTime = millis();
+  const bool userInput =
+      gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity();
+  if (userInput) lastInputTime = millis();
+  if (userInput || activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
+  }
+
+  if (BoardConfig::ACTIVE.power.abnormalResetLimit > 0) {
+    static bool resetRunEnded = false;
+    if (!resetRunEnded && millis() >= HEALTHY_UPTIME_MS) {
+      resetRunEnded = true;
+      freeink::PowerManager::clearAbnormalResets();
+    }
   }
 
   // Let wake continue as soon as its hold has been verified. The release can
@@ -775,18 +871,36 @@ void loop() {
     return;
   }
 
+  // Battery awake ceiling (PowerConfig::awakeCeilingMin; 0 on boards without
+  // one). On battery, a screen that holds auto-sleep off (network, keyboard,
+  // update) or a Never timeout still ends once nothing has pressed a key or
+  // talked to the web server for this long. enterDeepSleep() drops Wi-Fi. A
+  // timeout the user set still governs every other screen.
+  if (const unsigned long ceilingMs = BoardConfig::ACTIVE.power.awakeCeilingMin * 60UL * 1000UL; ceilingMs > 0) {
+    const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep();
+    if (!governedByTimeout && millis() - lastInputTime >= ceilingMs &&
+        powerManager.msSinceClientTraffic() >= ceilingMs && !gpio.isUsbConnected()) {
+      LOG_INF("SLP", "No input or client traffic for %u min on battery; sleeping",
+              BoardConfig::ACTIVE.power.awakeCeilingMin);
+      enterDeepSleep(true);
+      return;
+    }
+  }
+
   // Low-battery cutoff (PowerConfig::lowBatteryCutoffMv; 0 on boards without
-  // one). Checked once a second, only with the radio off: the divider reads low
-  // under Wi-Fi TX load. BatteryMonitor needs several consecutive readings at or
-  // below the cutoff and never fires while external power carries the load.
-  if (BoardConfig::ACTIVE.power.lowBatteryCutoffMv > 0 && WiFi.getMode() == WIFI_MODE_NULL) {
+  // one), checked once a second. The divider reads low under the radio's load,
+  // so with Wi-Fi on the reading is allowed PowerConfig::cutoffRadioAllowanceMv
+  // below the cutoff. BatteryMonitor needs several consecutive readings at or
+  // below it and never fires while external power carries the load.
+  if (BoardConfig::ACTIVE.power.lowBatteryCutoffMv > 0) {
     static unsigned long lastCutoffCheckMs = 0;
     if (millis() - lastCutoffCheckMs >= 1000) {
       lastCutoffCheckMs = millis();
       static const BatteryMonitor cutoffBattery;
+      const bool radioOn = WiFi.getMode() != WIFI_MODE_NULL;
       uint16_t mv = 0;
-      if (cutoffBattery.isBelowCutoff(nullptr, &mv)) {
-        LOG_ERR("PWR", "Battery at %u mV, below the %u mV cutoff; sleeping", mv,
+      if (cutoffBattery.isBelowCutoff(nullptr, &mv, radioOn)) {
+        LOG_ERR("PWR", "Battery at %u mV%s, below the %u mV cutoff; sleeping", mv, radioOn ? " with Wi-Fi on" : "",
                 BoardConfig::ACTIVE.power.lowBatteryCutoffMv);
         enterDeepSleep();
         return;

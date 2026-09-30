@@ -4,6 +4,7 @@
 #include <BoardConfig.h>
 #include <FsHelpers.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <LibraryBuilder.h>
 #include <Logging.h>
@@ -146,6 +147,16 @@ void CrossPointWebServer::begin() {
   // and PWAs on other origins can use the HTTP API. Preflight OPTIONS requests
   // are answered in handleNotFound().
   server->enableCORS(true);
+
+  // On a board with a battery awake ceiling (PowerConfig::awakeCeilingMin),
+  // every request counts as client traffic, so a device serving a client stays
+  // up however long ago its keys were touched.
+  if (BoardConfig::ACTIVE.power.awakeCeilingMin > 0) {
+    server->addMiddleware([](WebServer&, Middleware::Callback next) {
+      powerManager.noteClientTraffic();
+      return next();
+    });
+  }
 
   // Setup routes
   LOG_DBG("WEB", "Setting up routes...");
@@ -1621,6 +1632,7 @@ void CrossPointWebServer::wsEventCallback(uint8_t num, WStype_t type, uint8_t* p
 //   3. Server sends TEXT "PROGRESS:<received>:<total>" after each chunk
 //   4. Server sends TEXT "DONE" or "ERROR:<message>" when complete
 void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+  powerManager.noteClientTraffic();  // upload frames arrive here, one per loop pass
   switch (type) {
     case WStype_DISCONNECTED:
       LOG_DBG("WS", "Client %u disconnected", num);
