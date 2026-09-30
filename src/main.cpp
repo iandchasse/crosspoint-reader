@@ -481,14 +481,6 @@ void setup() {
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
 
-  // Brightness and warmth are always restored. A normal wake starts with the
-  // light off unless Restore Light on Wake is enabled; silent maintenance
-  // reboots replay the live state captured at restart, so they neither go dark
-  // nor light up against the user's wake preference.
-  const bool restoreLightOn =
-      isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
-  Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
-
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
       // With Short Power Button Press = Sleep, a single click wakes on any
@@ -528,6 +520,16 @@ void setup() {
     default:
       break;
   }
+
+  // Brightness and warmth are always restored. A normal wake starts with the
+  // light off unless Restore Light on Wake is enabled; silent maintenance
+  // reboots replay the live state captured at restart, so they neither go dark
+  // nor light up against the user's wake preference. Only after the wake
+  // decision above, so a wake that goes straight back to sleep never drives the
+  // light.
+  const bool restoreLightOn =
+      isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
+  Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
 
   LOG_DBG("MAIN", "Starting CrossPoint version " CROSSPOINT_VERSION);
 

@@ -9,6 +9,7 @@
 
 #include <cassert>
 
+#include "HalFrontlight.h"
 #include "HalGPIO.h"
 
 #if FREEINK_DEVICE_PAPERMONO
@@ -109,6 +110,11 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
     digitalWrite(pin, HIGH);
     gpio_hold_en(g);
   }
+
+  // An enable-gated front light goes dark and releases its LEDC channel first, so
+  // the parked-pin holds below take pads no peripheral is driving. No-op on
+  // other frontlights and on a light that was never begun (early re-sleep).
+  Frontlight.prepareForSleep();
 
   // Cut the gated peripheral rails (touch/SD/EPD on boards like the Sticky) and
   // hold the enables off through deep sleep — otherwise the GT911 and SD card

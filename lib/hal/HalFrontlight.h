@@ -19,7 +19,13 @@ class HalFrontlight {
 
   uint8_t brightness() const { return lastBrightness; }
   uint8_t warmth() const { return manager.colorTemperature(); }
-  bool isOn() const { return lit; }
+  // Off after the SDK's LED over-voltage monitor tripped (fault()), even though
+  // the user left it on; switching it on again is the retry.
+  bool isOn() const { return lit && !manager.fault(); }
+  bool fault() const { return manager.fault(); }
+
+  // Take the light dark and release its pads before deep sleep.
+  void prepareForSleep() { manager.prepareForSleep(); }
 
  private:
   HalFrontlight() = default;

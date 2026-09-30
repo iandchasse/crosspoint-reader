@@ -25,7 +25,8 @@ void HalFrontlight::setWarmth(const uint8_t warmPercent) {
 }
 
 void HalFrontlight::setOn(const bool on) {
-  if (on == lit) return;
+  if (on == isOn()) return;
+  if (on) manager.clearFault();
   lit = on;
   manager.setBrightness(lit ? lastBrightness : 0);
 }
