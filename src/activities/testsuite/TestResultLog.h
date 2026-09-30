@@ -22,7 +22,8 @@ inline constexpr char RESULTS_DIR[] = "/.silkscreen-test";
 inline constexpr char RESULTS_CSV[] = "/.silkscreen-test/results.csv";
 inline constexpr char SCRATCH_SUFFIX[] = ".tmp";
 
-// Logs "TEST,<id>,<verdict>,<details>" at INFO and appends
+// Logs "TEST,<id>,<verdict>,<details>" at INFO (details past 200 bytes go on
+// "TEST+,<id>,<more>" lines: a log line holds 256 bytes) and appends
 //   timestamp,time_source,session,board,firmware,test,verdict,details
 // to results.csv (the header goes in first when the file is new). The timestamp
 // is the RTC's local time when it holds a valid time (time_source "rtc"),

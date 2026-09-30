@@ -226,7 +226,7 @@ class OrientationTest final : public TestScreen {
   void drawBody(TestPage& page) const override {
     page.setCompact(true);
     if (insetsMode) {
-      page.paragraph(INSETS_INTRO, 5);
+      page.paragraph(INSETS_INTRO, 8);
       page.gap(4);
       for (int i = 0; i < 4; ++i) {
         char label[24];
@@ -241,7 +241,7 @@ class OrientationTest final : public TestScreen {
                "Board upright, keys at the bottom: the arrow points %s. Turn the board so the arrow points down: the "
                "text reads upright. Judge asks; Rotate or Up/Down change orientation.",
                VIEWS[view].arrow);
-      page.paragraph(text, 4);
+      page.paragraph(text, 5);
       int top = 0;
       int right = 0;
       int bottom = 0;

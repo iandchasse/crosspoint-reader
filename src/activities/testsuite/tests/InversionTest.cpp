@@ -146,9 +146,9 @@ class InversionTest final : public PanelRunTest {
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 5);
     page.gap(4);
-    page.paragraph(EXPECT, 4);
+    page.paragraph(EXPECT, 5);
     page.gap(4);
     page.setCompact(true);
     page.rowf("Night mode now (screenInverted)", "%s", SETTINGS.screenInverted != 0 ? "on" : "off");

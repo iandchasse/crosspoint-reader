@@ -10,6 +10,7 @@
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <HalGPIO.h>
+#include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <esp_attr.h>
@@ -152,6 +153,12 @@ class UsbTest final : public TestScreen {
       startStage();
     } else if (slot == Slot::Confirm) {
       if (stage == DRIVE_STAGE) {
+        // USB Drive needs a mounted card: without one its screen fails and
+        // restarts, and the next opening would ask how a session ended.
+        if (!Storage.ready()) {
+          record(Verdict::Skip, "stage=usb_drive reason=no_card");
+          return;
+        }
         ask(QUESTION_START_DRIVE, START_HEADING, START_BODY, START_ANSWERS, 2);
       } else {
         ask(QUESTION_D2, D2_HEADING, D2_BODY, D2_ANSWERS, 2);

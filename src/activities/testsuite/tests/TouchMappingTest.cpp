@@ -693,7 +693,7 @@ class TouchMappingTest final : public TestScreen {
   }
 
   void drawIdle(TestPage& page) const {
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 5);
     if (hint != nullptr) page.paragraph(hint, 2);
     page.gap(4);
     page.setCompact(true);
@@ -728,7 +728,7 @@ class TouchMappingTest final : public TestScreen {
     // Below the top targets, clear of the centre one.
     page.gap(TARGET_INSET + TARGET_ARM + 10);
     page.heading(mode == Mode::Calibrate ? "Calibrate" : "Check the mapping");
-    page.paragraph(TARGET_HINT, 2);
+    page.paragraph(TARGET_HINT, 3);
     if (hint != nullptr) page.paragraph(hint, 2);
     page.setCompact(true);
     page.rowf("Target", "%d of %d", nextTarget < TARGETS ? nextTarget + 1 : TARGETS, TARGETS);

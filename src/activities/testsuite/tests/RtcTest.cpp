@@ -54,7 +54,9 @@ constexpr uint8_t PCF_OS = 0x80;
 constexpr int TEMP_MIN_C = 10;
 constexpr int TEMP_MAX_C = 40;
 constexpr unsigned long SECONDS_CHECK_MS = 60000;
-constexpr long SECONDS_TOLERANCE_MS = 1000;
+// Both ends are timed to a seconds tick (readAtTick() polls every 5 ms): two
+// polls plus I2C and scheduler jitter. The CPU crystal adds under 1 ms in 60 s.
+constexpr long SECONDS_TOLERANCE_MS = 50;
 constexpr int BENCH_READS = 1000;
 constexpr uint32_t BENCH_SLOW_HZ = 100000;
 constexpr uint32_t BENCH_FAST_HZ = 400000;
@@ -122,6 +124,9 @@ class RtcTest final : public TestScreen {
     readDump();
     validTime = halClock.hasValidTime();
   }
+
+  // The 60 s check (about 61 s) must not meet a short saved sleep timeout.
+  bool preventAutoSleep() override { return secondsRunning; }
 
   void onTick() override {
     if (!secondsRunning) return;
@@ -557,7 +562,7 @@ class RtcTest final : public TestScreen {
 
   void drawSet(TestPage& page) const {
     page.heading("Set the time (local)");
-    page.paragraph(SET_INTRO, 3);
+    page.paragraph(SET_INTRO, 4);
     page.gap(8);
     constexpr const char* NAMES[] = {"Year", "Month", "Day", "Hour", "Minute"};
     for (int i = 0; i < FIELD_COUNT; ++i) {

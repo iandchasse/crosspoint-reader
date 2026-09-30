@@ -8,8 +8,13 @@
 
 namespace testsuite {
 
+// Room for the longest question (8 lines of the dialog's body font at its
+// portrait width); the dialog grows to fit and stays inside the screen.
+constexpr uint8_t BODY_MAX_LINES = 12;
+
 void TestChoiceActivity::onEnter() {
   Activity::onEnter();
+  popup.setHeadlineMaxLines(BODY_MAX_LINES);
   popup.show(heading, body, answers, count, 0, [this](const int index) {
     ActivityResult res;
     res.data = MenuResult{index};

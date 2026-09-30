@@ -219,7 +219,7 @@ class GrayscaleTest final : public PanelRunTest {
     page.paragraph(INTRO, 3);
     page.gap(4);
     page.rowf("Route", "%d/%d  %s", selected + 1, VARIANT_COUNT, variant.name);
-    page.paragraph(variant.what, 3);
+    page.paragraph(variant.what, 4);
     page.setCompact(true);
     const auto caps = renderer.grayscaleCapabilities();
     page.rowf("Panel: strips / async base", "%s / %s", caps.stripUploads ? "yes" : "no", caps.asyncBase ? "yes" : "no");

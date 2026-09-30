@@ -102,6 +102,11 @@ class RtcSleepTest final : public TestScreen {
   }
 
   void recordStopwatch() {
+    // The RTC is optional (rtc-devices): with none fitted there is nothing to time.
+    if (!rtc::present()) {
+      record(Verdict::Skip, "reason=no_rtc sleep_record=%d reset=%s", hasRecord ? 1 : 0, resetReasonName(reset));
+      return;
+    }
     if (!hasRecord) {
       record(Verdict::Skip, "reason=no_sleep_record reset=%s", resetReasonName(reset));
       return;
@@ -129,10 +134,10 @@ class RtcSleepTest final : public TestScreen {
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 6);
+    page.paragraph(INTRO, 9);
     page.gap(4);
     if (!hasRecord) {
-      page.paragraph(NO_RECORD, 3);
+      page.paragraph(NO_RECORD, 4);
       page.rowf("Reset / wake", "%s / %s", resetReasonName(reset), wakeCauseName(wake));
       return;
     }

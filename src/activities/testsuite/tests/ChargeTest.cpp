@@ -15,6 +15,7 @@
 
 #include "TestFactories.h"
 #include "TestNames.h"
+#include "TextBuffer.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 
@@ -167,7 +168,11 @@ class ChargeTest final : public TestScreen {
   }
 
   void startStage() {
-    stageSeen = stateBit(published);
+    // A Complete still published from the stage before (stage 4, then stage 5)
+    // is not this stage's: noteChange() sets the bit for a change into Complete
+    // during the stage, and a Complete still published at Record fails "state".
+    const uint8_t notOwn = STAGES[stage].neverComplete ? stateBit(State::Complete) : 0;
+    stageSeen = static_cast<uint8_t>(stateBit(published) & ~notOwn);
     stageReached = false;
     stageStartMs = millis();
   }
@@ -204,10 +209,7 @@ class ChargeTest final : public TestScreen {
     const Stage& s = STAGES[stage];
     const bool d2Lit = answer == 1;
     char fails[64] = "";
-    const auto fail = [&fails](const char* what) {
-      if (fails[0] != '\0') strncat(fails, "+", sizeof(fails) - strlen(fails) - 1);
-      strncat(fails, what, sizeof(fails) - strlen(fails) - 1);
-    };
+    const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
     if (published != s.expect) fail("state");
     uint16_t lo = 0;
     uint16_t hi = 0;

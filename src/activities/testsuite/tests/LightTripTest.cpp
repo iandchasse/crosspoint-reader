@@ -306,7 +306,7 @@ class LightTripTest final : public TestScreen {
       page.paragraph(NOT_BUILT, 3);
       return;
     }
-    page.paragraph(INTRO, 5);
+    page.paragraph(INTRO, 7);
     page.gap(4);
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;

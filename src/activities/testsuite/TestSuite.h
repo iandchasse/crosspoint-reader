@@ -11,9 +11,10 @@ namespace testsuite {
 // the firmware and board tag.
 void beginAfterSettings();
 
-// True while a USB data host is attached (USB Serial/JTAG sees its frames), with
-// a 2 s hold so a brief gap does not end it. ActivityManager::preventAutoSleep()
-// keeps a bench session awake with it; a charger alone or a cell never counts.
+// True while a USB data host is attached (USB Serial/JTAG sees its frames, with
+// a 2 s hold so a brief gap does not end it) and the USB_STAT ladder reports USB
+// power. ActivityManager::preventAutoSleep() keeps a bench session awake with it;
+// a charger alone, a cell, or a VBUS-less data link on the cell never counts.
 // Loop task only.
 bool usbHostAttached();
 

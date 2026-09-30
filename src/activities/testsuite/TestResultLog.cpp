@@ -28,9 +28,14 @@ struct SessionVerdict {
 };
 SessionVerdict sessionVerdicts[MAX_TESTS] = {};
 
-// One CSV row. Static rather than on the stack (it is larger than a stack frame
+// One CSV row: the prefix (about 90 B), up to TestScreen's 319 B of details and
+// the quotes. Static rather than on the stack (it is larger than a stack frame
 // should hold); results are recorded from the loop task only.
-char rowBuffer[384];
+char rowBuffer[448];
+
+// A log line holds 256 B with its "[ms] [INF] [TEST] " prefix (Logging.cpp
+// MAX_ENTRY_LEN): longer details continue on "TEST+,<id>," lines.
+constexpr int SERIAL_CHUNK = 200;
 
 const char* sessionId() {
   static char id[9] = "";
@@ -119,7 +124,11 @@ LogOutcome recordResult(const TestInfo& test, const Verdict verdict, const char*
   if (details == nullptr) details = "";
   const size_t index = testIndex(test);
   if (index < MAX_TESTS) sessionVerdicts[index] = {true, verdict};
-  LOG_INF("TEST", "TEST,%s,%s,%s", test.id, verdictName(verdict), details);
+  const size_t detailsLen = strlen(details);
+  LOG_INF("TEST", "TEST,%s,%s,%.*s", test.id, verdictName(verdict), SERIAL_CHUNK, details);
+  for (size_t off = SERIAL_CHUNK; off < detailsLen; off += SERIAL_CHUNK) {
+    LOG_INF("TEST", "TEST+,%s,%.*s", test.id, SERIAL_CHUNK, details + off);
+  }
 
   if (!Storage.ready()) return LogOutcome::SerialOnly;
   if (!Storage.exists(RESULTS_DIR) && !Storage.mkdir(RESULTS_DIR)) {

@@ -25,9 +25,11 @@
 
 #include "TestFactories.h"
 #include "TestNames.h"
+#include "TextBuffer.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 #include "activities/testsuite/TestSuite.h"
+#include "activities/testsuite/TestSuiteAccess.h"
 #include "network/FirmwareBoardTag.h"
 
 namespace testsuite {
@@ -42,8 +44,8 @@ constexpr uint32_t MIN_PSRAM_BYTES = 7UL * 1024UL * 1024UL;
 constexpr unsigned long IDLE_CLOCK_LATE_MS = 10000;
 
 constexpr char INTRO[] =
-    "Open after a cold boot and after a power-button wake: each opening is logged. For the idle clock, leave the "
-    "keys 3 s, then Record.";
+    "Open after a cold boot and after a power-button wake: each opening is logged. Leave the keys 3 s: the idle "
+    "clock logs itself.";
 
 class SystemInfoTest final : public TestScreen {
  public:
@@ -66,6 +68,7 @@ class SystemInfoTest final : public TestScreen {
     bool abortedPending = false;
     bool pinPowerSelection = false;
     uint32_t normalMhz = 0;
+    uint8_t touchAddr = 0;  // where the driver talks to the controller (a GT911 may use its alternate)
   };
 
   enum class IdleClock : uint8_t { Waiting, Reached, Held, Late };
@@ -88,6 +91,8 @@ class SystemInfoTest final : public TestScreen {
     snap.pinPowerSelection = esp_efuse_read_field_bit(ESP_EFUSE_PIN_POWER_SELECTION);
 #endif
     snap.normalMhz = getCpuFrequencyMhz();
+    snap.touchAddr = TestSuiteAccess::input(gpio).touchDiagnostics().address;
+    if (snap.touchAddr == 0) snap.touchAddr = BoardConfig::ACTIVE.touch.i2cAddress;
     hostAttached = usbHostAttached();
     recordChecks();
   }
@@ -103,6 +108,7 @@ class SystemInfoTest final : public TestScreen {
     if (getCpuFrequencyMhz() <= static_cast<uint32_t>(HalPowerManager::LOW_POWER_FREQ)) {
       idle = IdleClock::Reached;
       idleAfterMs = msSinceInput();
+      recordIdleClock();
       requestUpdate();
       return;
     }
@@ -112,7 +118,22 @@ class SystemInfoTest final : public TestScreen {
                                                                    : IdleClock::Waiting;
     if (now != idle) {
       idle = now;
+      if (idle == IdleClock::Late) recordIdleClock();
       requestUpdate();
+    }
+  }
+
+  // The idle clock's own row, once per opening: PASS when it reached the low
+  // clock, FAIL when it was late with nothing holding it. Held records nothing.
+  void recordIdleClock() {
+    if (idleRecorded) return;
+    idleRecorded = true;
+    if (idle == IdleClock::Reached) {
+      record(Verdict::Pass, "action=idle_clock idle_clock=reached mhz=%d after_ms=%lu normal_mhz=%lu fails=none",
+             HalPowerManager::LOW_POWER_FREQ, idleAfterMs, static_cast<unsigned long>(snap.normalMhz));
+    } else {
+      record(Verdict::Fail, "action=idle_clock idle_clock=late mhz=%lu after_ms=%lu fails=idle_clock",
+             static_cast<unsigned long>(getCpuFrequencyMhz()), IDLE_CLOCK_LATE_MS);
     }
   }
 
@@ -130,12 +151,11 @@ class SystemInfoTest final : public TestScreen {
     return pin >= 0 ? (1ULL << pin) : 0;
   }
 
+  // The boot checks. The idle clock is logged here as it stands but judged in
+  // its own row (recordIdleClock()).
   void recordChecks() {
     char failed[96] = "";
-    const auto fail = [&failed](const char* what) {
-      if (failed[0] != '\0') strncat(failed, "+", sizeof(failed) - strlen(failed) - 1);
-      strncat(failed, what, sizeof(failed) - strlen(failed) - 1);
-    };
+    const auto fail = [&failed](const char* what) { addFailure(failed, sizeof(failed), what); };
     if (!isBoard()) fail("board");
     if (snap.flashBytes != EXPECTED_FLASH_BYTES) fail("flash");
     if (snap.psramBytes < MIN_PSRAM_BYTES) fail("psram");
@@ -146,23 +166,23 @@ class SystemInfoTest final : public TestScreen {
         (snap.wake != ESP_SLEEP_WAKEUP_EXT1 || (snap.ext1Mask & powerWakeBit()) == 0)) {
       fail("wake");
     }
-    if (idle == IdleClock::Late) fail("idle_clock");
     // Read here, on the loop task: the render task keeps off the RTC's bus.
     rtcValid = halClock.isAvailable() && halClock.hasValidTime();
 
     char mask[24];
     formatWakeMask(mask, sizeof(mask), snap.ext1Mask);
     const auto& touch = BoardConfig::ACTIVE.touch;
-    record(failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
-           "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d idle_clock=%s fails=%s",
-           BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
-           static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
-           resetReasonName(snap.reset), wakeCauseName(snap.wake), mask, snap.bootRecord.abnormalResets,
-           snap.abnormalNow, snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0,
-           Storage.ready() ? 1 : 0, halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
-           gpio.hasTouch() ? touchControllerName(touch.controller) : "none", touch.i2cAddress,
-           Frontlight.present() ? 1 : 0, idleClockName(), failed[0] == '\0' ? "none" : failed);
+    record(
+        failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+        "action=boot board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
+        "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d idle_clock=%s fails=%s",
+        BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
+        static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
+        resetReasonName(snap.reset), wakeCauseName(snap.wake), mask, snap.bootRecord.abnormalResets, snap.abnormalNow,
+        snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0, Storage.ready() ? 1 : 0,
+        halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
+        gpio.hasTouch() ? touchControllerName(touch.controller) : "none", snap.touchAddr, Frontlight.present() ? 1 : 0,
+        idleClockName(), failed[0] == '\0' ? "none" : failed);
   }
 
   const char* idleClockName() const {
@@ -180,7 +200,7 @@ class SystemInfoTest final : public TestScreen {
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 2);
+    page.paragraph(INTRO, 3);
     page.gap(4);
     page.setCompact(true);
     page.rowf("Profile / board tag", "%s / %.*s%s", BoardConfig::ACTIVE.name,
@@ -231,7 +251,7 @@ class SystemInfoTest final : public TestScreen {
     const auto& touch = BoardConfig::ACTIVE.touch;
     char touchText[24];
     if (gpio.hasTouch()) {
-      snprintf(touchText, sizeof(touchText), "%s 0x%02x", touchControllerName(touch.controller), touch.i2cAddress);
+      snprintf(touchText, sizeof(touchText), "%s 0x%02x", touchControllerName(touch.controller), snap.touchAddr);
     } else {
       snprintf(touchText, sizeof(touchText), "not found");
     }
@@ -244,6 +264,7 @@ class SystemInfoTest final : public TestScreen {
   Snapshot snap;
   IdleClock idle = IdleClock::Waiting;
   unsigned long idleAfterMs = 0;
+  bool idleRecorded = false;
   bool hostAttached = false;
   bool rtcValid = false;
 };

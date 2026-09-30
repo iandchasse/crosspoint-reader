@@ -44,6 +44,24 @@ struct Snapshot {
   char takenBy[48];
 };
 
+// One file's SHA-256. Out of line, so its hash context and the folder-name
+// context of scanReaderDir() never share a stack frame (about 116 B each).
+__attribute__((noinline)) bool hashFile(HalFile& entry, uint8_t* chunk, uint8_t (&out)[Sha256::SIZE]) {
+  Sha256 sha;
+  bool ok = true;
+  for (;;) {
+    const int got = entry.read(chunk, CHUNK);
+    if (got < 0) {
+      ok = false;
+      break;
+    }
+    if (got == 0) break;
+    sha.update(chunk, static_cast<size_t>(got));
+  }
+  sha.finish(out);
+  return ok;
+}
+
 bool scanReaderDir(Snapshot& snap, uint8_t* chunk) {
   memset(&snap, 0, sizeof(snap));
   HalFile dir = Storage.open(READER_DIR);
@@ -68,17 +86,7 @@ bool scanReaderDir(Snapshot& snap, uint8_t* chunk) {
     FileHash& file = snap.files[snap.count++];
     snprintf(file.name, sizeof(file.name), "%s", name);
     file.size = static_cast<uint32_t>(entry.fileSize());
-    Sha256 sha;
-    for (;;) {
-      const int got = entry.read(chunk, CHUNK);
-      if (got < 0) {
-        ok = false;
-        break;
-      }
-      if (got == 0) break;
-      sha.update(chunk, static_cast<size_t>(got));
-    }
-    sha.finish(file.sha);
+    if (!hashFile(entry, chunk, file.sha)) ok = false;
   }
   folders.finish(snap.folderSha);
   return ok;

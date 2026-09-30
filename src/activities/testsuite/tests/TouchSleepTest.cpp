@@ -34,13 +34,11 @@ constexpr char RESTART_BODY[] =
     "A software restart. The boot probe resets the touch controller, so touch works again in the menu.";
 
 constexpr char INTRO[] =
-    "Confirm: hibernate through the call every sleep entry makes (a NACK gets a reset and a second try). Left: "
-    "reset, then hibernate, as a reset-loop sleep does. Each must be ACKed, then the address must stop answering. "
-    "Right restarts. For the sleep entry itself, hold POWER to sleep, wake, and open T12.";
+    "Confirm: hibernate as each sleep entry does (a NACK: reset, retry). Left: reset, then hibernate (a reset-loop "
+    "sleep). Each must be ACKed, then the address go quiet. Right restarts. The sleep entry: sleep, wake, open T12.";
 constexpr char CURRENT_NOTE[] =
-    "J4 pin 2 current: a uA meter in place of R42 (3V3 to pin 2), or 100 ohm there and a meter across it (55 uA = "
-    "5.5 mV). Awake and untouched for 10 s (Monitor mode): about 220 uA. Hibernated: about 55 uA. About 1.1 mA: "
-    "TP_RST (IO11) is LOW, a fault; IO11 reads 3.3 V.";
+    "J4 pin 2 (a uA meter in place of R42, TEST-SUITE.md T12): about 220 uA awake and untouched for 10 s, 55 uA "
+    "hibernated. About 1.1 mA: TP_RST (IO11) held LOW, a fault.";
 constexpr char ASLEEP_NOTE[] = "The controller is asleep: touch is off until a restart. Use the keys; Right restarts.";
 constexpr char NO_TOUCH[] =
     "No touch controller answered at boot: nothing to hibernate. A board without a tail still sends one best-effort "
@@ -210,7 +208,7 @@ class TouchSleepTest final : public TestScreen {
     page.rowf("Reset pulses this boot", "%u", static_cast<unsigned>(diag.resetPulses));
     page.setCompact(false);
     page.gap(4);
-    page.paragraph(CURRENT_NOTE, 5);
+    page.paragraph(CURRENT_NOTE, 4);
     if (asleep) page.paragraph(ASLEEP_NOTE, 2);
   }
 

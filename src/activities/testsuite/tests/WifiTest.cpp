@@ -45,6 +45,13 @@ constexpr char INTRO[] =
     "Confirm runs: a scan, then the reader's Wi-Fi screen (a saved network connects by itself; a typed password "
     "stays in RAM), then an NTP sync. The radio goes off before the result. On battery it needs P+ at 3.4 V.";
 
+// No connection after the Wi-Fi screen: a failed attempt and backing out both
+// return "cancelled", so the operator says which.
+constexpr int QUESTION_NO_CONNECTION = 1;
+constexpr const char* NO_CONNECTION_ANSWERS[] = {"An attempt failed", "Backed out"};
+constexpr char NO_CONNECTION_HEADING[] = "No connection";
+constexpr char NO_CONNECTION_BODY[] = "Did a connection attempt fail, or did you back out without trying?";
+
 // Register and bit of the RTC's time-lost flag: DS3231 status OSF, PCF85063 seconds OS.
 bool readTimeLostFlag(bool& lost) {
   if (!rtc::present()) return false;
@@ -201,11 +208,22 @@ class WifiTest final : public TestScreen {
     if (!connected) {
       LOG_INF("TEST", "T15: not connected");
       radioOff();
-      finish();
+      phase = Phase::Done;
+      if (!ask(QUESTION_NO_CONNECTION, NO_CONNECTION_HEADING, NO_CONNECTION_BODY, NO_CONNECTION_ANSWERS, 2)) finish();
       return;
     }
     snprintf(ssid, sizeof(ssid), "%s", WiFi.SSID().c_str());
     phase = Phase::Syncing;  // synced on the next pass, once "syncing" is on the glass
+  }
+
+  // The radio is already off. Back on the question counts as backing out.
+  void onAnswer(const int question, const int answer) override {
+    if (question != QUESTION_NO_CONNECTION) return;
+    if (answer == 0) {
+      finish();
+      return;
+    }
+    record(Verdict::Skip, "reason=cancelled networks=%d mode_null=%d", networkCount, modeNull ? 1 : 0);
   }
 
   void runSync() {
@@ -214,8 +232,9 @@ class WifiTest final : public TestScreen {
     rssi = WiFi.RSSI();
     channel = WiFi.channel();
     radioOnMv = readSupply().pPlusMv;
+    // With no RTC (optional, rtc-devices) HalClock has nothing to sync.
     const unsigned long start = millis();
-    synced = halClock.syncFromNTP();
+    synced = rtc::present() && halClock.syncFromNTP();
     syncMs = millis() - start;
     if (synced) rtc::noteWritten();
     timeval tv{};
@@ -257,33 +276,38 @@ class WifiTest final : public TestScreen {
     char fails[96] = "";
     if (networkCount == 0) addFailure(fails, sizeof(fails), "no_networks");
     if (networkCount > 0 && !connected) addFailure(fails, sizeof(fails), "no_connection");
+    // No RTC fitted: the scan, the connection, RSSI and the radio are judged.
+    const bool rtcFitted = rtc::present();
     if (connected) {
       if (rssi <= RSSI_MIN_DBM) addFailure(fails, sizeof(fails), "rssi");
-      if (!synced || syncMs > SYNC_LIMIT_MS) addFailure(fails, sizeof(fails), "ntp");
-      if (!validAfter) addFailure(fails, sizeof(fails), "rtc_not_valid");
-      if (lostFlagRead && lostFlagAfter) addFailure(fails, sizeof(fails), "osf");
-      if (rtc::present() && (!rtcVsNtpKnown || labs(rtcVsNtpMs) > RTC_VS_NTP_MS))
-        addFailure(fails, sizeof(fails), "rtc_vs_ntp");
+      if (rtcFitted) {
+        if (!synced || syncMs > SYNC_LIMIT_MS) addFailure(fails, sizeof(fails), "ntp");
+        if (!validAfter) addFailure(fails, sizeof(fails), "rtc_not_valid");
+        if (lostFlagRead && lostFlagAfter) addFailure(fails, sizeof(fails), "osf");
+        if (!rtcVsNtpKnown || labs(rtcVsNtpMs) > RTC_VS_NTP_MS) addFailure(fails, sizeof(fails), "rtc_vs_ntp");
+      }
       if (sagJudged && sag > static_cast<int>(policy.cutoffRadioAllowanceMv))
         addFailure(fails, sizeof(fails), "radio_sag");
     }
     if (!modeNull) addFailure(fails, sizeof(fails), "radio_still_on");
     char offset[16] = "n/a";
     if (offsetBeforeKnown) snprintf(offset, sizeof(offset), "%ld", offsetBeforeMs);
-    char best0[48] = "none";
-    if (bestCount > 0) snprintf(best0, sizeof(best0), "%s/%ld", best[0].ssid, static_cast<long>(best[0].rssi));
+    char best0[32] = "none";
+    if (bestCount > 0) snprintf(best0, sizeof(best0), "%.16s/%ld", best[0].ssid, static_cast<long>(best[0].rssi));
+    char ntp[8] = "skipped";
+    if (rtcFitted) snprintf(ntp, sizeof(ntp), "%d", synced ? 1 : 0);
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "networks=%d strongest=%s ssid=%s rssi=%ld ch=%d ntp=%d sync_ms=%lu valid_before=%d valid_after=%d "
-           "lost_flag=%d rtc_minus_ntp_ms=%ld offset_before_ms=%s pplus_on=%u pplus_off=%u sag_mv=%d sag_judged=%d "
-           "mode_null=%d fails=%s",
-           networkCount, best0, connected ? ssid : "none", static_cast<long>(rssi), channel, synced ? 1 : 0, syncMs,
-           validBefore ? 1 : 0, validAfter ? 1 : 0, lostFlagRead ? (lostFlagAfter ? 1 : 0) : -1,
-           rtcVsNtpKnown ? rtcVsNtpMs : 0L, offset, radioOnMv, radioOffMv, sag, sagJudged ? 1 : 0, modeNull ? 1 : 0,
-           fails[0] == '\0' ? "none" : fails);
+           "networks=%d strongest=%s ssid=%.16s rssi=%ld ch=%d rtc=%s ntp=%s sync_ms=%lu valid_before=%d "
+           "valid_after=%d lost_flag=%d rtc_minus_ntp_ms=%ld offset_before_ms=%s pplus_on=%u pplus_off=%u sag_mv=%d "
+           "sag_judged=%d mode_null=%d fails=%s",
+           networkCount, best0, connected ? ssid : "none", static_cast<long>(rssi), channel,
+           rtcFitted ? "fitted" : "none", ntp, syncMs, validBefore ? 1 : 0, validAfter ? 1 : 0,
+           lostFlagRead ? (lostFlagAfter ? 1 : 0) : -1, rtcVsNtpKnown ? rtcVsNtpMs : 0L, offset, radioOnMv, radioOffMv,
+           sag, sagJudged ? 1 : 0, modeNull ? 1 : 0, fails[0] == '\0' ? "none" : fails);
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 5);
     page.gap(4);
     page.setCompact(true);
     page.rowf("P+ before / supply", "%u mV / %s", supplyBefore.pPlusMv,
@@ -320,7 +344,11 @@ class WifiTest final : public TestScreen {
       page.row("Connection", networkCount > 0 ? "none" : "no network to join");
     } else {
       page.rowf("Connected / RSSI / channel", "%s / %ld dBm / %d", ssid, static_cast<long>(rssi), channel);
-      page.rowf("NTP sync", "%s in %lu ms", synced ? "ok" : "FAILED", syncMs);
+      if (rtc::present()) {
+        page.rowf("NTP sync", "%s in %lu ms", synced ? "ok" : "FAILED", syncMs);
+      } else {
+        page.row("NTP sync", "skipped: no RTC");
+      }
       page.rowf("RTC valid before / after", "%s / %s", validBefore ? "yes" : "no", validAfter ? "yes" : "no");
       if (offsetBeforeKnown) page.rowf("RTC - NTP before the sync", "%+ld ms", offsetBeforeMs);
       if (rtcVsNtpKnown) page.rowf("RTC - NTP after", "%+ld ms", rtcVsNtpMs);

@@ -24,6 +24,7 @@ inline constexpr char HOLD_BACK_TO_EXIT[] =
     "Keys are part of this test. Hold a front key 1.5 s for the button above it (Back: Exit), or tap the button.";
 
 inline constexpr char RESULT[] = "Result";
+inline constexpr char FAILED_CHECKS[] = "Failed:";
 inline constexpr char SAVED[] = "Saved to /.silkscreen-test/results.csv and the serial log";
 inline constexpr char SERIAL_ONLY[] = "SD not mounted: in the serial log only";
 inline constexpr char WRITE_FAILED[] = "Could not write results.csv: in the serial log only";

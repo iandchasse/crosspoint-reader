@@ -32,14 +32,18 @@
 namespace testsuite {
 namespace {
 
-// MEAS-01 (POWER.md §1, §4): the typical floor, and the budget's datasheet
-// maximum above which a reading fails. With an FT6336U tail, +55 uA hibernated.
+// MEAS-01 (POWER.md §1, §4): the typical floor; the budget's datasheet maximum
+// without the U3 ground current (row 4, still to measure), which a reading above
+// only flags; and the maximum with row 4 counted, above which it fails. With an
+// FT6336U tail, +55 uA hibernated.
 constexpr uint16_t TYPICAL_LOW_UA = 58;
 constexpr uint16_t TYPICAL_HIGH_UA = 73;
-constexpr uint16_t LIMIT_UA = 95;
+constexpr uint16_t BUDGET_UA = 95;
+constexpr uint16_t LIMIT_UA = 110;
 constexpr uint16_t TOUCH_TYPICAL_LOW_UA = 113;
 constexpr uint16_t TOUCH_TYPICAL_HIGH_UA = 130;
-constexpr uint16_t TOUCH_LIMIT_UA = 150;
+constexpr uint16_t TOUCH_BUDGET_UA = 150;
+constexpr uint16_t TOUCH_LIMIT_UA = 165;
 // "All paths agree within about 2 uA", plus the meter's last digit.
 constexpr int AGREE_UA = 3;
 constexpr uint16_t MAX_UA = 9999;
@@ -65,8 +69,8 @@ constexpr char RELEASE_BODY[] =
 constexpr char OBSERVED_HEADING[] = "What the meter showed";
 
 constexpr char ARM_INTRO[] =
-    "MEAS-01: a uA meter or logger in series with the cell (or 3.8 V) at J5, USB and any UART adapter off, card "
-    "fitted, light off. Wait 60 s after the sleep screen, then average 60 s. Left/Right pick a path, Confirm arms it.";
+    "MEAS-01 (TEST-SUITE.md P5): a meter in series with the cell at J5; USB, UART and light off; card in. Wait 60 s "
+    "after the sleep screen, average 60 s. Left/Right: path. Confirm: arm.";
 constexpr char RESULT_INTRO[] =
     "Enter the average the meter showed while asleep: Left/Right -/+1 uA, Up/Down -/+10 uA. Confirm records. Back "
     "skips to arming another path.";
@@ -91,8 +95,8 @@ constexpr PathInfo PATHS[] = {
      "sleeps about 60 s later.",
      true},
     {SleepPath::InputCap,
-     "On the cell, no USB. Arm (the input-only cap 1 min, in RAM), then leave the board alone: it sleeps about 60 s "
-     "later.",
+     "On the cell, no USB. Arm (timeout Never and the input-only cap 1 min, in RAM), then leave the board alone: it "
+     "sleeps about 60 s later.",
      true},
     {SleepPath::WakeNoInput,
      "On the cell, no USB. Arm and hold POWER to sleep. Wake with POWER and touch nothing: 180 s later it sleeps by "
@@ -100,12 +104,11 @@ constexpr PathInfo PATHS[] = {
      true},
     {SleepPath::GhostWake,
      "Arm and hold POWER to sleep. While it sleeps, tap POWER briefly a few times: each tap may wake the chip for "
-     "0.3 s at most and must not change the screen. Then wake it with a hold and open P5.",
+     "0.3 s at most, the screen unchanged. Then wake it with a hold, open P5.",
      false},
     {SleepPath::ReleaseWake,
-     "Arm, then tape POWER down (or keep holding it) past 0.4 s: it sleeps with the button held, and the current "
-     "falls to the floor + about 30 uA within 5 s. Release it: one short wake, then asleep. Wake it with a hold and "
-     "open P5.",
+     "Arm, then tape POWER down past 0.4 s: it sleeps held, and within 5 s the current falls to the floor + about "
+     "30 uA. Release: one short wake, then asleep. Wake with a hold, open P5.",
      false},
 };
 constexpr int PATH_COUNT = static_cast<int>(sizeof(PATHS) / sizeof(PATHS[0]));
@@ -252,6 +255,9 @@ class SleepWakeTest final : public TestScreen {
         power.awakeCeilingMin = 1;
         break;
       case SleepPath::InputCap:
+        // The timeout would fire first at a saved 1 min, as the same kind of
+        // entry: only the cap may time out.
+        SETTINGS.sleepTimeoutMinutes = CrossPointSettings::SLEEP_TIMEOUT_NEVER_MINUTES;
         power.awakeInputCapMin = 1;
         break;
       default:
@@ -284,6 +290,7 @@ class SleepWakeTest final : public TestScreen {
   }
 
   uint16_t limitUa() const { return slept.touchActive ? TOUCH_LIMIT_UA : LIMIT_UA; }
+  uint16_t budgetUa() const { return slept.touchActive ? TOUCH_BUDGET_UA : BUDGET_UA; }
 
   // Whether the entry came the way the armed path should bring it.
   void checkPath(char* fails, const size_t size) const {
@@ -366,11 +373,13 @@ class SleepWakeTest final : public TestScreen {
     formatWakeMask(mask, sizeof(mask), ext1Mask);
     record(verdict,
            "path=%s stage=%u from_timeout=%d armed_ago_s=%lu uptime_s=%lu usb_at_entry=%d host_at_entry=%d touch=%d "
-           "wake=%s ext1=%s power_wake=%d asleep_s=%s current_ua=%s limit_ua=%u spread_ua=%d observed=%d fails=%s",
+           "wake=%s ext1=%s power_wake=%d asleep_s=%s current_ua=%s limit_ua=%u above_ds_budget=%d spread_ua=%d "
+           "observed=%d fails=%s",
            sleepPathCode(slept.path), slept.stage, slept.fromTimeout ? 1 : 0,
            static_cast<unsigned long>(slept.armedAgoMs / 1000), static_cast<unsigned long>(slept.uptimeMs / 1000),
            slept.usbConnected ? 1 : 0, slept.usbHost ? 1 : 0, slept.touchActive ? 1 : 0, wakeCauseName(wake), mask,
-           powerWake ? 1 : 0, asleep, current, limitUa(), spread, observed, fails[0] == '\0' ? "none" : fails);
+           powerWake ? 1 : 0, asleep, current, limitUa(), entered && microamps > budgetUa() ? 1 : 0, spread, observed,
+           fails[0] == '\0' ? "none" : fails);
   }
 
   // --- screen ----------------------------------------------------------------
@@ -384,7 +393,7 @@ class SleepWakeTest final : public TestScreen {
   }
 
   void drawResultView(TestPage& page) const {
-    page.paragraph(RESULT_INTRO, 3);
+    page.paragraph(RESULT_INTRO, 4);
     page.gap(4);
     page.setCompact(true);
     page.rowf("Path that slept", "%s%s", sleepPathTitle(slept.path),
@@ -402,8 +411,9 @@ class SleepWakeTest final : public TestScreen {
     page.rowf("Reset / wake / ext1", "%s / %s / %s%s", resetReasonName(reset), wakeCauseName(wake), mask,
               powerWake ? "" : " (not POWER)");
     if (asleepKnown) page.rowf("Asleep (RTC)", "%ld min %02ld s", asleepS / 60, asleepS % 60);
-    page.rowf("Expected", "%u-%u uA typical, fail above %u", slept.touchActive ? TOUCH_TYPICAL_LOW_UA : TYPICAL_LOW_UA,
-              slept.touchActive ? TOUCH_TYPICAL_HIGH_UA : TYPICAL_HIGH_UA, limitUa());
+    page.rowf("Expected", "%u-%u uA typical, flag %u, fail %u",
+              slept.touchActive ? TOUCH_TYPICAL_LOW_UA : TYPICAL_LOW_UA,
+              slept.touchActive ? TOUCH_TYPICAL_HIGH_UA : TYPICAL_HIGH_UA, budgetUa(), limitUa());
     page.setCompact(false);
     page.gap(8);
     page.rowf("Sleep current", "%u uA%s", microamps, entered ? "" : " (not entered)");
@@ -421,7 +431,7 @@ class SleepWakeTest final : public TestScreen {
     page.paragraph(shown.steps, 4);
     page.gap(4);
     page.setCompact(true);
-    if (stageOne) page.paragraph(STAGE_ONE_NOTE, 3);
+    if (stageOne) page.paragraph(STAGE_ONE_NOTE, 4);
     page.rowf("USB host / USB power", "%s / %s", hostAttached ? "attached (holds auto-sleep off)" : "none",
               usbPower ? "yes" : "no");
     if (shown.batteryOnly && usbPower) page.row("This path", "does not fire on USB power");

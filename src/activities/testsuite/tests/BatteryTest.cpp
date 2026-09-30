@@ -18,6 +18,7 @@
 
 #include "TestFactories.h"
 #include "TestNames.h"
+#include "TextBuffer.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 
@@ -34,10 +35,12 @@ constexpr uint8_t WINDOW = 30;  // samples in the spread window: 30 s
 // |P+ - meter|: the ADC's +/-50 mV at the pin doubled by the divider, the 12-14 mV
 // load offset (bat-load-offset) and the 1 % divider tolerance (~37 mV at 3.7 V).
 constexpr int METER_TOLERANCE_MV = 150;
-// The pin for a 3.0-4.2 V cell (bat-adc-range).
+// The pin for a 3.0-4.2 V cell (bat-adc-range), judged with the ADC's +/-50 mV
+// at the pin (adc1-only-11db): a full cell reads 2100 exactly.
 constexpr uint16_t PIN_MIN_MV = 1500;
 constexpr uint16_t PIN_MAX_MV = 2100;
-// Spread at the pin over WINDOW samples at rest, off the charger (proposal).
+constexpr uint16_t PIN_ADC_TOLERANCE_MV = 50;
+// Spread at the pin over WINDOW samples at rest, off external power (proposal).
 constexpr uint16_t SPREAD_MAX_PIN_MV = 20;
 constexpr int STEP_FINE_MV = 10;
 constexpr int STEP_COARSE_MV = 100;
@@ -169,20 +172,25 @@ class BatteryTest final : public TestScreen {
 
   void recordReading() {
     char fails[64] = "";
-    const auto fail = [&fails](const char* what) {
-      if (fails[0] != '\0') strncat(fails, "+", sizeof(fails) - strlen(fails) - 1);
-      strncat(fails, what, sizeof(fails) - strlen(fails) - 1);
-    };
+    const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
     const int error = static_cast<int>(pPlusMv) - meterMv;
     if (meterEntered && abs(error) > METER_TOLERANCE_MV) fail("meter");
     const uint16_t pin = pinMv();
-    if (cellPresent() && (pin < PIN_MIN_MV || pin > PIN_MAX_MV)) fail("pin_range");
+    // While charging or at Complete, P+ is the charger's output (CV 4.2 V +/-1 %
+    // plus the path's I*R), not the cell's: the range is not judged then.
+    constexpr uint16_t pinLo = PIN_MIN_MV - PIN_ADC_TOLERANCE_MV;
+    constexpr uint16_t pinHi = PIN_MAX_MV + PIN_ADC_TOLERANCE_MV;
+    const bool rangeJudged =
+        cellPresent() && charge != BoardConfig::ChargeState::Charging && charge != BoardConfig::ChargeState::Complete;
+    if (rangeJudged && (pin < pinLo || pin > pinHi)) fail("pin_range");
     uint16_t lo = 0;
     uint16_t hi = 0;
     windowRange(lo, hi);
     const uint16_t spread = static_cast<uint16_t>(hi - lo);
-    const bool spreadJudged = windowCount >= WINDOW && charge != BoardConfig::ChargeState::Charging;
+    const bool spreadJudged = windowCount >= WINDOW && !onExternalPower();
     if (spreadJudged && spread > SPREAD_MAX_PIN_MV) fail("spread");
+    char range[16] = "n/a";
+    if (rangeJudged) snprintf(range, sizeof(range), "%u-%u", pinLo, pinHi);
     char cutoff[40];
     int margin = 0;
     char marginText[12];
@@ -201,14 +209,14 @@ class BatteryTest final : public TestScreen {
     }
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : meterEntered ? Verdict::Pass : Verdict::Info;
     record(verdict,
-           "pplus=%u pin=%u single=%u meter=%s err=%d pct=%u cell=%d usbstat=%s ext=%s radio=%d spread=%u n=%u "
-           "cutoff_margin=%s fw_write=%s onscreen=%lus fails=%s",
-           pPlusMv, pin, singlePinMv, meter, meterEntered ? error : 0, percent, cellPresent() ? 1 : 0,
+           "pplus=%u pin=%u pin_range=%s single=%u meter=%s err=%d pct=%u cell=%d usbstat=%s ext=%s radio=%d "
+           "spread=%u n=%u spread_judged=%d cutoff_margin=%s fw_write=%s onscreen=%lus fails=%s",
+           pPlusMv, pin, range, singlePinMv, meter, meterEntered ? error : 0, percent, cellPresent() ? 1 : 0,
            chargeStateName(charge),
            !externalKnown  ? "unknown"
            : externalPower ? "yes"
                            : "no",
-           radioOn ? 1 : 0, spread, windowCount, marginText, writeBlocked ? "blocked" : "allowed",
+           radioOn ? 1 : 0, spread, windowCount, spreadJudged ? 1 : 0, marginText, writeBlocked ? "blocked" : "allowed",
            (millis() - openedAt) / 1000UL, fails[0] == '\0' ? (meterEntered ? "none" : "no_meter_value") : fails);
   }
 

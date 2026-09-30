@@ -237,7 +237,7 @@ class SpiClockTest final : public PanelRunTest {
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 5);
+    page.paragraph(INTRO, 6);
     page.gap(4);
     page.rowf("Clock", "%d/%d  %s (%lu kHz)", selected + 1, CLOCK_COUNT, CLOCKS[selected].name,
               static_cast<unsigned long>(clockHz(selected) / 1000));

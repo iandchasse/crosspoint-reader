@@ -64,6 +64,12 @@ class OptionPopup {
     activate(currentIndex, std::move(onSelect));
   }
 
+#if CROSSPOINT_TEST_SUITE
+  // The hardware test firmware's questions carry a paragraph, not a subject
+  // line (src/activities/testsuite/TestChoiceActivity.cpp).
+  void setHeadlineMaxLines(const uint8_t lines) { headlineMaxLines = lines; }
+#endif
+
   bool handleInput(MappedInputManager& input, const std::function<void()>& requestUpdate) {
     if (!active) return false;
 
@@ -195,7 +201,7 @@ class OptionPopup {
     props.titleText.maxLines = 2;
     props.headlineText.font = fui::GfxRendererTarget::FONT_BODY;
     props.headlineText.align = fui::TextAlign::Center;
-    props.headlineText.maxLines = 3;
+    props.headlineText.maxLines = headlineMaxLines;
     props.buttonText.font = fui::GfxRendererTarget::FONT_BODY;
     const int16_t innerPadding = static_cast<int16_t>(metrics.optionPopupInnerPadding);
     props.padding = fui::Insets{innerPadding, innerPadding, innerPadding, innerPadding};
@@ -265,6 +271,11 @@ class OptionPopup {
   bool active = false;
   std::string title;
   std::string headline;
+#if CROSSPOINT_TEST_SUITE
+  uint8_t headlineMaxLines = 3;
+#else
+  static constexpr uint8_t headlineMaxLines = 3;
+#endif
   std::vector<std::string> ownedStrings;
   int selectedIndex = 0;
   std::function<void(int)> onSelectCallback;

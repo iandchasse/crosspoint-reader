@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <BoardConfig.h>
+#include <HalGPIO.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -12,6 +13,7 @@
 #endif
 
 #include "CrossPointSettings.h"
+#include "SleepRecord.h"
 #include "TestResultLog.h"
 #include "network/FirmwareBoardTag.h"
 
@@ -55,6 +57,16 @@ void pinSettings() {
 
 void beginAfterSettings() {
   pinSettings();
+  // P5's "no input after a wake": this boot's 180 s sleep is the one it checks,
+  // so a shorter saved timeout must not fire first (in RAM, this boot only).
+  constexpr uint8_t WAKE_NO_INPUT_MIN_TIMEOUT_MIN = 5;
+  SleepRecord woke{};
+  if (wokeFromSleep(woke) && woke.path == SleepPath::WakeNoInput && woke.stage == 1 &&
+      SETTINGS.sleepTimeoutMinutes < WAKE_NO_INPUT_MIN_TIMEOUT_MIN) {
+    LOG_INF("TEST", "P5 no-input wake: sleep timeout %u -> %u min for this boot", SETTINGS.sleepTimeoutMinutes,
+            WAKE_NO_INPUT_MIN_TIMEOUT_MIN);
+    SETTINGS.sleepTimeoutMinutes = WAKE_NO_INPUT_MIN_TIMEOUT_MIN;
+  }
   LOG_INF("TEST", "Silkscreen hardware test firmware %s, board tag %.*s, reset reason %d, SD %s", CROSSPOINT_VERSION,
           static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(), static_cast<int>(esp_reset_reason()),
           Storage.ready() ? "mounted" : "not mounted");
@@ -73,10 +85,15 @@ bool usbHostAttached() {
     seen = true;
     lastSeenMs = now;
   }
-  const bool attached = seen && now - lastSeenMs < USB_HOST_HOLD_MS;
+  // The S3's USB Serial/JTAG enumerates without VBUS (its D+ pull-up runs from
+  // the board's 3V3, and there is no VBUS sense, HW-11), so a VBUS-less data link
+  // on the cell sees frames too: USB power from the USB_STAT ladder is required
+  // as well (its decoded record, no ADC read).
+  const bool attached = seen && now - lastSeenMs < USB_HOST_HOLD_MS && gpio.isUsbConnected();
   if (attached != reported) {
     reported = attached;
-    LOG_INF("TEST", "USB host %s", attached ? "attached: auto-sleep held off" : "gone: auto-sleep back on");
+    LOG_INF("TEST", "USB host %s",
+            attached ? "on USB power: auto-sleep held off" : "gone or no USB power: auto-sleep back on");
   }
   return attached;
 #else

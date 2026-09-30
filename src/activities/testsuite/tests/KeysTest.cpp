@@ -22,13 +22,14 @@
 #include <WiFi.h>
 
 #include <climits>
-#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
 #include "CrossPointSettings.h"
+#include "Supply.h"
 #include "TestFactories.h"
 #include "TestNames.h"
+#include "TextBuffer.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 #include "activities/testsuite/TestSuite.h"
@@ -52,6 +53,9 @@ constexpr unsigned long IDLE_SAMPLE_MS = 500;  // ladder readout while no key is
 constexpr unsigned long CONTACT_END_MS = 150;  // chords: released this long ends a contact
 constexpr unsigned long CONTACT_MIN_MS = 150;  // chords: a shorter contact is a bounce
 constexpr unsigned long HANDS_OFF_MIN_MS = 30000;
+// Hands off: idle readings in no window and not released (a released level under
+// AdcLadderConfig::releasedMinMv, btn-idle-topcode). One is a key's release edge.
+constexpr unsigned UNCLEAN_IDLE_ALLOWED = 1;
 constexpr unsigned long HANDS_OFF_REDRAW_MS = 10000;
 
 constexpr uint8_t keyBit(const int b) { return static_cast<uint8_t>(1U << b); }
@@ -146,17 +150,6 @@ int windowMargin(const BoardConfig::AdcLadderKey& key, const int minMv, const in
   if (key.minMv == 0) return top;
   const int bottom = minMv - key.minMv;
   return bottom < top ? bottom : top;
-}
-
-// Appends to a bounded, always terminated buffer.
-void appendf(char* buf, const size_t size, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
-void appendf(char* buf, const size_t size, const char* fmt, ...) {
-  const size_t len = strlen(buf);
-  if (len + 1 >= size) return;
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(buf + len, size - len, fmt, args);
-  va_end(args);
 }
 
 class KeysTest final : public TestScreen {
@@ -260,6 +253,15 @@ class KeysTest final : public TestScreen {
 
   void setRadio(const bool on) {
     if (on) {
+      // bat-wifi-gate, as T15: no radio on the cell below the cutoff.
+      const Supply supply = readSupply();
+      const auto& policy = BoardConfig::powerPolicy();
+      if (policy.lowBatteryCutoffMv != 0 && supply.onBattery() && supply.pPlusMv < policy.lowBatteryCutoffMv) {
+        LOG_INF("TEST", "T3: radio refused on the cell at %u mV", supply.pPlusMv);
+        record(Verdict::Skip, "mode=radio reason=battery_gate pplus=%u gate=%u", supply.pPlusMv,
+               policy.lowBatteryCutoffMv);
+        return;
+      }
       // An idle station: the radio is up, no network is joined.
       WiFi.mode(WIFI_STA);
     } else {
@@ -572,10 +574,7 @@ class KeysTest final : public TestScreen {
     if (static_cast<int>(powerClicks) != firstCount) countsDiffer = true;
 
     char fails[64] = "";
-    const auto fail = [&fails](const char* what) {
-      if (fails[0] != '\0') strncat(fails, "+", sizeof(fails) - strlen(fails) - 1);
-      strncat(fails, what, sizeof(fails) - strlen(fails) - 1);
-    };
+    const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
     if (missing[0] != '\0') fail("missing");
     if (marginal[0] != '\0') fail("marginal");
     if (countsDiffer) fail("counts_differ");
@@ -619,12 +618,31 @@ class KeysTest final : public TestScreen {
       if ((phantomMask & keyBit(b)) != 0)
         appendf(keys, sizeof(keys), "%s%s", keys[0] == '\0' ? "" : ",", BUTTON_NAMES[b]);
     }
-    const Verdict verdict = phantoms > 0 ? Verdict::Fail : watched < HANDS_OFF_MIN_MS ? Verdict::Info : Verdict::Pass;
+    char fails[48] = "";
+    if (phantoms > 0) addFailure(fails, sizeof(fails), "phantom");
+    // The released level (btn-idle-topcode): idle readings between windows, or a
+    // ladder that never read released through a full watch.
+    if (uncleanIdle > UNCLEAN_IDLE_ALLOWED) addFailure(fails, sizeof(fails), "unclean_idle");
+    const auto& cfg = BoardConfig::ACTIVE.adcLadders;
+    char released[48] = "";
+    for (int l = 0; l < LADDERS; ++l) {
+      if (cfg.ladders[l].pin < 0) continue;
+      const bool seen = releasedMinMv[l] != INT_MAX;
+      appendf(released, sizeof(released), "%sIO%d:%d-%d%s", released[0] == '\0' ? "" : ",", cfg.ladders[l].pin,
+              seen ? releasedMinMv[l] : 0, seen ? releasedMaxMv[l] : 0, topCoded[l] ? ":top" : "");
+      if (!seen && watched >= HANDS_OFF_MIN_MS && strstr(fails, "never_released") == nullptr) {
+        addFailure(fails, sizeof(fails), "never_released");
+      }
+    }
+    const Verdict verdict = fails[0] != '\0'             ? Verdict::Fail
+                            : watched < HANDS_OFF_MIN_MS ? Verdict::Info
+                                                         : Verdict::Pass;
     record(verdict,
-           "mode=hands_off radio=%d host=%d watch_s=%lu phantoms=%u keys=%s unclean=%u released=%d,%d fails=%s",
+           "mode=hands_off radio=%d host=%d watch_s=%lu phantoms=%u keys=%s unclean=%u released_floor=%u "
+           "released=%s fails=%s",
            radioOn ? 1 : 0, usbHost ? 1 : 0, watched / 1000UL, phantoms, keys[0] != '\0' ? keys : "none", uncleanIdle,
-           releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0], releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1],
-           phantoms > 0                 ? "phantom"
+           cfg.releasedMinMv, released[0] != '\0' ? released : "none",
+           fails[0] != '\0'             ? fails
            : watched < HANDS_OFF_MIN_MS ? "too_short"
                                         : "none");
   }
@@ -674,7 +692,7 @@ class KeysTest final : public TestScreen {
   }
 
   void drawChords(TestPage& page) const {
-    page.paragraph(CHORDS_INTRO, 3);
+    page.paragraph(CHORDS_INTRO, 4);
     page.setCompact(true);
     for (int i = 0; i < CHORD_COUNT; ++i) {
       const ChordResult& r = chords[i];
@@ -693,7 +711,7 @@ class KeysTest final : public TestScreen {
   }
 
   void drawHandsOff(TestPage& page) const {
-    page.paragraph(HANDS_OFF_INTRO, 2);
+    page.paragraph(HANDS_OFF_INTRO, 3);
     page.setCompact(true);
     const unsigned long t = (millis() - watchStart) / 1000UL;
     page.rowf("Watching", "%lu:%02lu%s", t / 60UL, t % 60UL, t * 1000UL < HANDS_OFF_MIN_MS ? " (30 s minimum)" : "");

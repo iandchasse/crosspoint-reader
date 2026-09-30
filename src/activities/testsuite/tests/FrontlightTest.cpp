@@ -1,6 +1,6 @@
 #if CROSSPOINT_TEST_SUITE
 // T9: front light (bring-up B8). The boost lights only after the operator names
-// the LED load, every time it goes from dark to lit. Both strings step through
+// the LED load, at every Confirm that lights it. Both strings step through
 // five brightness levels while LED_MONIT (IO2) is read through freeink::adc and
 // the SDK's monitor record is watched for trips: the trip handler in the main
 // loop switches the light off before this screen could see fault(), so a trip
@@ -124,6 +124,11 @@ class FrontlightTest final : public TestScreen {
         redraw();
         break;
       case Slot::Right:
+        // The question stops this screen's ticks (and its 22 V watch) while it
+        // is open, and it is about what the operator already saw: dark first,
+        // with the after-off reading taken now.
+        if (lit) switchOff();
+        completeAfterOff();
         if (!everLit) {
           recordResult(-1);
         } else {
@@ -225,6 +230,17 @@ class FrontlightTest final : public TestScreen {
     offAt = millis();
     afterOffPending = true;
     redraw();
+  }
+
+  // The after-off reading onTick() would take, now (blocks at most SETTLE_MS).
+  void completeAfterOff() {
+    if (!afterOffPending) return;
+    const unsigned long since = millis() - offAt;
+    if (since < light::SETTLE_MS) delay(light::SETTLE_MS - since);
+    afterOff = light::readMonitor();
+    afterOffPending = false;
+    readPads();
+    checkPads(false);
   }
 
   void onTripped() {
@@ -360,7 +376,7 @@ class FrontlightTest final : public TestScreen {
       page.paragraph(NOT_BUILT, 3);
       return;
     }
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 5);
     page.gap(4);
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;
@@ -404,10 +420,10 @@ class FrontlightTest final : public TestScreen {
     page.setCompact(false);
     page.gap(4);
     if (darkTaken && dark.pinMv < light::DARK_MIN_PIN_MV) {
-      page.paragraph(BLIND_NOTE, 3);
+      page.paragraph(BLIND_NOTE, 4);
       return;
     }
-    page.paragraph(SCOPE_NOTE, 3);
+    page.paragraph(SCOPE_NOTE, 4);
   }
 
   static constexpr uint8_t PAD_ADIM_PULL = 1U << 0;

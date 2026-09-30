@@ -18,8 +18,10 @@
 
 #include "TestFactories.h"
 #include "TestNames.h"
+#include "TextBuffer.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
+#include "activities/testsuite/TestSuiteAccess.h"
 
 namespace testsuite {
 namespace {
@@ -33,6 +35,13 @@ constexpr int MAX_ROWS = 10;  // addresses listed on screen
 constexpr char INTRO[] =
     "Address-only probes of 0x08-0x77 at 100 and 400 kHz. Confirm: scan with J6 empty. Right: scan with an "
     "accessory on J6. An idle FT6336U can miss a key-started scan: tap Scan instead.";
+
+// The RTC is optional (rtc-devices): with none answering and none begun at
+// boot, the operator says whether one is fitted, as in T13.
+constexpr int QUESTION_RTC_FITTED = 1;
+constexpr const char* RTC_FITTED_ANSWERS[] = {"None fitted", "U13 or U14 fitted"};
+constexpr char RTC_FITTED_HEADING[] = "RTC fitted?";
+constexpr char RTC_FITTED_BODY[] = "Nothing answers at 0x68 or 0x51. Is an RTC (U13 DS3231MZ or U14 RV-8263) fitted?";
 
 enum class Level : uint8_t { NotRead, High, Low, Busy };
 
@@ -140,17 +149,18 @@ class I2cScanTest final : public TestScreen {
     scanned = true;
     j6 = j6Fitted;
     touchActive = gpio.hasTouch();
+    // Where the controller found at boot answers: a GT911 on the fallback can sit
+    // at the alternate address (0x14), which only the driver knows.
+    touchAddr = TestSuiteAccess::input(gpio).touchDiagnostics().address;
+    if (touchAddr == 0) touchAddr = BoardConfig::ACTIVE.touch.i2cAddress;
 
-    char fails[96] = "";
-    const auto fail = [&fails](const char* what) {
-      if (fails[0] != '\0') strncat(fails, "+", sizeof(fails) - strlen(fails) - 1);
-      strncat(fails, what, sizeof(fails) - strlen(fails) - 1);
-    };
+    fails[0] = '\0';
+    const auto fail = [this](const char* what) { addFailure(fails, sizeof(fails), what); };
     if (!standard.ok || !fast.ok) fail("bus");
     if (memcmp(standard.found, fast.found, sizeof(standard.found)) != 0) fail("400k_differs");
     if (sda == Level::Low || sda == Level::Busy || scl == Level::Low || scl == Level::Busy) fail("idle_level");
 
-    int rtcs = 0;
+    rtcs = 0;
     bool touchSeen = false;
     unknown = 0;
     for (uint8_t addr = FIRST_ADDR; addr <= LAST_ADDR; ++addr) {
@@ -161,23 +171,39 @@ class I2cScanTest final : public TestScreen {
       if (isRtc) ++rtcs;
       if (isTouch) touchSeen = true;
     }
-    // The board carries one RTC footprint's part (U13 or U14).
-    if (rtcs == 0) fail("no_rtc");
+    // At most one RTC footprint's part (U13 or U14); one HalClock began at boot
+    // must still answer.
+    if (rtcs == 0 && halClock.isAvailable()) fail("rtc_lost");
     if (rtcs > 1) fail("two_rtcs");
-    if (touchActive && !standard.acked(BoardConfig::ACTIVE.touch.i2cAddress)) fail("touch_no_ack");
+    if (touchActive && !standard.acked(touchAddr)) fail("touch_no_ack");
     if (!touchActive && touchSeen) fail("touch_not_probed");
     if (!j6 && unknown > 0) fail("unexpected_device");
 
+    if (rtcs == 0 && !halClock.isAvailable()) {
+      ask(QUESTION_RTC_FITTED, RTC_FITTED_HEADING, RTC_FITTED_BODY, RTC_FITTED_ANSWERS, 2);
+      return;
+    }
+    recordScan("n/a");
+  }
+
+  // Back on the question records nothing.
+  void onAnswer(const int question, const int answer) override {
+    if (question != QUESTION_RTC_FITTED || answer < 0) return;
+    if (answer == 1) addFailure(fails, sizeof(fails), "no_rtc");
+    recordScan(answer == 0 ? "no" : "yes");
+  }
+
+  void recordScan(const char* rtcFitted) {
     char found100[56];
     char found400[56];
     formatAddresses(found100, sizeof(found100), standard);
     formatAddresses(found400, sizeof(found400), fast);
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "j6=%s owner=%s hz=%lu,%lu sda=%s scl=%s found100=%s found400=%s rtcs=%d rtc_at_boot=%d touch=%s "
-           "unknown=%d fails=%s",
+           "j6=%s owner=%s hz=%lu,%lu sda=%s scl=%s found100=%s found400=%s rtcs=%d rtc_at_boot=%d rtc_fitted=%s "
+           "touch=%s touch_addr=0x%02x unknown=%d fails=%s",
            j6 ? "fitted" : "empty", standard.wasRunning ? "driver" : "none", static_cast<unsigned long>(standard.hz),
            static_cast<unsigned long>(fast.hz), levelName(sda), levelName(scl), found100, found400, rtcs,
-           halClock.isAvailable() ? 1 : 0, touchActive ? "active" : "absent", unknown,
+           halClock.isAvailable() ? 1 : 0, rtcFitted, touchActive ? "active" : "absent", touchAddr, unknown,
            fails[0] == '\0' ? "none" : fails);
   }
 
@@ -206,9 +232,9 @@ class I2cScanTest final : public TestScreen {
       ++rows;
     }
     if (rows == 0) page.row("No device answered", "");
-    if (touchActive && !standard.acked(BoardConfig::ACTIVE.touch.i2cAddress)) {
+    if (touchActive && !standard.acked(touchAddr)) {
       char label[40];
-      snprintf(label, sizeof(label), "0x%02x  touch (found at boot)", BoardConfig::ACTIVE.touch.i2cAddress);
+      snprintf(label, sizeof(label), "0x%02x  touch (found at boot)", touchAddr);
       page.row(label, "NO ACK: tap Scan");
     }
     page.setCompact(false);
@@ -219,6 +245,9 @@ class I2cScanTest final : public TestScreen {
   Level sda = Level::NotRead;
   Level scl = Level::NotRead;
   int unknown = 0;
+  int rtcs = 0;
+  uint8_t touchAddr = 0;
+  char fails[96] = "";  // kept while the RTC question is open
   bool scanned = false;
   bool j6 = false;
   bool touchActive = false;

@@ -47,6 +47,7 @@ static_assert(CHUNK % 4 == 0, "the generator writes 4 bytes at a time");
 constexpr unsigned long SLICE_MS = 200;  // work per loop pass, so Back and repaints get through
 constexpr unsigned long REDRAW_MS = 10000;
 constexpr unsigned long OVERLAP_REDRAW_MS = 2000;  // FAST refreshes during an overlap run
+constexpr unsigned long SUPPLY_CHECK_MS = 1000;    // the supply gates again during a run
 constexpr uint64_t FREE_MARGIN_BYTES = 16ULL * 1024ULL * 1024ULL;
 // The clock the link runs may sit a little below the host cap (divider steps).
 constexpr uint32_t CLOCK_MIN_PERCENT = 90;
@@ -177,6 +178,7 @@ class SdCardTest final : public TestScreen {
 
   void onTick() override {
     if (!running()) return;
+    if (millis() - supplyCheckedAt >= SUPPLY_CHECK_MS && !supplyStillOk()) return;
     if (result.overlap) overlapWork();
     const unsigned long sliceStart = millis();
     while (running() && millis() - sliceStart < SLICE_MS) {
@@ -192,6 +194,31 @@ class SdCardTest final : public TestScreen {
   void redraw() {
     drawnAt = millis();
     requestUpdate();
+  }
+
+  // The start gates, again once a second during a run: USB pulled mid-run leaves
+  // the overlap on the cell (PWR-02), or a plain run below the write floor. The
+  // run stops (radio off, file removed) and records SKIP: the operator's pull,
+  // not the board's fault.
+  bool supplyStillOk() {
+    supplyCheckedAt = millis();
+    const Supply supply = readSupply();
+    if (!supply.onBattery()) return true;
+    const uint16_t floorMv = BoardConfig::powerPolicy().firmwareUpdateMinMv;
+    const char* why = nullptr;
+    if (result.overlap) {
+      why = "usb_lost_overlap";
+    } else if (floorMv != 0 && supply.pPlusMv < floorMv) {
+      why = "battery_floor_during_run";
+    } else {
+      return true;
+    }
+    LOG_INF("TEST", "P3: on the cell at %u mV during the run (%s); stopping", supply.pPlusMv, why);
+    const unsigned long doneMb = static_cast<unsigned long>(doneBytes >> 20);
+    abortRun(why);
+    record(Verdict::Skip, "reason=%s pplus=%u done_mb=%lu size_mb=%lu", why, supply.pPlusMv, doneMb,
+           static_cast<unsigned long>(result.sizeMb));
+    return false;
   }
 
   // --- card record -----------------------------------------------------------
@@ -265,6 +292,7 @@ class SdCardTest final : public TestScreen {
     sha.restart();
     phase = Phase::Writing;
     phaseStart = millis();
+    supplyCheckedAt = phaseStart;
     if (result.overlap) {
       WiFi.mode(WIFI_STA);
       WiFi.scanNetworks(/*async=*/true);
@@ -392,7 +420,7 @@ class SdCardTest final : public TestScreen {
   // --- screen ----------------------------------------------------------------
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 5);
     page.gap(4);
     page.setCompact(true);
     if (!card.mounted) {
@@ -448,6 +476,7 @@ class SdCardTest final : public TestScreen {
   uint8_t writeDigest[Sha256::SIZE] = {};
   unsigned long phaseStart = 0;
   unsigned long drawnAt = 0;
+  unsigned long supplyCheckedAt = 0;
 };
 
 }  // namespace

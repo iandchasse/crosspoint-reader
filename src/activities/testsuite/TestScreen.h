@@ -100,11 +100,13 @@ class TestScreen : public Activity, protected UiAppHost {
   // --- helpers ---------------------------------------------------------------
   // Logs the result (TestResultLog) and shows it at the top of the screen.
   void record(Verdict verdict, const char* detailsFmt, ...) __attribute__((format(printf, 3, 4)));
-  // A front-light test asks this every time before it lights the boost from
-  // dark: which LED load is connected, the J3 panel light or a J6 strip, with
-  // "no load" first and preselected. onLightLoadConfirmed() runs only after a
-  // load is picked. Returns false, without asking, when the build or the board
-  // has no front light.
+  // A front-light test asks this before each lighting session lights the boost
+  // from dark (T9's Confirm, one T10 run): which LED load is connected, the J3
+  // panel light or a J6 strip, with "no load" first and preselected.
+  // onLightLoadConfirmed() runs only after a load is picked. Within a session
+  // the light may go dark and relight on the same load without asking again
+  // (T10's retry and restore, T9's string switch). Returns false, without
+  // asking, when the build or the board has no front light.
   bool confirmLightLoad();
   // Asks for something only the operator can observe (an LED, a meter): up to
   // four answers, picked with Up/Down and Confirm or by a tap. onAnswer() gets
@@ -127,9 +129,15 @@ class TestScreen : public Activity, protected UiAppHost {
   void pressSlot(Slot slot);
   void exitTest();
   void drawResult(TestPage& page) const;
+  void splitFailedChecks(Verdict v);
 
   char title[40] = "";
-  char details[256] = "";
+  // The record as logged, and as drawn: the failed checks (the "fails=" value)
+  // on a line of their own, the rest of the details without them. Members of
+  // the heap-allocated screen, not locals.
+  char details[320] = "";
+  char failedChecks[72] = "";
+  char shownDetails[320] = "";
   bool hasResult = false;
   Verdict verdict = Verdict::Info;
   LogOutcome outcome = LogOutcome::SerialOnly;

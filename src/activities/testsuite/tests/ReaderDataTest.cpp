@@ -95,7 +95,7 @@ class ReaderDataTest final : public TestScreen {
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 4);
+    page.paragraph(INTRO, 6);
     page.gap(4);
     if (!Storage.ready()) {
       page.paragraph(NO_CARD, 1);

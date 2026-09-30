@@ -10,6 +10,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <variant>
@@ -203,7 +204,7 @@ void TestScreen::render(RenderLock&&) {
                 width - 2 * metrics.contentSidePadding, footerTop - metrics.verticalSpacing);
   if (showsLastResult()) drawResult(page);
   if (keysAreTestInput()) {
-    page.paragraph(text::HOLD_BACK_TO_EXIT, 2);
+    page.paragraph(text::HOLD_BACK_TO_EXIT, 3);
     page.gap();
   }
   drawBody(page);
@@ -215,7 +216,8 @@ void TestScreen::drawResult(TestPage& page) const {
   char line[32];
   snprintf(line, sizeof(line), "%s: %s", text::RESULT, verdictName(verdict));
   page.heading(line);
-  page.paragraph(details, 4);
+  if (failedChecks[0] != '\0') page.paragraph(failedChecks, 2);
+  page.paragraph(shownDetails, verdict == Verdict::Fail ? 6 : 4);
   switch (outcome) {
     case LogOutcome::Saved:
       page.paragraph(text::SAVED, 2);
@@ -235,10 +237,39 @@ void TestScreen::record(const Verdict v, const char* detailsFmt, ...) {
   va_start(args, detailsFmt);
   vsnprintf(details, sizeof(details), detailsFmt, args);
   va_end(args);
+  splitFailedChecks(v);
   verdict = v;
   outcome = recordResult(info, v, details);
   hasResult = true;
   requestUpdate();
+}
+
+// A record that judges checks carries "fails=<check>+<check>" (or "fails=none"),
+// mostly last, where the wrapped details would cut it off. A FAIL shows the list
+// on its own line; any other verdict keeps "fails=" (an INFO's "too_short" and
+// the like) in its details.
+void TestScreen::splitFailedChecks(const Verdict v) {
+  failedChecks[0] = '\0';
+  snprintf(shownDetails, sizeof(shownDetails), "%s", details);
+  if (v != Verdict::Fail) return;
+  constexpr char KEY[] = "fails=";
+  constexpr size_t KEY_LEN = sizeof(KEY) - 1;
+  char* at = shownDetails;
+  while ((at = strstr(at, KEY)) != nullptr && at != shownDetails && at[-1] != ' ') at += KEY_LEN;
+  if (at == nullptr) return;
+  const char* value = at + KEY_LEN;
+  const size_t valueLen = strcspn(value, " ");
+  if (valueLen != 0 && !(valueLen == 4 && strncmp(value, "none", 4) == 0)) {
+    snprintf(failedChecks, sizeof(failedChecks), "%s %.*s", text::FAILED_CHECKS, static_cast<int>(valueLen), value);
+  }
+  // Drop "fails=<value>" and one space next to it from the drawn details.
+  char* end = at + KEY_LEN + valueLen;
+  if (*end == ' ') {
+    ++end;
+  } else if (at != shownDetails) {
+    --at;
+  }
+  memmove(at, end, strlen(end) + 1);
 }
 
 bool TestScreen::confirmLightLoad() {

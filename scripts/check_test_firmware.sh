@@ -2,6 +2,10 @@
 # Checks a built hardware test firmware (docs/silkscreen/TEST-SUITE.md):
 # - no reader, library, book-parsing, web-server, OTA or SD-update code and no
 #   light panel is linked into the image, so it cannot open a book;
+# - no static initialiser from reader code runs at boot, except the allowed
+#   ones below: PlatformIO links every object of lib/Epub and lib/LibraryIndex
+#   (shared headers pull them in), and --gc-sections keeps their initialisers
+#   through .init_array, with the data those reference (the hyphenation tries);
 # - the image carries exactly one board tag, CROSSPOINT-BOARD-V1:<env>;, so the
 #   reader's OTA and SD update reject it as another board's image.
 # Usage: scripts/check_test_firmware.sh [env]   (default: silkscreen-test; build it first)
@@ -36,14 +40,41 @@ fi
 
 status=0
 
+# nm's own status, and a symbol every image has: a failed or foreign nm must
+# not pass as an image with nothing in it.
+if ! syms=$("$nm_bin" -C "$elf"); then
+  echo "nm failed on $elf"
+  exit 2
+fi
+if ! raw=$("$nm_bin" "$elf"); then
+  echo "nm failed on $elf"
+  exit 2
+fi
+if ! grep -q 'board_tag::boardName' <<<"$syms"; then
+  echo "nm output for $elf has no board_tag::boardName: wrong nm or ELF?"
+  exit 2
+fi
+
 # Class and function names (demangled), each preceded by a non-identifier
 # character so TestSleepActivity does not match SleepActivity.
 forbidden='(^|[^A-Za-z0-9_])(ReaderActivity|EpubReaderActivity|XtcReaderActivity|HomeActivity|LibraryListActivity|FileBrowserActivity|BmpViewerActivity|OpdsBookBrowserActivity|SleepActivity|FrontlightPanelActivity|SettingsActivity|SdFirmwareUpdateActivity|OtaUpdateActivity|CrossPointWebServerActivity|CrossPointWebServer|WebDAVHandler|OtaUpdater|Section|ChapterHtmlSlimParser|BookMetadataCache)::|(^|[^A-Za-z0-9_])(Epub|Xtc)::load|[^A-Za-z0-9_]XML_ParserCreate'
-if hits=$("$nm_bin" -C "$elf" | grep -E "$forbidden"); then
+if hits=$(grep -E "$forbidden" <<<"$syms"); then
   echo "Reader, web-server, update or light-panel code is linked into ${env}:"
   echo "$hits" | head -40
   status=1
 fi
+
+# Static initialisers (raw names: nm -C leaves _GLOBAL__sub_I_<mangled> as it
+# is) from reader code. The allowed ones set up buffers, pointers and the
+# hyphenation tables only; any other is new and needs a look.
+reader_init='_GLOBAL__sub_I_.*(CrossPointWebServer|WebDAV|Hyphenat|ImageBlock|ImageDecoder|[0-9]library|Library|Epub|Xtc|Section|ChapterHtml|BookMetadata|Opds|KOReader|Reader)'
+allowed_init='_GLOBAL__sub_I__Z34getLanguageHyphenatorForPrimaryTag|_GLOBAL__sub_I__ZN10ImageBlockC2|_GLOBAL__sub_I__ZN19ImageDecoderFactory11jpegDecoderE|_GLOBAL__sub_I__ZN7library16libraryIndexPathEv'
+if hits=$(grep -E "$reader_init" <<<"$raw" | grep -v -E "$allowed_init"); then
+  echo "A static initialiser from reader code runs in ${env} (not in the allow-list):"
+  echo "$hits" | head -40
+  status=1
+fi
+allowed_count=$(grep -E "$reader_init" <<<"$raw" | grep -c -E "$allowed_init" || true)
 
 expected="CROSSPOINT-BOARD-V1:${env};"
 tags=$(LC_ALL=C grep -a -o -E 'CROSSPOINT-BOARD-V1:[!-:<-~]{1,23};' "$bin" || true)
@@ -55,6 +86,6 @@ if [ "$count" -ne 1 ] || [ "$tags" != "$expected" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "${env}: no reader code linked; board tag ${expected} present once."
+  echo "${env}: no reader code linked (${allowed_count} allowed lib/Epub and lib/LibraryIndex static initialisers); board tag ${expected} present once."
 fi
 exit "$status"

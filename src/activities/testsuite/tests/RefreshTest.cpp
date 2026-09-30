@@ -275,7 +275,7 @@ class RefreshTest final : public PanelRunTest {
 
   void drawBody(TestPage& page) const override {
     const Variant& variant = VARIANTS[selected];
-    page.paragraph(INTRO, 3);
+    page.paragraph(INTRO, 4);
     page.gap(4);
     page.rowf("Refresh", "%d/%d  %s", selected + 1, VARIANT_COUNT, variant.name);
     page.paragraph(variant.expect, 3);
