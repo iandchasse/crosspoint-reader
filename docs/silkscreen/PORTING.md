@@ -3,6 +3,7 @@
 This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md). The sleep-current budget, the pin states in sleep and the battery-drain rules, with where each is implemented, are in [POWER.md](POWER.md).
 
 - **Base:** CrossPoint `develop` at `d1509d07`, with freeink-sdk at its pinned `87c4493`. The SDK work is on the submodule's `silkscreen` branch.
+  - Upstream `develop` is merged in up to `707625a4`, which keeps the SDK pin at `87c4493`. The next upstream commit, `2600a79e`, moves the pin to `2339226` and its code needs that SDK (`fetchResumable`'s `sameOrigin` callback). It waits for the SDK sync.
 - **Earlier attempt:** the first port (Sep 20-21, 2026) is archived in `EPD_Hub_ESP32/silkscreen-firmware-archive/` as git bundles plus `.patch` files. It is a reference only. Its pin map was right, but several behaviours contradict the hardware spec. They are listed under [What this port does differently](#what-this-port-does-differently).
 
 ## Status
