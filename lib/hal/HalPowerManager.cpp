@@ -3,6 +3,7 @@
 #include <BoardConfig.h>
 #include <Logging.h>
 #include <PowerManager.h>
+#include <SharedI2c.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
@@ -68,6 +69,14 @@ void HalPowerManager::setPowerSaving(bool enabled) {
 }
 
 void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+  // A touch controller on an always-on rail goes to sleep, then the shared I2C
+  // bus is released with nothing in flight (no-ops on boards without them). Both
+  // before the serial teardown below, so their logs still reach the host.
+  gpio.prepareForSleep();
+  if (!freeink::i2c::releaseSensorBusForSleep()) {
+    LOG_ERR("PWR", "I2C SDA still held LOW after bus recovery");
+  }
+
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.

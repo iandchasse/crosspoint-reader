@@ -254,8 +254,8 @@ void EpubReaderBookmarksActivity::buildScreen(UiScreen& screen) {
     return;
   }
 
-  // This hint names a physical button, so omit it on touch boards.
-  if (!mappedInput.hasTouch()) {
+  // This hint names a physical button, so omit it on boards without keys.
+  if (mappedInput.hasFrontButtons()) {
     const int helpLineHeight = renderer.getLineHeight(SMALL_FONT_ID);
     const fui::Rect band = screen.takeBottom(static_cast<int16_t>(helpLineHeight + metrics.verticalSpacing));
     GUI.drawHelpText(renderer, Rect{band.x, band.y + metrics.verticalSpacing, band.width, helpLineHeight},

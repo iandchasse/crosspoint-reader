@@ -87,7 +87,7 @@ void SettingsActivity::rebuildSettingsLists() {
   }
 
   // Append device-only ACTION items
-  if (!BoardConfig::hasTouch()) {
+  if (BoardConfig::hasFrontButtons()) {
     controlsSettings.insert(controlsSettings.begin(),
                             SettingInfo::Action(StrId::STR_REMAP_FRONT_BUTTONS, SettingAction::RemapFrontButtons));
   }

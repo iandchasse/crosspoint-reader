@@ -83,6 +83,14 @@ class HalGPIO {
   // going through the debounced state. Cheap enough to call every few ms.
   bool rawInputActive();
   bool hasTouch() const;
+  // Physical navigation keys are fitted: every board without touch, and touch
+  // boards that keep their keys (TouchConfig::buttonsAlongsideTouch). Key-only UI
+  // (button hints, front-button remap, key help text) keys off this, not
+  // !hasTouch().
+  bool hasFrontButtons() const;
+  // Deep-sleep entry: sends a touch controller on an always-on rail its sleep
+  // command (no-op on other boards). Call before the I2C bus is released.
+  void prepareForSleep();
   // Capacitive Home key reported by the touch controller (X4 Pro). The tap
   // event fires on release and excludes a long hold.
   bool hasHomeKey() const;

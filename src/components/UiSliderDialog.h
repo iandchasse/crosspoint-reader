@@ -48,13 +48,15 @@ inline void buildSliderDialogScreen(UiAppHost::UiScreen& screen, freeink::ui::Gf
   uiTarget.setFont(fui::GfxRendererTarget::FONT_TITLE, NOTOSANS_18_FONT_ID);
 
   const bool touch = mappedInput.hasTouch();
+  // The key step hints show wherever keys are fitted, touch or not.
+  const bool keyHints = mappedInput.hasFrontButtons();
   // Touch boards get the finger-sized pill (same as the frontlight rows); on
   // button boards the capsule is a read-only gauge driven by the keys, so a
   // slim band is enough.
   const int16_t bandHeight = touch ? 56 : 24;
   const int16_t capLh = screen.target().lineHeight(theme.smallText.font);
   const int16_t sliderH = static_cast<int16_t>(capLh + theme.spaceMd + bandHeight);
-  const int16_t hintsH = touch ? 0 : static_cast<int16_t>(capLh * 2 + theme.spaceSm + theme.spaceMd);
+  const int16_t hintsH = keyHints ? static_cast<int16_t>(capLh * 2 + theme.spaceSm + theme.spaceMd) : 0;
 
   // Dialog chrome and slots, styled exactly like OptionPopup: bordered popup
   // panel per theme frame metrics, body-font caption, [-] [+] [Confirm] as
@@ -122,7 +124,7 @@ inline void buildSliderDialogScreen(UiAppHost::UiScreen& screen, freeink::ui::Gf
   screen.frame().hit(dialog, spec.chromeAction, 0, fui::InputTouch);
   const fui::Rect band = fui::optionDialog(screen.frame(), dialog, props);
 
-  if (!touch) {
+  if (keyHints) {
     // Two-line step hint (front buttons = fine step, side buttons = coarse
     // step) under the slider, preformatted by the caller so the layout
     // doesn't depend on a separator hidden in translated text.

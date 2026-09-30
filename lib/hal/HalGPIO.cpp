@@ -180,6 +180,27 @@ unsigned long HalGPIO::getPowerButtonHeldTime() const { return inputMgr.getPower
 
 bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
 
+bool HalGPIO::hasFrontButtons() const { return !hasTouch() || BoardConfig::ACTIVE.touch.buttonsAlongsideTouch; }
+
+void HalGPIO::prepareForSleep() {
+  switch (inputMgr.prepareTouchForSleep()) {
+    case InputManager::TouchSleepResult::Asleep:
+      LOG_DBG("HW", "Touch controller asleep");
+      break;
+    case InputManager::TouchSleepResult::NoAnswer:
+      // Without a controller found at boot this was a best-effort write to a
+      // tail that may not be fitted.
+      if (hasTouch()) {
+        LOG_ERR("HW", "Touch controller did not accept its sleep command");
+      } else {
+        LOG_DBG("HW", "No touch controller answered the sleep command");
+      }
+      break;
+    case InputManager::TouchSleepResult::NotApplicable:
+      break;
+  }
+}
+
 bool HalGPIO::hasHomeKey() const { return BoardConfig::hasHomeKey(); }
 
 bool HalGPIO::wasHomeKeyPressed() const { return inputMgr.wasHomeKeyPressed(); }

@@ -107,7 +107,7 @@ void LyraTheme::drawSubHeader(const GfxRenderer& renderer, Rect rect, const char
 
 void LyraTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                 const char* btn4) const {
-  if (gpio.hasTouch()) {
+  if (!gpio.hasFrontButtons()) {
     return;
   }
 
@@ -153,7 +153,7 @@ void LyraTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, const c
 }
 
 void LyraTheme::drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const {
-  if (gpio.hasTouch()) {
+  if (!gpio.hasFrontButtons()) {
     return;
   }
 

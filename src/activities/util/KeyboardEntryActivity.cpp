@@ -532,8 +532,10 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
   const int height = keyboardKeysHeight(metrics, rows, hasTouch);
   const int hintGap = hasTouch ? metrics.verticalSpacing - metrics.keyboardVerticalOffset : BUTTON_KEYBOARD_HINT_GAP;
   const int y = pageHeight - metrics.buttonHintsHeight - height - hintGap;
+  // Touch keyboards reach down to the key-hint band (the screen edge when there
+  // are no keys).
   return fui::Rect{0, static_cast<int16_t>(y), static_cast<int16_t>(pageWidth),
-                   static_cast<int16_t>(hasTouch ? pageHeight - y : height)};
+                   static_cast<int16_t>(hasTouch ? pageHeight - metrics.buttonHintsHeight - y : height)};
 }
 
 void KeyboardEntryActivity::loop() {
@@ -992,7 +994,9 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   props.modeLabel =
       (symbols || (inputType == InputType::Url && urlPanel)) ? tr(STR_KEY_MODE_ABC) : tr(STR_KEY_MODE_SYMBOLS);
   props.inputMask = static_cast<uint16_t>(fui::InputTouch | fui::InputLongPress);
-  props.selectedIndex = (cursorMode || mappedInput.hasTouch()) ? -1 : static_cast<int16_t>(selectedLogicalIndex());
+  // The key cursor shows wherever keys can move it.
+  props.selectedIndex =
+      (cursorMode || !mappedInput.hasFrontButtons()) ? -1 : static_cast<int16_t>(selectedLogicalIndex());
   // The 12-column Arabic rows need the smaller font for wide isolated letters.
   props.labelText.font = layoutId == fui::KeyboardLayoutId::ArabicAr && !symbols ? fui::GfxRendererTarget::FONT_SMALL
                                                                                  : fui::GfxRendererTarget::FONT_BODY;
@@ -1001,8 +1005,8 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   if (urlPanel) props.uniformKeyWidth = false;  // Shortcut rows stretch independently.
   if (!mappedInput.hasTouch()) props.background = fui::Paint::none();
   frame.target().fill(kbRect, props.background);
-  const int bottomEdge =
-      mappedInput.hasTouch() ? renderer.getScreenHeight() : renderer.getScreenHeight() - metrics.buttonHintsHeight;
+  // buttonHintsHeight is 0 on boards without keys, so touch-only keys reach the edge.
+  const int bottomEdge = renderer.getScreenHeight() - metrics.buttonHintsHeight;
   props.bottomHitOverflow = static_cast<int16_t>(std::max(0, bottomEdge - keysRect.bottom()));
   fui::keyboard(frame, keysRect, props);
   interactions.publish();

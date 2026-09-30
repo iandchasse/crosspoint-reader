@@ -40,10 +40,10 @@ void MappedInputManager::update(const bool deferHomeButtonAction) const {
 }
 
 bool MappedInputManager::isNavDirectionSwapped() const {
-  // Touch boards always follow the rendered orientation; button-only boards keep the user toggle.
+  // Touch-only boards always follow the rendered orientation; boards with keys keep the user toggle.
   // Home and settings render in portrait, so neither path swaps them.
   const auto orientation = renderer.getOrientation();
-  return (gpio.hasTouch() || SETTINGS.frontButtonFollowOrientation) &&
+  return (!gpio.hasFrontButtons() || SETTINGS.frontButtonFollowOrientation) &&
          (orientation == GfxRenderer::PortraitInverted || orientation == GfxRenderer::LandscapeCounterClockwise);
 }
 
@@ -157,6 +157,8 @@ constexpr unsigned long TOUCH_HELD_OVERRIDE_WINDOW_MS = 250;
 }  // namespace
 
 bool MappedInputManager::hasTouch() const { return gpio.hasTouch(); }
+
+bool MappedInputManager::hasFrontButtons() const { return gpio.hasFrontButtons(); }
 
 void MappedInputManager::rememberTouchHeldTime() const {
   touchHeldOverrideValid = true;

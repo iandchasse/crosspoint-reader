@@ -99,18 +99,18 @@ void CoverGridHomeUi::draw(UiScreen& screen) {
   // in (headerStatusInset's optical bias).
   const int16_t hInset = std::max<int16_t>(
       0, static_cast<int16_t>(UITheme::getInstance().getMetrics().headerSidePadding - COVER_CELL_INSET - safe.x));
-  // Drop the status band, hero, and grid down: touch boards get a full step
-  // (no button-hint band to fit), button boards a modest nudge. The tabs stay
+  // Drop the status band, hero, and grid down: touch-only boards get a full step
+  // (no button-hint band to fit), boards with keys a modest nudge. The tabs stay
   // put (bottom-anchored below).
   const int16_t topInset =
-      BoardConfig::hasTouch() ? static_cast<int16_t>(theme.spaceLg) : static_cast<int16_t>(theme.spaceSm + 4);
+      !BoardConfig::hasFrontButtons() ? static_cast<int16_t>(theme.spaceLg) : static_cast<int16_t>(theme.spaceSm + 4);
   screen.insetContent(fui::Insets{topInset, hInset, theme.spaceSm, hInset});
   const bool landscape = renderer.getScreenWidth() > renderer.getScreenHeight();
   // Reserve the band's slot in the flow (its content draws at a fixed screen
   // position in drawHeaderBand); the slot doubles as padding above the heading.
   screen.takeTop(UITheme::getInstance().getMetrics().batteryBarHeight, theme.spaceSm);
-  // Button boards run tighter above the tabs to make room for the top step.
-  const int16_t tabGap = BoardConfig::hasTouch() ? theme.spaceSm : static_cast<int16_t>(4);
+  // Boards with keys run tighter above the tabs to make room for the top step.
+  const int16_t tabGap = !BoardConfig::hasFrontButtons() ? theme.spaceSm : static_cast<int16_t>(4);
   auto tabRect = screen.takeBottom(UITheme::getInstance().getMetrics().coverGridTabBarHeight, tabGap);
   if (books->empty()) {
     drawTabs(screen, tabRect.inset(fui::Insets{0, COVER_CELL_INSET, 0, COVER_CELL_INSET}));
@@ -212,11 +212,11 @@ void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int co
   };
   fui::bookCard(screen.frame(), rect, card);
 
-  if (selected == 0 && !BoardConfig::hasTouch()) {
-    // Button boards only: a vertical accent bar left of the card, cover-height
+  if (selected == 0 && BoardConfig::hasFrontButtons()) {
+    // Boards with keys only: a vertical accent bar left of the card, cover-height
     // and vertically centered on it, marks the featured card as the button
-    // cursor without framing the cover. Touch boards tap directly and need no
-    // cursor on the hero card.
+    // cursor without framing the cover. Touch-only boards tap directly and need
+    // no cursor on the hero card.
     const int16_t barH = card.coverSize.height;
     screen.target().fill(
         fui::Rect{static_cast<int16_t>(rect.x - 5), static_cast<int16_t>(rect.y + (rect.height - barH) / 2), 3, barH},

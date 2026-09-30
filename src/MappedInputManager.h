@@ -57,6 +57,9 @@ class MappedInputManager {
   bool consumeSuppressedRelease() const;
   bool isPressed(Button button) const;
   bool hasTouch() const;
+  // Physical navigation keys are fitted (HalGPIO::hasFrontButtons): key hints and
+  // key help text key off this, since a touch board may keep its keys.
+  bool hasFrontButtons() const;
   bool wasScreenTapped(int& x, int& y) const;
   bool wasScreenTouchDown(int& x, int& y) const;
   // One-shot long-press from the SDK touch classifier, fired WHILE the finger

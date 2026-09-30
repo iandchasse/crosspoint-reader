@@ -1010,9 +1010,9 @@ void WifiSelectionActivity::buildPromptDialog(UiScreen& screen) {
 
 void WifiSelectionActivity::renderNetworkList(const Rect* screen, const ThemeMetrics* metrics) {
   renderUi();
-  if (networks.empty() && !mappedInput.hasTouch()) {
-    // Below the centered "no networks" line the app drew. Touch boards get an
-    // on-screen Retry button from the screen builder instead of this hint.
+  if (networks.empty() && mappedInput.hasFrontButtons()) {
+    // Below the centered "no networks" line the app drew, on boards with an OK
+    // key. Touch boards also get an on-screen Retry button from the screen builder.
     const auto height = renderer.getLineHeight(UI_10_FONT_ID);
     const auto top = screen->y + (screen->height - height) / 2;
     UITheme::drawCenteredText(renderer, *screen, SMALL_FONT_ID, top + height + 10, tr(STR_PRESS_OK_SCAN));

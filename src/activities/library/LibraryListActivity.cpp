@@ -1007,7 +1007,7 @@ const char* LibraryListActivity::headerTitle() const {
 }
 
 void LibraryListActivity::drawHoldHelp() const {
-  if (mappedInput.hasTouch() || groupsCollapsed) return;
+  if (!mappedInput.hasFrontButtons() || groupsCollapsed) return;
   const char* help = nullptr;
   if (tabsFocused() && !degraded)
     help = tr(STR_LIBRARY_HOLD_SORT);
