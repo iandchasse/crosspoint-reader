@@ -278,6 +278,9 @@ class BaseTheme {
                               const std::function<std::string(int index)>& buttonLabel,
                               const std::function<UIIcon(int index)>& rowIcon) const;
   virtual Rect drawPopup(const GfxRenderer& renderer, const char* message) const;
+  // drawPopup() for a message that may not fit on one line: the text wraps to at
+  // most maxLines inside a box no wider than the screen less two popup margins.
+  Rect drawWrappedPopup(const GfxRenderer& renderer, const char* message, int maxLines) const;
   virtual void fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const;
   static void drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage, const int pageCount,
                             std::string title, const int paddingBottom = 0, const int textYOffset = 0,

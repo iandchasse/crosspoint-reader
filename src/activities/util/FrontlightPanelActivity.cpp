@@ -64,8 +64,14 @@ void FrontlightPanelActivity::onEnter() {
   // persists that, which is the intent — 0 is not a brightness any more.
   brightness = std::max(MIN_BRIGHTNESS, Frontlight.brightness());
   warmth = Frontlight.warmth();
+  // A single-colour light: warmth is the string that lights, and that is saved.
+  if (warmthLocked()) warmth = Frontlight.stringMissing(true) ? 0 : 100;
   lightOn = Frontlight.isOn();
   lightOnChanged = false;
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  // Also after a switch-on elsewhere, or Restore Light on Wake, found no light.
+  noLightNote = !lightOn && Frontlight.noLightFound();
+#endif
 
   // Seed the touch tile's restore mode from the live setting, so toggling off
   // and back on within this session returns to the mode the user had.
@@ -114,14 +120,16 @@ void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, v
     self->lightOn = true;
     self->lightOnChanged = true;
     Frontlight.setOn(true);
+    self->noteSwitchOnResult();
   }
 }
 
 void FrontlightPanelActivity::onWarmthEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<FrontlightPanelActivity*>(user);
-  if (event.dragPermille < 0) return;
+  if (event.dragPermille < 0 || self->warmthLocked()) return;
   self->warmth = percentFromPermille(event.dragPermille);
   Frontlight.setWarmth(self->warmth);
+  self->noteSwitchOnResult();
 }
 
 void FrontlightPanelActivity::onToggleEvent(const fui::ActionEvent&, void* user) {
@@ -195,17 +203,20 @@ void FrontlightPanelActivity::adjustBrightness(const int delta) {
     lightOn = true;
     lightOnChanged = true;
     Frontlight.setOn(true);
+    noteSwitchOnResult();
   }
   requestUpdate();
 }
 
 void FrontlightPanelActivity::adjustWarmth(const int delta) {
+  if (warmthLocked()) return;
   int next = static_cast<int>(warmth) + delta;
   if (next < 0) next = 0;
   if (next > 100) next = 100;
   if (next == warmth) return;
   warmth = static_cast<uint8_t>(next);
   Frontlight.setWarmth(warmth);
+  noteSwitchOnResult();
   requestUpdate();
 }
 
@@ -224,8 +235,51 @@ void FrontlightPanelActivity::toggleLight() {
   lightOn = !Frontlight.isOn();
   lightOnChanged = true;
   Frontlight.setOn(lightOn);
+  noteSwitchOnResult();
   requestUpdate();
 }
+
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+void FrontlightPanelActivity::noteSwitchOnResult() {
+  if (Frontlight.takeNoLightNotice()) {
+    noLightNote = true;
+    lightOn = false;
+  } else if (Frontlight.isOn()) {
+    noLightNote = false;
+  }
+  // A colour change can find a string missing, which pins the warmth row.
+  if (warmthLocked()) warmth = Frontlight.stringMissing(true) ? 0 : 100;
+  requestUpdate();
+}
+
+bool FrontlightPanelActivity::warmthLocked() const {
+  return Frontlight.stringMissing(true) || Frontlight.stringMissing(false);
+}
+
+const char* FrontlightPanelActivity::singleStringNote() {
+  if (Frontlight.stringMissing(true)) return tr(STR_FRONTLIGHT_COOL_ONLY);
+  if (Frontlight.stringMissing(false)) return tr(STR_FRONTLIGHT_WARM_ONLY);
+  return nullptr;
+}
+
+fui::TextStyle FrontlightPanelActivity::noteStyle(const fui::ThemeTokens& tokens) {
+  fui::TextStyle style = tokens.smallText;
+  style.maxLines = 3;
+  return style;
+}
+
+int16_t FrontlightPanelActivity::noteHeight(const fui::DrawTarget& target, const fui::ThemeTokens& tokens,
+                                            const char* text) const {
+  const auto width = static_cast<int16_t>(renderer.getScreenWidth() - 2 * kPanelSideMargin);
+  return fui::measureWrappedText(target, text, noteStyle(tokens), width).height;
+}
+
+void FrontlightPanelActivity::drawNote(UiScreen& screen, const char* text) const {
+  const auto& theme = screen.theme();
+  const auto rect = screen.takeTop(noteHeight(screen.target(), theme, text), theme.spaceMd);
+  screen.target().text(rect, text, noteStyle(theme));
+}
+#endif
 
 void FrontlightPanelActivity::close() { finish(); }
 
@@ -295,8 +349,14 @@ int FrontlightPanelActivity::computePanelBottom() const {
     // Screen::sliderRow reserves caption + spaceMd + control band, then a
     // spaceMd gap; addSliderRow() adds one more spaceMd of air after each row.
     y += lineHeight + tokens.spaceMd + kSliderRowHeight + 2 * tokens.spaceMd;  // brightness
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+    if (noLightNote) y += noteHeight(uiTarget, tokens, tr(STR_FRONTLIGHT_NOT_DETECTED)) + tokens.spaceMd;
+#endif
     if (Frontlight.hasColorTemperature()) {
       y += lineHeight + tokens.spaceMd + kSliderRowHeight + 2 * tokens.spaceMd;  // warmth
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+      if (const char* note = singleStringNote()) y += noteHeight(uiTarget, tokens, note) + tokens.spaceMd;
+#endif
     }
     y += tokens.spaceSm;
   }
@@ -382,8 +442,15 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
   if (Frontlight.present()) {
     addSliderRow(screen, tr(STR_BRIGHTNESS), brightness, ACTION_BRIGHTNESS, ACTION_BRIGHTNESS_STEP,
                  /*showToggle=*/true);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+    if (noLightNote) drawNote(screen, tr(STR_FRONTLIGHT_NOT_DETECTED));
+#endif
     if (Frontlight.hasColorTemperature()) {
       addSliderRow(screen, tr(STR_WARMTH), warmth, ACTION_WARMTH, ACTION_WARMTH_STEP, /*showToggle=*/false);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+      // A single-colour light: warmth is pinned to the string there is.
+      if (const char* note = singleStringNote()) drawNote(screen, note);
+#endif
     }
     screen.spacer(theme.spaceSm);
   }

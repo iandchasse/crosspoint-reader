@@ -28,6 +28,28 @@ class HalFrontlight {
   bool isOn() const { return lit && !manager.fault(); }
   bool fault() const { return manager.fault(); }
 
+  // The switch-on load probe (FrontlightConfig::loadProbeMs); these are constant
+  // false without FREEINK_CAP_FRONTLIGHT_PROBE. A switch-on that finds no light
+  // leaves it off, as setOn(false) would, and switching it on again is the retry.
+  //
+  // No light answered the last switch-on. Kept across deep sleep, so a wake does
+  // not restore the light into nothing; a cold boot clears it.
+  bool noLightFound() const { return manager.load() == freeink::frontlight::Load::Absent; }
+  // A single-colour light: this string tripped the probe while the other one lit.
+  // Warmth then stays on the other string until a cold boot.
+  bool stringMissing(const bool warm) const { return manager.stringMissing(warm); }
+  // True once after a switch-on or colour change the user asked for found no
+  // light, so the UI can say so.
+  bool takeNoLightNotice() {
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+    const bool notice = noLightNotice;
+    noLightNotice = false;
+    return notice;
+#else
+    return false;
+#endif
+  }
+
   // Take the light dark and release its pads before deep sleep. begin() also
   // runs it from a shutdown handler before every software restart, so the
   // driver is dark before the reset lets COLOR_SEL fall to its pull-down.
@@ -44,6 +66,12 @@ class HalFrontlight {
   // toggling back on restores it.
   uint8_t lastBrightness = 60;
   bool lit = false;
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  bool noLightNotice = false;
+  // After a call that may have switched the light on: a probe that found no light
+  // leaves it off here too, and raises the notice when the user asked.
+  void settleSwitchOn(bool userAsked);
+#endif
 
   static HalFrontlight instance;
 };

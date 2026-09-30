@@ -38,7 +38,18 @@ uint32_t pinFromLed(uint32_t ledMv);
 // `samples` conversions of the monitor pin, averaged, under the shared ADC lock.
 Reading readMonitor(uint8_t samples = 16);
 // The SDK's monitor record (trips, last reading), kept after a trip is handled.
+// Its trips are the in-use ones; a switch-on probe's are in probe().
 FrontlightManager::MonitorDiagnostics monitor();
+// The SDK's load-probe record (FrontlightConfig::loadProbeMs): what the last
+// switch-on found, each string's state, and the probe's own readings. All zero
+// without FREEINK_CAP_FRONTLIGHT_PROBE.
+FrontlightManager::ProbeDiagnostics probe();
+// The string the SDK's colour select picks now. It differs from the warmth asked
+// for when the probe found that string missing.
+bool selectsWarm();
+// Record tokens.
+const char* loadToken(freeink::frontlight::Load load);            // unknown, present, absent
+const char* stringToken(freeink::frontlight::StringState state);  // unknown, present, missing
 
 // A pad as the GPIO matrix drives it, from the registers: no pin change.
 struct PadState {

@@ -4,7 +4,9 @@
 // five brightness levels while LED_MONIT (IO2) is read through freeink::adc and
 // the SDK's monitor record is watched for trips: the trip handler in the main
 // loop switches the light off before this screen could see fault(), so a trip
-// shows here as the light dropping out and the record's count rising.
+// shows here as the light dropping out and the record's count rising. Every
+// switch-on and string change also runs the SDK's load probe; its result (a
+// load or none, and which strings answered) is shown and recorded.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalFrontlight.h>
@@ -41,8 +43,8 @@ constexpr char SEEN_BODY[] =
     "Cool and warm through 10-100 %: did each string light, get brighter at every step, and stay free of flicker?";
 
 constexpr char INTRO[] =
-    "Confirm lights the boost once you name the LED load. Up/Down step the brightness (10, 25, 50, 75, 100 %), Left "
-    "switches cool/warm. Take both strings through every step, then Record.";
+    "Confirm lights the boost once you name the LED load; the probe then says which strings answered. Up/Down "
+    "step the brightness (10-100 %), Left switches cool/warm. Take both strings through every step, then Record.";
 constexpr char SCOPE_NOTE[] =
     "Scope (optional): IO42 LOW for at least 3 ms, HIGH for the enable pulse, then the carrier. IO40 (HIGH = warm) "
     "moves only while IO42 is LOW, at least 3 ms after it fell.";
@@ -63,6 +65,8 @@ class FrontlightTest final : public TestScreen {
     openedAt = millis();
     if (!present) return;
     tripsAtOpen = light::monitor().trips;
+    probeNow = light::probe();
+    probeTripsAtOpen = probeNow.trips;
     Frontlight.setOn(false);
     Frontlight.setWarmth(0);
     Frontlight.setBrightness(STEPS[step]);
@@ -119,8 +123,9 @@ class FrontlightTest final : public TestScreen {
         break;
       case Slot::Left:
         warm = !warm;
-        Frontlight.setWarmth(warm ? 100 : 0);
+        Frontlight.setWarmth(warm ? 100 : 0);  // lit: the probe runs on the new string
         changedAt = millis();
+        if (lit && checkNoLight()) break;
         redraw();
         break;
       case Slot::Right:
@@ -163,6 +168,7 @@ class FrontlightTest final : public TestScreen {
   void redraw() {
     drawnAt = millis();
     monitorNow = light::monitor();
+    probeNow = light::probe();
     requestUpdate();
   }
 
@@ -191,9 +197,10 @@ class FrontlightTest final : public TestScreen {
   void lightUp() {
     Frontlight.setBrightness(STEPS[step]);
     Frontlight.setWarmth(warm ? 100 : 0);
-    Frontlight.setOn(true);
-    const unsigned long start = millis();
+    Frontlight.setOn(true);  // the SDK's load probe runs inside
     lit = true;
+    if (checkNoLight()) return;
+    const unsigned long start = millis();
     everLit = true;
     changedAt = start;
     for (const unsigned long at : EARLY_CHECK_MS) {
@@ -206,8 +213,31 @@ class FrontlightTest final : public TestScreen {
         return;
       }
     }
-    LOG_INF("TEST", "T9: lit %s at %u %%", warm ? "warm" : "cool", STEPS[step]);
+    LOG_INF("TEST", "T9: lit %s at %u %% (asked %s)", light::selectsWarm() ? "warm" : "cool", STEPS[step],
+            warm ? "warm" : "cool");
     redraw();
+  }
+
+  // The switch-on probe found no load on any string it tried, and the HAL left the
+  // light off. FAIL: the operator named a load.
+  bool checkNoLight() {
+    if (Frontlight.isOn() || !Frontlight.noLightFound()) return false;
+    lit = false;
+    noLight = true;
+    offAt = millis();
+    afterOffPending = true;
+    monitorNow = light::monitor();
+    probeNow = light::probe();
+    LOG_ERR("TEST", "T9: the switch-on probe found no load (%s string, %u mV)", probeNow.lastWarm ? "warm" : "cool",
+            static_cast<unsigned>(probeNow.lastPeakLedMv));
+    record(Verdict::Fail,
+           "load=%s probe=absent last=%s peak=%u after_us=%u probe_trips=%u fails=no_light (the switch-on probe found "
+           "no load on any string; light off)",
+           load == LightLoad::J3Panel ? "J3" : "J6", probeNow.lastWarm ? "warm" : "cool",
+           static_cast<unsigned>(probeNow.lastPeakLedMv), static_cast<unsigned>(probeNow.lastTripAfterUs),
+           static_cast<unsigned>(probeNow.trips - probeTripsAtOpen));
+    redraw();
+    return true;
   }
 
   void abortOverVoltage(const light::Reading& reading, const unsigned long afterMs) {
@@ -258,7 +288,7 @@ class FrontlightTest final : public TestScreen {
   void sample() {
     sampledAt = millis();
     current = light::readMonitor();
-    const int colour = warm ? 1 : 0;
+    const int colour = light::selectsWarm() ? 1 : 0;  // the string lit, which a missing one changes
     table[colour][step] = current.pinMv;
     if (current.ledMv > maxLitLedMv) maxLitLedMv = current.ledMv;
     if (current.ledMv > light::LIT_MAX_LED_MV) {
@@ -290,7 +320,11 @@ class FrontlightTest final : public TestScreen {
       padFails |= PAD_ADIM_STATE;
     }
     if (colorSel.valid && fl.colorSelectGpio != BoardConfig::PIN_UNASSIGNED) {
-      const bool expect = asLit && warm ? fl.colorSelectWarmHigh : coolLevel;
+      // Lit: the string the SDK picked. Dark: cool, unless a trip's charge on the
+      // boost output still keeps it where it was (FrontlightConfig::railSafeV).
+      const bool tripSeen = tripped || noLight || probeNow.trips != probeTripsAtOpen;
+      const bool expectWarm = light::selectsWarm() && (asLit || tripSeen);
+      const bool expect = expectWarm ? fl.colorSelectWarmHigh : coolLevel;
       if (!light::padHeldAt(colorSel, expect)) padFails |= PAD_COLOR_STATE;
     }
   }
@@ -335,9 +369,19 @@ class FrontlightTest final : public TestScreen {
       }
     }
     if (!inWindow) addFailure(fails, sizeof(fails), "lit_range");
+    const auto probe = light::probe();
+    probeNow = probe;
+    if (noLight) addFailure(fails, sizeof(fails), "no_light");
     if (answer >= 0) {
-      if (!colourMeasured(0)) addFailure(fails, sizeof(fails), "cool_missing");
-      if (Frontlight.warmthIsSelection() && !colourMeasured(1)) addFailure(fails, sizeof(fails), "warm_missing");
+      // A J6 strip may carry one colour, so a string the probe found missing is no
+      // failure there. The J3 panel light has both.
+      const bool oneColourOk = load == LightLoad::J6Strip;
+      const bool coolMissing = probe.record.cool == freeink::frontlight::StringState::Missing;
+      const bool warmMissing = probe.record.warm == freeink::frontlight::StringState::Missing;
+      if (!colourMeasured(0) && !(oneColourOk && coolMissing)) addFailure(fails, sizeof(fails), "cool_missing");
+      if (Frontlight.warmthIsSelection() && !colourMeasured(1) && !(oneColourOk && warmMissing)) {
+        addFailure(fails, sizeof(fails), "warm_missing");
+      }
     }
     if (afterOff.pinMv > light::DARK_MAX_PIN_MV) addFailure(fails, sizeof(fails), "after_off");
     if (padFails & PAD_ADIM_PULL) addFailure(fails, sizeof(fails), "io42_pullup");
@@ -354,13 +398,15 @@ class FrontlightTest final : public TestScreen {
     monitorNow = monitor;
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : answer == 0 ? Verdict::Pass : Verdict::Info;
     record(verdict,
-           "load=%s dark_pin=%u cool_pin=%s warm_pin=%s max_led=%u after_off_pin=%u trips=%u skipped=%u seen=%s "
-           "fails=%s",
+           "load=%s probe=%s cool=%s warm=%s probe_trips=%u probe_peak=%u dark_pin=%u cool_pin=%s warm_pin=%s "
+           "max_led=%u after_off_pin=%u trips=%u skipped=%u seen=%s fails=%s",
            !loadKnown                   ? "none"
            : load == LightLoad::J3Panel ? "J3"
                                         : "J6",
-           static_cast<unsigned>(dark.pinMv), cool, warmSteps, static_cast<unsigned>(maxLitLedMv),
-           static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
+           light::loadToken(probe.record.load), light::stringToken(probe.record.cool),
+           light::stringToken(probe.record.warm), static_cast<unsigned>(probe.trips - probeTripsAtOpen),
+           static_cast<unsigned>(probe.lastPeakLedMv), static_cast<unsigned>(dark.pinMv), cool, warmSteps,
+           static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
            static_cast<unsigned>(monitor.skippedSamples), answer >= 0 ? SEEN_CODES[answer] : "not_lit",
            fails[0] != '\0' ? fails : "none");
   }
@@ -381,8 +427,17 @@ class FrontlightTest final : public TestScreen {
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     page.row("Load", !loadKnown ? "not named yet" : load == LightLoad::J3Panel ? "J3 panel light" : "J6 LED strip");
-    page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off", warm ? "warm" : "cool",
+    page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off",
+              lit ? (light::selectsWarm() ? "warm" : "cool") : (warm ? "warm" : "cool"),
               static_cast<unsigned>(STEPS[step]), static_cast<unsigned>(STEPS[step]) * 255U / 100U);
+    const auto& probe = probeNow;
+    page.rowf("Switch-on probe found", "load %s; cool %s, warm %s", light::loadToken(probe.record.load),
+              light::stringToken(probe.record.cool), light::stringToken(probe.record.warm));
+    if (probe.probes != 0) {
+      page.rowf("Probe, last", "%s: %s, peak %u mV, %u reads", probe.lastWarm ? "warm" : "cool",
+                probe.lastTripped ? "no load" : "lit", static_cast<unsigned>(probe.lastPeakLedMv),
+                static_cast<unsigned>(probe.lastSamples));
+    }
     if (lit && current.pinMv != 0) {
       page.rowf("LED_MONIT now", "%u mV = %u.%02u V LED_SW", static_cast<unsigned>(current.pinMv),
                 static_cast<unsigned>(current.ledMv / 1000U), static_cast<unsigned>(current.ledMv % 1000U / 10U));
@@ -399,6 +454,8 @@ class FrontlightTest final : public TestScreen {
     if (afterOff.pinMv != 0) page.rowf("After switching off", "%u mV", static_cast<unsigned>(afterOff.pinMv));
     page.rowf("Trips: this screen / boot", "%u / %u", static_cast<unsigned>(monitor.trips - tripsAtOpen),
               static_cast<unsigned>(monitor.trips));
+    page.rowf("Probe trips: this screen / boot", "%u / %u", static_cast<unsigned>(probe.trips - probeTripsAtOpen),
+              static_cast<unsigned>(probe.trips));
     if (monitor.trips != 0) {
       page.rowf("Last trip", "%u mV > %u mV limit", static_cast<unsigned>(monitor.lastTripLedMv),
                 static_cast<unsigned>(monitor.lastTripLimitMv));
@@ -439,6 +496,7 @@ class FrontlightTest final : public TestScreen {
   bool everLit = false;
   bool warm = false;
   bool tripped = false;
+  bool noLight = false;  // a switch-on's probe found no load
   bool overVoltage = false;
   bool darkTaken = false;
   bool afterOffPending = false;
@@ -449,11 +507,13 @@ class FrontlightTest final : public TestScreen {
   unsigned long drawnAt = 0;
   unsigned long offAt = 0;
   uint32_t tripsAtOpen = 0;
+  uint32_t probeTripsAtOpen = 0;
   uint32_t maxLitLedMv = 0;
   light::Reading dark;
   light::Reading current;
   light::Reading afterOff;
   FrontlightManager::MonitorDiagnostics monitorNow;  // the SDK record as of the last repaint request
+  FrontlightManager::ProbeDiagnostics probeNow;      // the load-probe record, likewise
   uint32_t table[2][STEP_COUNT] = {};                // [cool, warm][step]: pin mV after settling, 0 = not measured
   light::PadState adim;
   light::PadState colorSel;

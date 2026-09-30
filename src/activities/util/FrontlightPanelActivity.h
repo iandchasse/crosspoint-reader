@@ -71,6 +71,18 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // jumps straight to the other string.
   void stepWarmthByKey(bool warmer);
   void toggleLight();
+  // After a switch-on or colour change from this panel: a load probe that found no
+  // light (FrontlightConfig::loadProbeMs) leaves the light off and shows why.
+  // One string of a colour-select light is missing (a single-colour light): the
+  // warmth row stays on the other string, says so, and ignores input.
+  // Without FREEINK_CAP_FRONTLIGHT_PROBE neither can happen.
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  void noteSwitchOnResult();
+  bool warmthLocked() const;
+#else
+  void noteSwitchOnResult() {}
+  bool warmthLocked() const { return false; }
+#endif
   void runTile(int idx);
   // Copy the panel's live brightness/warmth/lightOn into SETTINGS and save if
   // anything actually changed. onExit() runs it on every way out.
@@ -82,6 +94,20 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // not use this — it closes the panel and promotes the repaint underneath
   // instead (GfxRenderer::promoteNextRefresh).
   bool cleanRefreshPending = false;
+
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  // The last switch-on from this panel found no light: the message sits under the
+  // brightness row until the light comes on.
+  bool noLightNote = false;
+  // The line under the warmth row of a single-colour light, or nullptr.
+  static const char* singleStringNote();
+  // A note under a row: small text wrapped to the panel's content width, at most
+  // 3 lines. noteHeight() is what drawNote() takes, less the gap after it.
+  static freeink::ui::TextStyle noteStyle(const freeink::ui::ThemeTokens& tokens);
+  int16_t noteHeight(const freeink::ui::DrawTarget& target, const freeink::ui::ThemeTokens& tokens,
+                     const char* text) const;
+  void drawNote(UiScreen& screen, const char* text) const;
+#endif
 
  public:
   explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);

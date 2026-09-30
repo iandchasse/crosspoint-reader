@@ -45,6 +45,32 @@ Reading readMonitor(const uint8_t samples) {
 
 FrontlightManager::MonitorDiagnostics monitor() { return TestSuiteAccess::frontlight(Frontlight).monitorDiagnostics(); }
 
+FrontlightManager::ProbeDiagnostics probe() { return TestSuiteAccess::frontlight(Frontlight).probeDiagnostics(); }
+
+bool selectsWarm() { return TestSuiteAccess::frontlight(Frontlight).warmSelected(); }
+
+const char* loadToken(const freeink::frontlight::Load load) {
+  switch (load) {
+    case freeink::frontlight::Load::Present:
+      return "present";
+    case freeink::frontlight::Load::Absent:
+      return "absent";
+    default:
+      return "unknown";
+  }
+}
+
+const char* stringToken(const freeink::frontlight::StringState state) {
+  switch (state) {
+    case freeink::frontlight::StringState::Present:
+      return "present";
+    case freeink::frontlight::StringState::Missing:
+      return "missing";
+    default:
+      return "unknown";
+  }
+}
+
 PadState readPad(const int8_t pin) {
   PadState pad;
   if (pin < 0 || !GPIO_IS_VALID_GPIO(pin)) return pad;

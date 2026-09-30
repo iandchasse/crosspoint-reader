@@ -25,7 +25,7 @@ pio run -e silkscreen-test -t upload
 | Settings | `/.crosspoint/settings.json` is read once, then these are pinned in RAM: night mode off, Sunlight Fading Fix off, portrait, Short Power Button = Ignore, light off with no restore on wake, the keys in their default roles, English, the Lyra theme, no SD reader font, and a 10-minute sleep timeout if it was Never. |
 | Card writes | Never under `/.crosspoint/`: every settings, state, Wi-Fi, recent-books, OPDS and KOReader save is a no-op, `state.json` is not read, and the Quick Resume frame is neither written nor removed. The test firmware writes only `/.silkscreen-test/`: `results.csv`, the P8 baseline `crosspoint.sha`, and scratch files ending in `.tmp`. |
 | No card | The menu opens with "SD not mounted" and results go to the serial log only. The reader's SD-card error screen and its 60 s timeout are not in the test firmware. |
-| Front light | Off at every boot and after every silent restart, with no light panel (gesture, status-bar tap). Only a front-light test lights it, after the operator names the load. The over-voltage trip handling is the reader's; T10 lowers its level in RAM for one run. |
+| Front light | Off at every boot and after every silent restart, with no light panel (gesture, status-bar tap). Only a front-light test lights it, after the operator names the load. The over-voltage trip handling and the SDK's switch-on load probe are the reader's, but the "No front light detected" message is not shown: T9 and T10 report the probe's result themselves. T10 lowers the trip level in RAM for one run. |
 | USB | While a USB data host is attached and the `USB_STAT` ladder reports USB power, auto-sleep is held off (the USB Serial/JTAG host frames, with a 2 s hold). A charger alone or a cell never holds it, and neither does a data link with no VBUS on the cell: the S3's USB Serial/JTAG enumerates without VBUS (HW-11). The 15-minute ceiling and the 60-minute input cap still apply whenever the `USB_STAT` ladder does not report external power, so a misread ladder shows up as a sleep during a bench session. |
 | Sleep | The same sleep entry, wake source and timeouts as the reader. The sleep screen shows the firmware and board tag, the MEAS-01 current targets and the pins to probe. Once its refresh has returned it times the RTC and keeps a record of the entry in RTC memory, for T14 and P5. A power-button click does nothing and a hold longer than 400 ms sleeps; waking needs POWER held. |
 
@@ -291,13 +291,15 @@ PASS: every refresh is in the BUSY window, none was promoted, the gray waveform 
 
 Both light the boost only after a question names the load, before each lighting session: T9's Confirm, and each T10 run. The answers are "No load: cancel" (preselected), "J3 panel light" or "J6 LED strip". Within a session the light can go dark and relight on the same load without a new question: a T10 run relights twice by itself (the retry at the lowered level, the restore at the profile's), and T9's string switch takes the driver dark for at least 3 ms and pulses its enable again while lit. Nothing else in the test firmware lights it. They read `LED_MONIT` (IO2) through `freeink::adc`, and the SDK monitor's record (`FrontlightManager::monitorDiagnostics()`, freeink-sdk README "Bring-up diagnostics"): the trips since boot with the last trip's `LED_SW` and limit, and the monitor's last reading. The main loop's trip handler switches a tripped light off, which clears `fault()`, before any screen runs. So a trip shows as the light dropping out and the record's count rising, never as `fault()`. `LED_SW` is the pin reading × 9.333.
 
-The pads are read from the GPIO registers (`gpio_get_io_config()` and the output register), never set: IO42 (ADIM) on its LEDC carrier while lit, and held LOW by the GPIO output register while dark; IO40 (COLOR_SEL) at the lit string (HIGH = warm), and LOW (cool) while dark.
+Every switch-on and every string change while lit also runs the SDK's load probe (`FrontlightConfig::loadProbeMs`): `LED_MONIT` read every 1 ms for 60 ms after the enable pulse. A reading above the trip there is a "no load" result for that string, not an in-use trip: the SDK then tries the other string in the same call, and either records the first one missing (a single-colour light, which then stays on the other string until a cold boot) or reports load absent and leaves the light off. The tests read that record through `FrontlightManager::probeDiagnostics()`: the load (unknown, present, absent), each string (unknown, present, missing), and the probes, their trips and the last probe's peak reading. Probe trips are counted apart from the monitor's.
+
+The pads are read from the GPIO registers (`gpio_get_io_config()` and the output register), never set: IO42 (ADIM) on its LEDC carrier while lit, and held LOW by the GPIO output register while dark; IO40 (COLOR_SEL) at the lit string (HIGH = warm; the string the SDK picked, which differs from the one asked for when a string is missing), and LOW (cool) while dark, except after a trip on the warm string, until `LED_SW` is at 15 V (at most 4 s).
 
 ### T9 Front light
 
-**Purpose:** both strings light at every brightness step, and `LED_MONIT` reads the LED rail. **Bring-up:** B8.
+**Purpose:** both strings light at every brightness step, `LED_MONIT` reads the LED rail, and the switch-on probe finds the load. **Bring-up:** B8.
 
-Confirm lights the boost after the load question; Confirm again switches it off. Up/Down step the brightness through 10, 25, 50, 75 and 100 %. That is the SDK's perceptual curve, so about 2, 9, 32, 62 and 100 % duty, or roughly 0.3, 1.3, 4.2, 8.3 and 13.3 mA of LED current (duty × 13.3 mA). Left switches between the cool and warm strings; while lit, the driver goes dark for at least 3 ms and gets its enable pulse again. Take both strings through every step, then Record: it switches a lit light off first (the question stops the screen's 22 V watch while it is open), takes the after-off reading, then asks what the light did. Record before anything was lit logs INFO with the dark reading.
+Confirm lights the boost after the load question; Confirm again switches it off. The switch-on probe runs inside that Confirm and inside every string switch while lit: when it finds no load on any string, the light stays off and T9 records FAIL `no_light` at once. Up/Down step the brightness through 10, 25, 50, 75 and 100 %. That is the SDK's perceptual curve, so about 2, 9, 32, 62 and 100 % duty, or roughly 0.3, 1.3, 4.2, 8.3 and 13.3 mA of LED current (duty × 13.3 mA). Left switches between the cool and warm strings; while lit, the driver goes dark for at least 3 ms and gets its enable pulse again. Take both strings through every step, then Record: it switches a lit light off first (the question stops the screen's 22 V watch while it is open), takes the after-off reading, then asks what the light did. Record before anything was lit logs INFO with the dark reading.
 
 It shows:
 
@@ -305,7 +307,10 @@ It shows:
 - lit, a reading once a second after each change has settled for 0.3 s (fl-monit-settle), kept per string and step in a table of pin mV, and the SDK monitor's own last reading from its 100 ms tick, with its read and skipped counts;
 - the trips on this screen and since boot, and the trip level;
 - IO42 and IO40 as above, and any pull on IO42, IO40 or IO2 (fl-adim-no-pullup, fl-color-drive, fl-monit-pin);
-- the enable pulse, the dark dwell and the carrier from the profile, for the optional scope check: IO42 LOW for at least 3 ms, HIGH for about 150 µs, then the 25 kHz carrier; IO40 changes only while IO42 is LOW, at least 3 ms after it fell.
+- the enable pulse, the dark dwell and the carrier from the profile, for the optional scope check: IO42 LOW for at least 3 ms, HIGH for about 150 µs, then the 25 kHz carrier; IO40 changes only while IO42 is LOW, at least 3 ms after it fell;
+- what the switch-on probe found: the load, each string, the last probe's string, result, peak reading and reading count, and its trips on this screen and since boot. The table files each reading under the string the SDK lit.
+
+The record adds `probe=`, `cool=` and `warm=` (the probe's findings), `probe_trips=` and `probe_peak=`.
 
 50, 100 and 200 ms after every light-up, and at every reading, `LED_SW` above 22 V (2357 mV at the pin) switches the light off at once and records FAIL: an open load or a miswired J3 (fl-j3-mapping-risk). The SDK's own trip is at 23 V, below U10's 24.25 V OVP.
 
@@ -313,27 +318,27 @@ PASS:
 
 - the dark reading between 100 and 700 mV at the pin (above 700 mV, `LED_SW` is above any `LDO_IN`: the boost runs while it should be dark);
 - every lit reading below 22 V; with J3, 11-18 V `LED_SW` (about 15 V at full current, less at 10 %; proposal); with J6, at least 1 V above the dark rail;
-- no trip and no 22 V switch-off;
-- both strings measured at least once;
+- no trip, no 22 V switch-off, and no switch-on that found no light;
+- both strings measured at least once. With a J6 strip, a string the probe found missing is no failure (a single-colour strip); the J3 panel light has both;
 - 0.3 s after switching off, the reading back below 700 mV;
 - the pads as above;
 - the operator saw each string light, get brighter at every step, and not flicker.
 
 ### T10 Front-light over-voltage trip
 
-**Purpose:** the software over-voltage trip switches the boost off, and keeps it off. **Bring-up:** B8.
+**Purpose:** the software over-voltage trip switches the boost off and keeps it off, and the switch-on probe takes a reading above the trip for "no load". **Bring-up:** B8.
 
 This replaces the rebuild with a lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` in PORTING.md B8. Confirm, after the load question, runs about 5 s. Back stops it, and a stopped run records nothing.
 
 | Step | What happens | Expect |
 |---|---|---|
-| 1 | Cool string at 50 % with the profile's trip level (23 V), for 0.6 s | no trip; the monitor's lit reading is kept |
-| 2 | The trip level is lowered in RAM to the lit reading less 2 V or a fifth, whichever is more (12 V for a 15 V string) | a trip within 300 ms; IO42 held LOW by the GPIO register; `LED_MONIT` back below 700 mV |
+| 1 | Cool string at 50 % with the profile's trip level (23 V), for 0.6 s | the switch-on probe finds the load; no trip; the monitor's lit reading is kept |
+| 2 | The trip level is lowered in RAM to the lit reading less 2 V or a fifth, whichever is more (12 V for a 15 V string) | an in-use trip within 300 ms, not taken for "no load"; IO42 held LOW by the GPIO register; `LED_MONIT` back below 700 mV |
 | 3 | 2 s | dark: no relight, no second trip, IO42 held LOW |
-| 4 | Switched on again, level still lowered | a second trip within 300 ms |
-| 5 | The profile's level back, switched on, for 1 s | lit, no trip |
+| 4 | Switched on again, level still lowered | the switch-on probe reads above the level at once: the load is taken as absent (the other string is tried too, and trips), the light stays off, IO42 LOW, and the monitor counts no trip |
+| 5 | The profile's level back, switched on, for 1 s | the probe finds the load again; lit, no trip |
 
-It then asks whether the light did that. The trip time runs from the lowering (or the switch-on) to the trip in the SDK's record. A failed step ends the run with FAIL.
+It then asks whether the light did that. The trip time runs from the lowering to the trip in the SDK's record; the probe's time runs from the carrier start to the reading above the level. A failed step ends the run with FAIL. The record carries `probe2=` (time and reading), `probe2_strings=` (strings tried), `probe2_load=`, `restored_load=` and `probe_trips=`. On a one-colour J6 strip, step 4's second try enables the empty string once: an open-load enable, which is safe (HARDWARE.md §13.1).
 
 The level only ever goes down, never above the profile's. It goes back at the end of every run, on Back, when the screen closes (a sleep included) and whenever the menu opens; a restart restores it anyway.
 
@@ -543,7 +548,7 @@ PASS: every file the same, none missing or new, the same folder names, `/.crossp
 
 ## Safety
 
-- **Front light.** The TPS923610 boost must never run without a load. A front-light test asks before each lighting session (T9's Confirm, one T10 run) which load is connected (the J3 panel light or a J6 strip, with "No load" preselected), and lights nothing without an answer; a T10 run then relights twice on that load by itself (retry, restore). T9 does not light when `LED_MONIT` reads nothing in the dark, switches the light off above 22 V, and switches it off before its Record question. T10 lowers the trip level in RAM only, never raises it, and puts it back on every way out. Nothing else in the test firmware can light it.
+- **Front light.** Ideally the TPS923610 boost never runs without a load; an unloaded enable is safe on the standard build (U10 latches off at its OVP, HARDWARE.md §13.1), and the SDK's switch-on probe takes the light dark within about 35 ms of one. A front-light test asks before each lighting session (T9's Confirm, one T10 run) which load is connected (the J3 panel light or a J6 strip, with "No load" preselected), and lights nothing without an answer; a T10 run then relights twice on that load by itself (retry, restore). T9 does not light when `LED_MONIT` reads nothing in the dark, switches the light off above 22 V, and switches it off before its Record question. T10 lowers the trip level in RAM only, never raises it, and puts it back on every way out. Nothing else in the test firmware can light it.
 - **Touch.** `TP_RST` is pulsed only by the SDK's own reset (the boot probe, T12's reset path); no test holds it LOW or writes a controller configuration register. T11's mapping changes are in RAM only.
 - **Pins.** Tests never call `pinMode` or `gpio_reset_pin` on IO1, IO2, IO4, IO8, IO9, IO10, IO18, IO40, IO42 or the SD pins (POWER.md ADC-01, REQUIREMENTS PWR-19), and every ADC read goes through `freeink::adc`.
 - **Battery.** A screen that holds auto-sleep off also holds the CPU at full clock. Live readings on battery run for a bounded time or only on USB. The 15-minute ceiling, the 60-minute input cap and the low-battery cutoff are the reader's and still apply on battery.
@@ -563,6 +568,9 @@ The pinned settings, the no-write rule and the tests left out (P6 forced panics,
 - **Resume.** Quick Resume and the splash-less wake (`sleep_frame.bin`, `APP_STATE`); the test firmware neither reads the state nor writes the frame.
 - **Front light across sleep and restarts** (B8):
   - Restore Light on Wake;
+  - with no light connected: switching it on shows "No front light detected" with the 10 s advice, and the light control stays for a retry;
+  - a restore that finds no light (the light unplugged while asleep) is silent and is not repeated at the next wake; a power cycle tries once;
+  - a single-colour J6 strip: the warmth row names the one string there is and ignores input;
   - a ghost wake (short tap) must not light the LEDs;
   - a light trip stays off across a sleep, a wake and a Wi-Fi screen's silent restart (the saved preference);
   - IO42 and IO40 at 0 V after sleeping with the light on, warm and cool (ZD-08);

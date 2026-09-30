@@ -183,6 +183,24 @@ static void handleFrontlightTrip() {
   }
 }
 
+#if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
+// FrontlightConfig::loadProbeMs: a switch-on the user asked for found no light
+// (HalFrontlight has already left it off). Say so, with the wait the boost's
+// charged output needs before a light is plugged in, and save the light as off,
+// as it now is. The light controls stay where they are, so switching it on again
+// is the retry. The light panel shows the message itself and takes the notice
+// first. From the loop task only.
+static void handleFrontlightNotFound() {
+  if (!Frontlight.takeNoLightNotice()) return;
+  if (SETTINGS.frontlightOn != 0) {
+    SETTINGS.frontlightOn = 0;
+    SETTINGS.saveToFile();
+  }
+  RenderLock lock;
+  GUI.drawWrappedPopup(renderer, tr(STR_FRONTLIGHT_NOT_DETECTED), 3);
+}
+#endif
+
 // How the device is coming back to life, resolved once at boot. Both resume
 // flows suppress the splash and leave the panel holding its pre-boot frame; a
 // plain boot shows the splash. See setup() for the resolution.
@@ -838,6 +856,9 @@ void loop() {
   renderer.setFadingFix(SETTINGS.fadingFix);
 
   handleFrontlightTrip();
+#if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
+  handleFrontlightNotFound();
+#endif
 
   // The ROM console does not depend on Arduino USB CDC's connection state.
   if ((Serial || FREEINK_LOG_TRANSPORT == FREEINK_LOG_TRANSPORT_ROM_PRINTF) && millis() - lastMemPrint >= 10000) {

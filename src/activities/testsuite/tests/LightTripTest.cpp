@@ -1,12 +1,14 @@
 #if CROSSPOINT_TEST_SUITE
-// T10: the front light's LED over-voltage trip (bring-up B8), forced without
-// unplugging the load: the trip level (FrontlightConfig::monitorTripMv, which
-// the SDK monitor reads on every 100 ms tick) is lowered in RAM below the lit
-// reading. It only ever goes down, never above the profile's, and goes back on
-// every way out of the screen (end of run, Back, exit, sleep) and when the menu
-// opens; a restart restores it anyway. The main loop's trip handler switches the
-// light off before this screen runs, so the trip is read from the SDK's monitor
-// record, not from fault().
+// T10: the front light's LED over-voltage trip and its switch-on load probe
+// (bring-up B8), forced without unplugging the load: the trip level
+// (FrontlightConfig::monitorTripMv, which the SDK monitor reads on every 100 ms
+// tick and the probe reads during its window) is lowered in RAM below the lit
+// reading. The light, lit, must trip in use; switched on again at that level, the
+// probe must take the load for absent and leave it off. The level only ever goes
+// down, never above the profile's, and goes back on every way out of the screen
+// (end of run, Back, exit, sleep) and when the menu opens; a restart restores it
+// anyway. The main loop's trip handler switches the light off before this screen
+// runs, so the in-use trip is read from the SDK's monitor record, not from fault().
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalFrontlight.h>
@@ -39,16 +41,16 @@ constexpr uint32_t MIN_ABOVE_DARK_MV = 1000;
 constexpr int QUESTION_SEEN = 1;
 constexpr const char* SEEN_ANSWERS[] = {"Yes", "No"};
 constexpr char SEEN_HEADING[] = "Did the light do this?";
-constexpr char SEEN_BODY[] = "Lit, went dark, lit briefly and went dark again, then lit steadily for a second.";
+constexpr char SEEN_BODY[] = "Lit, went dark, stayed dark when switched on again, then lit steadily for a second.";
 
 constexpr char INTRO[] =
     "Confirm lights the cool string at 50 % once you name the load, then lowers the trip level in RAM below the "
-    "lit reading. The monitor must switch the light off within 300 ms and keep it off, trip again when it is "
-    "switched on, and light normally once the profile's level is back. About 5 s; Back stops.";
+    "lit reading. The monitor must switch the light off within 300 ms and keep it off; switched on again, the "
+    "probe must find no load; at the profile's level it lights again. About 5 s; Back stops.";
 constexpr char NOT_BUILT[] =
     "No front light with an LED monitor in this build or on this board (frontlight_flags): nothing to test.";
 
-enum class Phase : uint8_t { Idle, Baseline, Lowered, Watch, Retry, Restore, Restored, Asking };
+enum class Phase : uint8_t { Idle, Baseline, Lowered, Watch, Restore, Restored, Asking };
 
 const char* phaseName(const Phase phase) {
   switch (phase) {
@@ -60,8 +62,6 @@ const char* phaseName(const Phase phase) {
       return "level lowered, waiting for the trip";
     case Phase::Watch:
       return "tripped: must stay dark";
-    case Phase::Retry:
-      return "switched on again: must trip";
     case Phase::Restore:
     case Phase::Restored:
       return "profile's level back: must stay lit";
@@ -73,10 +73,21 @@ const char* phaseName(const Phase phase) {
 
 struct Trip {
   bool seen = false;
-  uint32_t latencyMs = 0;  // level lowered (or switched on) to the trip, by the SDK's clock
+  uint32_t latencyMs = 0;  // level lowered to the trip, by the SDK's clock
   uint32_t ledMv = 0;
   uint32_t limitMv = 0;
-  bool adimLow = false;  // IO42 held LOW by the GPIO output register when the trip was seen
+  bool adimLow = false;    // IO42 held LOW by the GPIO output register when the trip was seen
+  bool asNoLight = false;  // recorded as a switch-on's "no load" instead of an in-use trip
+};
+
+// The switch-on probe at the lowered level (the operator's retry).
+struct ProbeTrip {
+  bool seen = false;
+  uint32_t afterUs = 0;  // the carrier start to the reading above the level
+  uint32_t peakMv = 0;   // that reading
+  uint32_t strings = 0;  // strings the switch-on tried (the other one follows the first)
+  bool noLight = false;  // it ended with load absent and the light off
+  bool adimLow = false;  // IO42 held LOW afterwards
 };
 
 class LightTripTest final : public TestScreen {
@@ -139,6 +150,7 @@ class LightTripTest final : public TestScreen {
     run = RunResult{};
     fails[0] = '\0';
     trips0 = light::monitor().trips;
+    probeTrips0 = light::probe().trips;
     run.dark = light::readMonitor();
     if (run.dark.pinMv < light::DARK_MIN_PIN_MV) {
       record(Verdict::Fail, "dark_pin=%u fails=dark_blind (LED_MONIT reads nothing: the trip is blind; not lit)",
@@ -147,7 +159,11 @@ class LightTripTest final : public TestScreen {
     }
     Frontlight.setWarmth(0);
     Frontlight.setBrightness(RUN_BRIGHTNESS);
-    Frontlight.setOn(true);
+    Frontlight.setOn(true);  // the switch-on probe runs inside, at the profile's level
+    if (!Frontlight.isOn()) {
+      failRun(Frontlight.noLightFound() ? "no_light" : "not_lit");
+      return;
+    }
     LOG_INF("TEST", "T10: lit at %u %% cool, trip level %u mV", RUN_BRIGHTNESS, light::profileTripMv());
     setPhase(Phase::Baseline);
   }
@@ -178,7 +194,28 @@ class LightTripTest final : public TestScreen {
     trip.limitMv = monitor.lastTripLimitMv;
     trip.adimLow = light::padHeldAt(light::readPad(BoardConfig::ACTIVE.frontlight.gpio),
                                     !BoardConfig::ACTIVE.frontlight.activeHigh);
+    trip.asNoLight = Frontlight.noLightFound();
     return trip;
+  }
+
+  // The operator's retry with the level still lowered: the SDK's switch-on probe
+  // runs inside setOn() and must take the lit load for absent.
+  ProbeTrip retryAtLoweredLevel() {
+    const uint32_t before = light::probe().trips;
+    Frontlight.setOn(true);
+    const auto probe = light::probe();
+    ProbeTrip result;
+    result.seen = probe.trips != before && probe.lastTripped;
+    result.afterUs = probe.lastTripAfterUs;
+    result.peakMv = probe.lastPeakLedMv;
+    result.strings = probe.trips - before;
+    result.noLight = !Frontlight.isOn() && Frontlight.noLightFound();
+    result.adimLow = light::padHeldAt(light::readPad(BoardConfig::ACTIVE.frontlight.gpio),
+                                      !BoardConfig::ACTIVE.frontlight.activeHigh);
+    LOG_INF("TEST", "T10: retry at the lowered level: %u string(s) tripped the probe, last %u mV after %u us, %s",
+            static_cast<unsigned>(result.strings), static_cast<unsigned>(result.peakMv),
+            static_cast<unsigned>(result.afterUs), result.noLight ? "no light, off" : "still lit");
+    return result;
   }
 
   void onTick() override {
@@ -222,31 +259,32 @@ class LightTripTest final : public TestScreen {
         }
         if (run.darkAfter.pinMv == 0 && inPhase >= light::SETTLE_MS) run.darkAfter = light::readMonitor();
         if (inPhase < WATCH_MS) return;
-        Frontlight.setOn(true);  // the operator's retry, with the level still lowered
-        setPhase(Phase::Retry);
-        return;
-      case Phase::Retry:
-        if (trips >= 2) {
-          run.second = readTrip(phaseAt);
-          light::restoreTripMv();
-          setPhase(Phase::Restore);
-        } else if (inPhase > TRIP_TIMEOUT_MS) {
-          failRun("no_second_trip");
+        run.second = retryAtLoweredLevel();
+        if (!run.second.seen || !run.second.noLight) {
+          failRun("no_probe_trip");
+          return;
         }
+        light::restoreTripMv();
+        setPhase(Phase::Restore);
         return;
       case Phase::Restore:
-        // The loop's trip handler has switched the light off by now.
         if (inPhase < RESTORE_GAP_MS) return;
-        Frontlight.setOn(true);
+        Frontlight.setOn(true);  // probed again, now at the profile's level
+        if (!Frontlight.isOn()) {
+          failRun(Frontlight.noLightFound() ? "no_light_after_restore" : "not_lit_after_restore");
+          return;
+        }
         setPhase(Phase::Restored);
         return;
       case Phase::Restored:
-        if (trips != 2 || !Frontlight.isOn()) {
+        // The switch-on probe's trips are not in-use trips: the monitor still counts one.
+        if (trips != 1 || !Frontlight.isOn()) {
           failRun("trip_after_restore");
           return;
         }
         if (inPhase < RESTORED_MS) return;
         run.restoredLedMv = light::monitor().lastLedMv;
+        run.restoredLoad = light::probe().record.load;
         run.restoredOk = true;
         Frontlight.setOn(false);
         setPhase(Phase::Asking);
@@ -264,10 +302,14 @@ class LightTripTest final : public TestScreen {
     if (run.first.seen) {
       if (run.first.latencyMs > TRIP_WITHIN_MS) addFailure(fails, sizeof(fails), "trip_slow");
       if (!run.first.adimLow) addFailure(fails, sizeof(fails), "io42_not_low");
+      if (run.first.asNoLight) addFailure(fails, sizeof(fails), "trip_as_no_light");
       if (!run.stayedDark) addFailure(fails, sizeof(fails), "not_dark");
       if (run.darkAfter.pinMv > light::DARK_MAX_PIN_MV) addFailure(fails, sizeof(fails), "dark_after_high");
     }
-    if (run.second.seen && run.second.latencyMs > TRIP_WITHIN_MS) addFailure(fails, sizeof(fails), "trip2_slow");
+    if (run.second.seen && !run.second.adimLow) addFailure(fails, sizeof(fails), "probe_io42_not_low");
+    if (run.restoredOk && run.restoredLoad != freeink::frontlight::Load::Present) {
+      addFailure(fails, sizeof(fails), "restored_not_present");
+    }
     if (BoardConfig::ACTIVE.frontlight.monitorTripMv != light::profileTripMv()) {
       addFailure(fails, sizeof(fails), "level_not_restored");
     }
@@ -275,20 +317,34 @@ class LightTripTest final : public TestScreen {
     const bool complete = run.restoredOk;
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : complete && answer == 0 ? Verdict::Pass : Verdict::Info;
     monitorNow = light::monitor();
+    const auto probe = light::probe();
     record(verdict,
            "load=%s dark_pin=%u lit_led=%u trial=%u trip1=%ums@%u io42_low=%d dark_after_pin=%u stayed_dark=%d "
-           "trip2=%ums restored=%d restored_led=%u level=%u trips=%u seen=%s fails=%s",
+           "probe2=%uus@%u probe2_strings=%u probe2_load=%s restored=%d restored_load=%s restored_led=%u level=%u "
+           "trips=%u probe_trips=%u seen=%s fails=%s",
            load == LightLoad::J3Panel ? "J3" : "J6", static_cast<unsigned>(run.dark.pinMv),
            static_cast<unsigned>(run.litLedMv), static_cast<unsigned>(run.trialMv),
            static_cast<unsigned>(run.first.latencyMs), static_cast<unsigned>(run.first.ledMv),
            run.first.adimLow ? 1 : 0, static_cast<unsigned>(run.darkAfter.pinMv), run.stayedDark ? 1 : 0,
-           static_cast<unsigned>(run.second.latencyMs), run.restoredOk ? 1 : 0,
-           static_cast<unsigned>(run.restoredLedMv), BoardConfig::ACTIVE.frontlight.monitorTripMv,
-           static_cast<unsigned>(monitorNow.trips - trips0),
+           static_cast<unsigned>(run.second.afterUs), static_cast<unsigned>(run.second.peakMv),
+           static_cast<unsigned>(run.second.strings), run.second.noLight ? "absent" : "-", run.restoredOk ? 1 : 0,
+           light::loadToken(run.restoredLoad), static_cast<unsigned>(run.restoredLedMv),
+           BoardConfig::ACTIVE.frontlight.monitorTripMv, static_cast<unsigned>(monitorNow.trips - trips0),
+           static_cast<unsigned>(probe.trips - probeTrips0),
            answer == 0   ? "yes"
            : answer == 1 ? "no"
                          : "none",
            fails[0] != '\0' ? fails : "none");
+  }
+
+  void drawProbeTrip(TestPage& page, const char* label, const ProbeTrip& trip) const {
+    if (!trip.seen) {
+      page.row(label, "-");
+      return;
+    }
+    page.rowf(label, "%u us at %u mV, %u string(s), %s", static_cast<unsigned>(trip.afterUs),
+              static_cast<unsigned>(trip.peakMv), static_cast<unsigned>(trip.strings),
+              trip.noLight ? "no load, off" : "STILL LIT");
   }
 
   void drawTrip(TestPage& page, const char* label, const Trip& trip) const {
@@ -323,7 +379,7 @@ class LightTripTest final : public TestScreen {
       if (run.darkAfter.pinMv != 0) page.rowf("Dark after", "%u mV pin", static_cast<unsigned>(run.darkAfter.pinMv));
       page.row("Stayed dark 2 s", run.stayedDark ? "yes" : "NO");
     }
-    drawTrip(page, "Trip 2, switched on again", run.second);
+    drawProbeTrip(page, "Switched on again: probe", run.second);
     if (run.restoredOk) page.rowf("Restored, lit 1 s", "%u mV LED_SW", static_cast<unsigned>(run.restoredLedMv));
     page.rowf("Monitor trips this boot", "%u", static_cast<unsigned>(monitorNow.trips));
     page.setCompact(false);
@@ -335,7 +391,8 @@ class LightTripTest final : public TestScreen {
     uint32_t litLedMv = 0;
     uint32_t trialMv = 0;
     Trip first;
-    Trip second;
+    ProbeTrip second;
+    freeink::frontlight::Load restoredLoad = freeink::frontlight::Load::Unknown;
     bool stayedDark = true;
     bool restoredOk = false;
     uint32_t restoredLedMv = 0;
@@ -346,6 +403,7 @@ class LightTripTest final : public TestScreen {
   Phase phase = Phase::Idle;
   unsigned long phaseAt = 0;
   uint32_t trips0 = 0;
+  uint32_t probeTrips0 = 0;
   RunResult run;
   FrontlightManager::MonitorDiagnostics monitorNow;  // as of the last phase change or record
   char fails[96] = "";

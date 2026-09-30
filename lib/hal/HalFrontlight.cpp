@@ -33,7 +33,16 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
   lastBrightness = brightness > 100 ? 100 : brightness;
   manager.setColorTemperature(warmth > 100 ? 100 : warmth);
   lit = on;
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  if (lit && !manager.restoreAllowed()) {
+    LOG_INF("LIGHT", "Frontlight not restored: no light answered its last switch-on");
+    lit = false;
+  }
+#endif
   manager.setBrightness(lit ? lastBrightness : 0);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  settleSwitchOn(false);
+#endif
   LOG_INF("LIGHT", "Frontlight up: %u%% warm=%u%% %s", lastBrightness, manager.colorTemperature(), lit ? "on" : "off");
 }
 
@@ -44,6 +53,9 @@ void HalFrontlight::setBrightness(const uint8_t percent) {
 
 void HalFrontlight::setWarmth(const uint8_t warmPercent) {
   manager.setColorTemperature(warmPercent > 100 ? 100 : warmPercent);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  settleSwitchOn(true);  // a colour change while lit probes the other string
+#endif
 }
 
 void HalFrontlight::setOn(const bool on) {
@@ -53,4 +65,17 @@ void HalFrontlight::setOn(const bool on) {
   if (on) manager.clearFault();
   lit = on;
   manager.setBrightness(lit ? lastBrightness : 0);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  settleSwitchOn(true);
+#endif
 }
+
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+void HalFrontlight::settleSwitchOn(const bool userAsked) {
+  if (!lit || !manager.fault() || manager.load() != freeink::frontlight::Load::Absent) return;
+  lit = false;
+  manager.setBrightness(0);  // dark and re-armed; the SDK's record keeps "no light"
+  if (userAsked) noLightNotice = true;
+  LOG_ERR("LIGHT", "No front light detected%s", userAsked ? "" : " (Restore Light on Wake)");
+}
+#endif

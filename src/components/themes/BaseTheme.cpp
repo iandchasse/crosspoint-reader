@@ -758,6 +758,44 @@ Rect BaseTheme::drawPopup(const GfxRenderer& renderer, const char* message) cons
   return Rect{x, y, w, h};
 }
 
+Rect BaseTheme::drawWrappedPopup(const GfxRenderer& renderer, const char* message, const int maxLines) const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int marginX = metrics.popupMarginX;
+  const int marginY = metrics.popupMarginY;
+  const int frameThickness = metrics.popupFrameThickness;
+  const EpdFontFamily::Style popupFontFamily = metrics.popupTextBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  const int y = static_cast<int>(renderer.getScreenHeight() * metrics.popupTopOffsetRatio);
+  const int maxTextWidth = renderer.getScreenWidth() - 4 * marginX - 2 * frameThickness;
+  const auto lines = renderer.wrappedText(UI_12_FONT_ID, message, maxTextWidth, maxLines, popupFontFamily);
+  int textWidth = 0;
+  for (const auto& line : lines) {
+    textWidth = std::max(textWidth, renderer.getTextWidth(UI_12_FONT_ID, line.c_str(), popupFontFamily));
+  }
+  const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int w = textWidth + marginX * 2;
+  const int h = lineHeight * static_cast<int>(lines.size()) + marginY * 2;
+  const int x = (renderer.getScreenWidth() - w) / 2;
+
+  if (metrics.popupCornerRadius > 0) {
+    renderer.fillRoundedRect(x - frameThickness, y - frameThickness, w + frameThickness * 2, h + frameThickness * 2,
+                             metrics.popupCornerRadius + frameThickness, Color::White);
+    renderer.fillRoundedRect(x, y, w, h, metrics.popupCornerRadius, Color::Black);
+  } else {
+    renderer.fillRect(x - frameThickness, y - frameThickness, w + frameThickness * 2, h + frameThickness * 2, true);
+    renderer.fillRect(x, y, w, h, false);
+  }
+
+  int textY = y + marginY + metrics.popupTextBaselineOffsetY;
+  for (const auto& line : lines) {
+    const int lineWidth = renderer.getTextWidth(UI_12_FONT_ID, line.c_str(), popupFontFamily);
+    renderer.drawText(UI_12_FONT_ID, x + (w - lineWidth) / 2, textY, line.c_str(), metrics.popupTextInverted,
+                      popupFontFamily);
+    textY += lineHeight;
+  }
+  renderer.displayBuffer();
+  return Rect{x, y, w, h};
+}
+
 void BaseTheme::fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int barHeight = metrics.popupProgressBarHeight;
