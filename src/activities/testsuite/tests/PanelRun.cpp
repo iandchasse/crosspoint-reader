@@ -3,6 +3,7 @@
 
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
+#include <HalGPIO.h>
 #include <Logging.h>
 
 #include <algorithm>
@@ -138,7 +139,7 @@ void PanelRunTest::onTick() {
     // Back never gets here (TestScreen::loop leaves through onBack() first).
     int x = 0;
     int y = 0;
-    if (mappedInput.wasAnyReleased() || mappedInput.wasScreenTapped(x, y)) resume();
+    if (gpio.wasAnyReleased() || mappedInput.wasScreenTapped(x, y)) resume();
     return;
   }
   if (!stepQueued) {

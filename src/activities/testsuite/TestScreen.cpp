@@ -106,7 +106,7 @@ void TestScreen::onExit() {
 }
 
 void TestScreen::loop() {
-  if (mappedInput.wasAnyPressed() || mappedInput.wasAnyReleased() || gpio.wasTouchActivity()) lastInputAt = millis();
+  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity()) lastInputAt = millis();
   const bool touchInput = touchIsTestInput();
   if (!touchInput) {
     const auto route = routeTouch(mappedInput);
