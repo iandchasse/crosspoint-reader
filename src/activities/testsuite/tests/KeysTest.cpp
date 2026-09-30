@@ -202,7 +202,6 @@ class KeysTest final : public TestScreen {
     int8_t outcome;  // BTN_* or -1: no key
     int mv;
     unsigned long steadyMs;
-    uint8_t sdkMask;
   };
 
   bool keysAreTestInput() const override { return true; }
@@ -443,10 +442,17 @@ class KeysTest final : public TestScreen {
     r.steadyMs = contact.ms[steady];
     r.mv = contact.samples[steady] > 0 ? static_cast<int>(contact.mvSum[steady] / contact.samples[steady]) : 0;
     r.outcome = steady < UNCLEAN && steady < ladder.count ? static_cast<int8_t>(ladder.keys[steady].button) : -1;
-    r.sdkMask = contact.sdkMask;
     r.pass = (CHORDS[chordIndex].accept & (r.outcome >= 0 ? keyBit(r.outcome) : REJECTED)) != 0;
-    LOG_INF("TEST", "T3 chord %s: %s at %d mV for %lu ms (%s)", CHORDS[chordIndex].keys,
-            r.outcome >= 0 ? BUTTON_NAMES[r.outcome] : "no key", r.mv, r.steadyMs, r.pass ? "ok" : "wrong");
+    // The keys HalGPIO committed on the way in and out show the press order.
+    char reported[40] = "";
+    for (uint8_t b = 0; b < LOGICAL; ++b) {
+      if ((contact.sdkMask & keyBit(b)) != 0) {
+        appendf(reported, sizeof(reported), "%s%s", reported[0] == '\0' ? "" : ",", BUTTON_NAMES[b]);
+      }
+    }
+    LOG_INF("TEST", "T3 chord %s: %s at %d mV for %lu ms (%s); keys reported: %s", CHORDS[chordIndex].keys,
+            r.outcome >= 0 ? BUTTON_NAMES[r.outcome] : "no key", r.mv, r.steadyMs, r.pass ? "ok" : "wrong",
+            reported[0] != '\0' ? reported : "none");
     ++chordIndex;
     drawnAt = millis();
     requestUpdate();
@@ -475,11 +481,13 @@ class KeysTest final : public TestScreen {
     uncleanIdle = 0;
   }
 
+  // Starts the chords again. The ladder counts only once it has read released:
+  // a key still held from the hold that got here (Mode, Record) is no chord.
   void resetChords() {
     chordIndex = 0;
     for (auto& r : chords) r = {};
     contact = {};
-    skipContact = false;
+    skipContact = true;
     releasedSince = 0;
   }
 

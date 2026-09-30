@@ -199,6 +199,8 @@ class ChargeTest final : public TestScreen {
 
   void onAnswer(const int question, const int answer) override {
     if (question != QUESTION_D2 || answer < 0) return;
+    // The ladder kept going while the question was open: judge it as it is now.
+    onTick();
     const Stage& s = STAGES[stage];
     const bool d2Lit = answer == 1;
     char fails[64] = "";
