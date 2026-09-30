@@ -1,20 +1,34 @@
 # Silkscreen port of CrossPoint Reader
 
-This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md).
+This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md). The sleep-current budget, the pin states in sleep and the battery-drain rules, with where each is implemented, are in [POWER.md](POWER.md).
 
 - **Base:** CrossPoint `develop` at `d1509d07`, with freeink-sdk at its pinned `87c4493`. The SDK work is on the submodule's `silkscreen` branch.
 - **Earlier attempt:** the first port (Sep 20-21, 2026) is archived in `EPD_Hub_ESP32/silkscreen-firmware-archive/` as git bundles plus `.patch` files. It is a reference only. Its pin map was right, but several behaviours contradict the hardware spec. They are listed under [What this port does differently](#what-this-port-does-differently).
 
 ## Status
 
-This file describes the finished port. What is in the code today:
+Every step of the commit plan has landed, in these local commits. SDK is `freeink-sdk` on its `silkscreen` branch; App is this repo on `silkscreen`. Nothing has run on a board yet, so every hardware claim still waits for the [bring-up checklist](#bring-up-checklist-real-board).
 
-- **Landed:** SDK step 1 (`ee3501d`, board and profile) and app step 1 (`4ae622ef`, envs and wiring), then the review-fix commits (`fix(silkscreen): address review findings`), which cover SDK steps 2-5, the DS3231 low-power and RTC-fallback part of step 7, and app step 2: parked pins, no internal pull on `IO18`, `BUSY` pull-down, the parked SDMMC power cycle, the ADC button ladders, the `USB_STAT` decoder, USB presence and the low-battery cutoff.
-- **Landed:** SDK step 6, the front light: the enable-gated TPS923610 path, fixed warm/cool on `COLOR_SEL`, the `LED_MONIT` over-voltage trip, one shared ADC lock for every ADC reader, and the sleep handover. The app compiles the light in by default, restores it only after a verified wake, and hands it over before deep sleep.
-- **Landed:** SDK step 7, touch: an optional panel probed at boot (FT6336U at 0x38 through the FT5x06 path, GT911 fallback), its absence cached across deep sleep, the controller put to sleep at every sleep entry with `TP_RST` held HIGH, one owner for the shared I2C bus clock, stuck-bus recovery at boot and a released bus in sleep. The app keeps the key hints, the front-button remap and the other key-only UI when touch is fitted.
-- **Landed:** the battery-drain pass (drain-audit rules ZD, PB, WK, BAT and AW): the EPD SPI lines held through sleep, `BUSY` without its pull-down in sleep, the SD bus held LOW in sleep, no `RST` glitch on wake, a bounded wait for the power button with wake-on-release, the sleep-or-boot decision before SD/touch/panel, sleep at once after 3 abnormal resets in a row, the cutoff running with Wi-Fi on, a battery floor for firmware writes, a 15-minute awake ceiling on battery, Wi-Fi off when an update check ends, and USB Drive ending when the cable is pulled on battery.
-- **Not yet:** the SDK README (step 8), CI (app step 3), the brown-out level, the Wi-Fi TX battery gate, and staying awake on USB.
-- Rows and checklist steps that depend on the missing steps are marked *planned*. Update this section as each step lands.
+| Area | SDK | App | What landed |
+|---|---|---|---|
+| Plan and requirements | | `be3d2592` | This file and REQUIREMENTS.md. |
+| Board registration | `771de19` | `79c214a4` | Device flag and `SILKSCREEN` profile with the verified pin map. `silkscreen`, `silkscreen-gh_release` and `silkscreen-gh_release_rc` envs, OTA board tag, awake after a USB cold boot. |
+| Pins, SD, keys, charging, cutoff, RTC | `abca595` | `7f2450c4` | Parked pins, no internal pull on `IO18`, `BUSY` pull-down, the parked SDMMC power cycle, the ADC key ladders, the `USB_STAT` decoder and USB presence, the low-battery cutoff at boot and in the loop, DS3231 low power, the RV-8263 fallback and the NTP resync. |
+| Front light | `82fe8ab` | `ccf474d2` | Enable-gated TPS923610 path, fixed warm/cool on `COLOR_SEL`, `LED_MONIT` over-voltage trip, one ADC lock for every reader. Compiled in by default, restored only after a verified wake, handed over before deep sleep. |
+| Touch and I2C | `a26e398` | `88d14b28` | Optional touch probed at boot (FT6336U at 0x38, GT911 fallback), with the result cached across deep sleep. Controller put to sleep with `TP_RST` held HIGH. Key hints, remap and the other key UI kept with touch. One I2C clock owner, stuck-bus recovery, a released bus in sleep. |
+| Battery drain | `983f2a7` | `b86e9d49` | Drain rules ZD, PB, WK, BAT and AW (see [POWER.md §3](POWER.md#3-firmware-rules-and-where-they-live)). In sleep: EPD SPI lines and SD bus held, no `BUSY` pull-down, no `RST` glitch on wake. Power button: bounded release wait with wake-on-release. Boot: sleep-or-boot decided before SD, touch and the panel; sleep after 3 abnormal resets. Battery: cutoff also with Wi-Fi on, a floor for firmware writes. Awake: 15-min ceiling on battery, Wi-Fi off when an update check ends, USB Drive ends on cable pull. The sleep/wake guard script. |
+| Docs and CI | `097bcfd` | `docs(silkscreen)` commit after `b86e9d49` | SDK README (device list, every defaulted field). POWER.md, the REQUIREMENTS.md corrections, this status and the Next section. The `silkscreen` env in the CI build matrix. |
+
+`7f2450c4`'s message names its SDK commit by an earlier hash, `ce61aa8`; the pointer it records is `abca595`.
+
+**Not yet:**
+
+- the brown-out level;
+- the Wi-Fi TX battery gate;
+- staying awake while USB is present (REQUIREMENTS `usb-stay-awake-for-flash`);
+- WK-02 and a lower idle clock ([POWER.md §5](POWER.md#5-the-awake-idle-tail));
+- `scripts/check_sleep_wake_sources.sh` in CI;
+- the items listed under "Deferred until measured on hardware" in the [commit plan](#commit-plan).
 
 ## Architecture: Silkscreen is data
 
@@ -61,6 +75,7 @@ These follow the plan's recommendations and can be changed:
 - **Low-battery cutoff at 3400 mV** on `P+`: 16× averaged readings once a second, 3 consecutive at or below the cutoff, never while `USB_STAT` reports external power (idle, charging, complete, no-battery blink) and never on a reading below 2.5 V (no cell). While `USB_STAT` is still unknown, a reading above 2.5 V proves a cell. With Wi-Fi on the threshold is 100 mV lower (3300 mV) for the `P+` sag under radio load (0.24-0.35 Ω × 100-300 mA, §3.6), and the sleep entry turns Wi-Fi off. Also checked at boot, before SD and the panel: a normal boot pays for one reading, and only a reading within 100 mV of the cutoff waits for the divider and ladder to settle. A cutoff at boot after anything but a deep-sleep wake first begins the panel without a refresh and sends its deep-sleep command, since no sleep entry did.
 - **Firmware writes need 3.6 V on battery** (`firmwareUpdateMinMv`; 3.5 V as read with Wi-Fi on, the same 100 mV allowance). OTA and the SD firmware update refuse below it unless `USB_STAT` shows external power, with "Battery too low, connect USB" (`STR_BATTERY_TOO_LOW_FOR_UPDATE`). The SD flow checks again right before the write.
 - **Wake: power button only** (`IO18`, ext1 ANY_HIGH via `PowerManager::armPowerButtonWakeup`; no RTC_PERIPH domain needed). `scripts/check_sleep_wake_sources.sh` fails if another wake source, light sleep, a power-domain override or a second `esp_deep_sleep_start()` appears in `src/`, `lib/` or the SDK.
+- **Sleep-current target:** ≈58 µA typical without touch (≈95 µA by datasheet maxima), ≈113 µA with an FT6336U tail hibernated. The itemized budget, the per-pin sleep states and the measurement procedure are in [POWER.md](POWER.md).
 - **A held power button at sleep entry:** wait at most 5 s for the release (`releaseWaitMaxMs`), then sleep with ext1 ANY_LOW on `IO18` (wake on release). That boot sleeps again at once (`takeReleaseWake()`, first thing in `setup()`, before any peripheral starts).
 - **Sleep-or-boot is decided right after the wake-hold check** (`earlyWakeDecision`), before touch, the RTC, SD, the settings, the light, the panel and Wi-Fi. Short Power Button Press lives on SD, so every sleep entry with the settings loaded leaves the wake rule (a click wakes, or the hold is required) in RTC memory. With no rule there (the first wake after a power-on), the decision waits for the settings as before, and if SD then fails, an unverified wake still sleeps. The touch probe runs after the decision.
 - **3 abnormal resets in a row** (panic, watchdog, CPU lockup, brown-out, or an aborted sleep entry; `abnormalResetLimit`) and the next boot sleeps at once, with no SD, panel, radio or touch command. A power-button wake starts a new count, and so does 60 s of uptime.
@@ -128,12 +143,22 @@ Do these in order. Each step says what to measure.
 7. **B6 - Battery and USB_STAT.** Log `IO9`/`IO8` in each state: on battery (~2.20 V), charging (~1.11 V), complete (~0.55 V), charger idle (~3.3 V), and cell pulled on USB (0.55/0.41 V blink must never report "charged"). The on-battery level is unverified on real parts (DESIGN_REVIEW), so re-window if needed. Ramp a supply on `J5`: the device sleeps at ~3.40 V with Wi-Fi off, and at ~3.30 V as read on `IO8` with the web server running. Log `IO8` with Wi-Fi on and off at one supply voltage to check the 100 mV allowance. Below 3.6 V on battery, OTA and SD flashing refuse. Pull the USB cable during USB Drive on battery: the session ends within ~5 s and the device returns to Home. Leave the web-server screen idle on battery: it sleeps after 15 min.
 8. **B7 - RTC.** Probe 0x68. OSF is set after a cell insert and cleared once time is set over NTP. Register `0x0F` bit 3 = 0. Check I2C edges at 400 kHz before raising the bus from 100 kHz.
 9. **B8 - Front light** (lit builds only, load connected first). Scope `IO42`: at least 3 ms LOW, then about 150 µs HIGH, then the 25 kHz carrier. COLOR_SEL changes only with ADIM LOW (at least 3 ms after it fell). `LED_MONIT` × 9.33 ≈ 15 V lit. Force a trip by building with a temporarily lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` (for example 12000), never by unplugging the load: the light goes off, the log shows the trip, and it stays off until switched on again. A ghost wake (short tap) must not light the LEDs.
-10. **B9 - Touch** (-T01C/-FT01C only). An I2C scan shows 0x38 (FT6336U) or 0x5D/0x14 (GT911) next to the RTC. Build with `-DTOUCH_PROBE_DEBUG` and log the probe (controller, address, cached result); a cold boot without the tail must boot touchless, with the keys, hints and remap. Map the four corners and set `swapXY`/`flipX`/`flipY`. The keys still work with touch fitted. In sleep: `IO11` 3.3 V; for an FT6336U `IO41` unheld, for a GT911 `IO41` 0 V. On a logic analyzer at sleep entry, the `0xA5 = 0x03` write is ACKed (or NACKed, then a reset and an ACK). Current into `J4` pin 2: about 55 µA in hibernate, against 220 µA in Monitor and ~1.1 mA with `TP_RST` LOW. Unplug the tail while asleep and check that a cold boot finds it absent.
-11. **B10 - Sleep current.** A µA meter in series with the cell at 3.8 V, card fitted, light off, panel asleep: about 60 µA typical, ≤ 85 µA (§16). Repeat after each sleep path (menu, auto-sleep, ghost wake, the 15-min ceiling, the boot cutoff) and after 3 forced panics in a row (a test build): all within about 2 µA of each other.
+10. **B9 - Touch** (-T01C/-FT01C only). An I2C scan shows 0x38 (FT6336U) or 0x5D/0x14 (GT911) next to the RTC. Build with `-DTOUCH_PROBE_DEBUG` and log the probe (controller, address, cached result); a cold boot without the tail must boot touchless, with the keys, hints and remap. Map the four corners and set `swapXY`/`flipX`/`flipY`. The keys still work with touch fitted. Sleep with the tail fitted:
+    - `TP_RST` (`IO11`) is held HIGH (3.3 V), never LOW.
+    - `IO41` is unheld for an FT6336U, and 0 V for a GT911.
+    - The controller is hibernated: on a logic analyzer at sleep entry, the `0xA5 = 0x03` write is ACKed (or NACKed, then a reset and an ACK).
+    - Current into `J4` pin 2 is about 55 µA (hibernate), against 220 µA in Monitor and ~1.1 mA with `TP_RST` LOW. Log it for a few minutes to catch a wake-up on the floating `IO41`.
+
+    Unplug the tail while asleep and check that a cold boot finds it absent.
+11. **B10 - Sleep current.** Follow [POWER.md §4](POWER.md#4-measurement-and-bench-checks) (MEAS-01) with a release build: a µA meter or logger in series with the cell at 3.8 V, USB and UART adapters off, card fitted, light off, panel asleep. Average 60 s, starting 60 s after sleep entry.
+    - Expect ≈58-73 µA without touch and ≈113-130 µA with an FT6336U hibernated.
+    - Above ≈150 µA, work through the A/B list in POWER.md. It includes the J2-flex / R5 test for GPIO47/48 back-feed and the `espefuse` summary.
+    - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (a test build). All should agree within about 2 µA.
+    - On battery, also check that `D2` is dark and `USB_VBUS` ≈ 0 V.
 
 ## Commit plan
 
-SDK (`freeink-sdk`, branch `silkscreen`). Steps 1-7 and the battery-drain pass have landed (2-5 in the review-fix commit, see [Status](#status)):
+SDK (`freeink-sdk`, branch `silkscreen`). All eight steps and the battery-drain pass have landed; see [Status](#status) for the commits (steps 2-5 share one):
 
 1. Register Silkscreen: device flag, enum, derived capability lists and the `SILKSCREEN` profile with the verified pin map.
 2. Boot/sleep pin safety: `parkedPins`, `powerExternalPull`, `busyPullDown`.
@@ -142,13 +167,13 @@ SDK (`freeink-sdk`, branch `silkscreen`). Steps 1-7 and the battery-drain pass h
 5. Analog charge-status ladder and low-battery cutoff API.
 6. Frontlight: colour-select, enable pulse, LED over-voltage monitor, and the shared ADC lock.
 7. Touch optional/fallback, touch sleep, keys alongside touch; one owner for the I2C bus clock, bus recovery and release. (DS3231 low-power and the RTC fallback landed earlier.)
-8. README: Silkscreen in the device list and the new fields in the new-board recipe.
+8. README: Silkscreen in the device list and every new defaulted field in the new-board recipe.
 
-App (this repo, branch `silkscreen`). Steps 1-2 and the battery-drain pass have landed:
+App (this repo, branch `silkscreen`). All three steps, the front light, touch and the battery-drain pass have landed:
 
 1. `.gitmodules` to the fork; `silkscreen` / `silkscreen-gh_release` / `silkscreen-gh_release_rc` envs; OTA board tag; keep-awake after a USB cold boot.
 2. USB presence from the charge ladder in `HalGPIO::isUsbConnected()`; low-battery cutoff in the main loop and at boot.
-3. CI: build the `silkscreen` env.
+3. CI: build the `silkscreen` env (`.github/workflows/ci.yml` build matrix, artifact `firmware-silkscreen.bin`). The release workflows and `OtaUpdater` are unchanged. The CI checkout needs the SDK's `silkscreen` branch pushed to the fork.
 
 Deferred until measured on hardware: `xteinkClassPanel()` (B2); the touch orientation (B9); wake from ladder keys; brown-out level; 40 MHz SDMMC/SPI.
 
@@ -156,3 +181,35 @@ Deferred until measured on hardware: `xteinkClassPanel()` (B2); the touch orient
 
 - **Front light (as built).** LEDC stays attached while awake; the pad moves between the plain GPIO output register (dark, and the enable pulse) and the LEDC signal through the GPIO matrix (`gpio_set_direction`, then `ledcOutputInvert(pin, false)`, which also clears the stale `GPIO_OUT` bit so a later detach or `pinMode` lands LOW). None of these touch a pull. `ledcDetach()` (sleep handover only) routes the pad back to `GPIO_OUT` and frees the channel and timer: no pin reset, no pull change. Arduino 3.x clocks LEDC from the 40 MHz XTAL, so 25 kHz allows 10 bits (1600 ≥ 1024), not 11; a `static_assert` in the profile checks it. The monitor runs on the esp_timer task (8 KB stack) and skips a tick rather than block while a light transition holds the front-light lock.
 - **Touch (as built).** The touch `begin` paths run from `gpio.begin()`, before `halClock.begin()`, and Wire ignores a second master `begin`, so the first driver to start the bus sets its clock. Every touch path and every sensor driver now starts the bus through `freeink::i2c::beginBus()` at `busHz()`: the sensor-bus clock when the pins match, otherwise the path's old rate. Every existing board with touch on its sensor bus (X4 Pro, LilyGo, PaperS3, EEGO A4, Paper Mono) already had equal clocks, so none changes. The stuck-bus check runs only on the first start of an `i2cBusRecovery` bus and never under a running controller (Arduino's pin manager is checked first). The probe result sits in `RTC_DATA_ATTR` with a magic word and is trusted only when the reset reason is a deep-sleep wake. `HalPowerManager::startDeepSleep()` runs `gpio.prepareForSleep()` and `releaseSensorBusForSleep()` first, before the serial teardown, so every sleep path gets them and their logs reach the host. A present FT6336U adds the reset and settle time (~307 ms) to each boot, and to a sleep entry whose hibernate write is NACKed. With `earlyWakeDecision` the probe runs after the wake decision (`gpio.begin(true)`, then `gpio.startTouch()`), so it no longer lengthens the hold a wake needs or a ghost wake's awake time. A sleep entry before the probe sends nothing after a deep-sleep wake (the controller is as the last sleep entry left it) and one best-effort hibernate write after any other reset. The abnormal-reset sleep sends no command at all.
+
+## Next
+
+Queued work, in this order.
+
+1. **Port CrossInk.** [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk) is an MIT-licensed fork of crosspoint-reader, also built on freeink-sdk.
+   - Its board support should come from the same SDK `silkscreen` branch; the board stays data, with no device checks.
+   - The app side to carry over is what this branch changed against `d1509d07`:
+     - `src/main.cpp`: the boot order (release wake, reset loop, early wake decision, boot cutoff), the loop cutoff, the awake ceiling, and `Frontlight.begin()` after the wake decision.
+     - `lib/hal`: `HalPowerManager`, `HalGPIO`, `HalFrontlight`, `HalClock`.
+     - The `hasFrontButtons()` UI sites.
+     - `OtaUpdateActivity`, `SdFirmwareUpdateActivity`, `UsbDriveActivity`, and the traffic hook in `CrossPointWebServer`.
+     - `FirmwareBoardTag`, the `[silkscreen]` envs in `platformio.ini`, `STR_BATTERY_TOO_LOW_FOR_UPDATE`, and `scripts/check_sleep_wake_sources.sh`.
+   - Re-check every rule in [POWER.md §3](POWER.md#3-firmware-rules-and-where-they-live) against CrossInk's own sleep paths and network screens.
+2. **Hardware test-suite firmware.** A separate build that boots into discrete tests, each logging its raw readings and a result:
+   - battery (`BAT_MONIT`) and charge status (`USB_STAT` states);
+   - every key, including power (ladder mV and decoded key);
+   - the e-ink refresh modes (full, half, fast, grayscale);
+   - the front light: warm, cool and brightness steps, with the `LED_MONIT` reading;
+   - touch: probe, corners and the sleep command;
+   - the RTC: probe, EN32KHZ, and time kept across a sleep;
+   - Wi-Fi, checked by an NTP sync.
+
+   It covers the firmware side of the bring-up checklist (B1-B10) and uses the same SDK managers as the reader, so a failure there points at the board rather than the reader.
+3. **Research: Silkscreen modularity against the freeink-sdk ecosystem.** Which Silkscreen blocks the SDK's board-data model can describe as optional or swappable:
+   - the J3 panel light or a J6 strip;
+   - the J4 touch tail;
+   - U13 or U14 RTC;
+   - the UP(2)-as-power variant;
+   - J6 accessories.
+
+   Also: where runtime probing (as for touch) beats a build flag, and what a future board revision should change to fit the other freeink-sdk boards ([POWER.md §6](POWER.md#6-hardware-notes-for-a-future-revision)).
