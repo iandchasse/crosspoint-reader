@@ -27,6 +27,9 @@
 #define CROSSPOINT_BOARD_NAME "murphy"
 #elif FREEINK_DEVICE_DELINK
 #define CROSSPOINT_BOARD_NAME "delink"
+#elif FREEINK_DEVICE_SILKSCREEN && CROSSPOINT_TEST_SUITE
+// The hardware test firmware: the reader's update paths reject it as another board.
+#define CROSSPOINT_BOARD_NAME "silkscreen-test"
 #elif FREEINK_DEVICE_SILKSCREEN
 #define CROSSPOINT_BOARD_NAME "silkscreen"
 #else

@@ -28,6 +28,9 @@
 #include "util/BmpViewerActivity.h"
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
+#if CROSSPOINT_TEST_SUITE
+#include "testsuite/TestSuite.h"
+#endif
 
 static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -110,6 +113,7 @@ void ActivityManager::loop() {
       return;
     }
 
+#if !CROSSPOINT_TEST_SUITE  // test firmware: only a front-light test, after its load check, lights the boost
     // Tap-first control-center entry: a tap on the status-bar band of the
     // top-level tab screens opens it, mirroring the top-edge swipe (which some
     // panels' etched glass makes unreliable). The reader keeps its clean page
@@ -127,6 +131,7 @@ void ActivityManager::loop() {
       pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
       return;
     }
+#endif
 
     // Note: do not hold a lock here, the loop() method must be responsible for acquire one if needed
     currentActivity->loop();
@@ -245,9 +250,12 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
   }
 }
 
+// The test firmware defines the reader's entry points in testsuite/TestSuiteRouting.cpp.
+#if !CROSSPOINT_TEST_SUITE
 void ActivityManager::goToFileTransfer() {
   replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
 }
+#endif
 
 void ActivityManager::goToUsbDrive() {
 #if FREEINK_CAP_USB_MSC
@@ -262,6 +270,7 @@ void ActivityManager::goToUsbDrive() {
 #endif
 }
 
+#if !CROSSPOINT_TEST_SUITE
 void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }
 
 void ActivityManager::goToFileBrowser(std::string path) {
@@ -313,6 +322,7 @@ void ActivityManager::goToSleep(bool fromTimeout) {
   replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
 }
+#endif
 
 void ActivityManager::goToBoot() { replaceActivity(std::make_unique<BootActivity>(renderer, mappedInput)); }
 
@@ -320,6 +330,7 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
   replaceActivity(std::make_unique<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style));
 }
 
+#if !CROSSPOINT_TEST_SUITE
 void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefresh) {
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
@@ -337,6 +348,7 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefr
   }
   replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, cleanInitialRefresh));
 }
+#endif
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
 
 void ActivityManager::pushActivity(std::unique_ptr<Activity>&& activity) {
@@ -360,7 +372,13 @@ void ActivityManager::popActivity() {
   pendingAction = PendingAction::Pop;
 }
 
-bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
+bool ActivityManager::preventAutoSleep() const {
+#if CROSSPOINT_TEST_SUITE
+  // Bench sessions on a USB data host stay awake; on battery the screen decides.
+  if (testsuite::usbHostAttached()) return true;
+#endif
+  return currentActivity && currentActivity->preventAutoSleep();
+}
 
 bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();

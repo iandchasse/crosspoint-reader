@@ -8,6 +8,13 @@
 #include <limits>
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc) {
+#if CROSSPOINT_TEST_SUITE
+  // The hardware test firmware shares the reader's card: its settings and
+  // state changes stay in RAM, so /.crosspoint/ stays as the reader left it.
+  (void)doc;
+  LOG_DBG("PERSIST", "Test firmware: %s not written", path);
+  return true;
+#endif
   Storage.mkdir("/.crosspoint");
   String json;
   serializeJson(doc, json);

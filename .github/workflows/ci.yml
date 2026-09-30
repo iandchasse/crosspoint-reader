@@ -101,6 +101,10 @@ jobs:
             asset: firmware-papermono.bin
           - env: silkscreen
             asset: firmware-silkscreen.bin
+          # Hardware test firmware (docs/silkscreen/TEST-SUITE.md): a CI artifact
+          # only, never a release asset.
+          - env: silkscreen-test
+            asset: firmware-silkscreen-test.bin
     steps:
       - uses: actions/checkout@v6
         with:
@@ -166,6 +170,10 @@ jobs:
             if [ -n "$ram_line" ]; then echo "- ${ram_line}"; else echo "- RAM: not found"; fi
             if [ -n "$flash_line" ]; then echo "- ${flash_line}"; else echo "- Flash: not found"; fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Test firmware carries no reader and its own board tag
+        if: matrix.env == 'silkscreen-test'
+        run: bash scripts/check_test_firmware.sh silkscreen-test
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v6

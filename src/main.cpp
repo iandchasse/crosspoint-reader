@@ -42,6 +42,9 @@
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
+#if CROSSPOINT_TEST_SUITE
+#include "activities/testsuite/TestSuite.h"
+#endif
 
 #if CROSSPOINT_VECTOR_FONTS
 // Rendering (incl. FreeType TTF rasterization) runs on the Arduino loop task.
@@ -273,12 +276,14 @@ bool handleX4ProFrontlightDoubleClick() {
 
 constexpr char SLEEP_FRAME_FILE[] = "/.crosspoint/sleep_frame.bin";
 
+#if !CROSSPOINT_TEST_SUITE
 static void saveSleepFrameBuffer() {
   HalFile file;
   if (!Storage.openFileForWrite("SLP", SLEEP_FRAME_FILE, file)) return;
   file.write(renderer.getFrameBuffer(), renderer.getBufferSize());
   file.close();
 }
+#endif
 
 static bool loadSleepFrameBuffer() {
   HalFile file;
@@ -315,12 +320,16 @@ void enterDeepSleep(bool fromTimeout = false) {
   deepSleepInProgress = true;
   activityManager.goToSleep(fromTimeout);
 
+#if CROSSPOINT_TEST_SUITE  // the reader's Quick Resume frame is left as the reader wrote it
+  (void)isQuickResumeSleep;
+#else
   if (isQuickResumeSleep) {
     saveSleepFrameBuffer();
   } else if (Storage.exists(SLEEP_FRAME_FILE)) {
     // A stale Quick Resume frame must not replace the selected sleep screen during wake.
     Storage.remove(SLEEP_FRAME_FILE);
   }
+#endif
 
   // Tear down WiFi so the modem power domain isn't held alive across deep sleep.
   // Wake from deep sleep is effectively a chip reset, so no state needs to survive.
@@ -529,12 +538,16 @@ void setup() {
     gpio.startTouch();
   }
 
+#if CROSSPOINT_TEST_SUITE
+  constexpr bool recoveryFirmwareMode = false;  // no SD firmware picker: switch images over USB
+#else
   // X4 Pro and X4 Classic both map BTN_UP to GPIO0 — an ESP32-S3 boot strap — so
   // gate recovery on the non-strap Down key (GPIO7) to avoid a stuck-in-recovery loop.
   const auto recoveryButton = (BoardConfig::isX4Pro() || BoardConfig::isX4Classic()) ? MappedInputManager::Button::Down
                                                                                      : MappedInputManager::Button::Up;
   const bool recoveryFirmwareMode = wakeupReason == HalGPIO::WakeupReason::PowerButton && !BoardConfig::isPaperMono() &&
                                     mappedInputManager.isPressed(recoveryButton);
+#endif
 
   halTiltSensor.begin();
   halClock.begin();
@@ -558,15 +571,19 @@ void setup() {
       Storage.prepareForDeepSleep();
       powerManager.startDeepSleep(gpio);
     }
+#if !CROSSPOINT_TEST_SUITE  // the test menu opens without a card and says so
     setupDisplayAndFonts(isSilentReboot);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
     storageErrorScreen = true;
     return;
+#endif
   }
 
   HalSystem::checkPanic();
 
+#if !CROSSPOINT_TEST_SUITE  // no open book or reader resume in the test firmware: a splash on every boot
   APP_STATE.loadFromFile();
+#endif
   const bool isSleepWake = wakeupReason == HalGPIO::WakeupReason::PowerButton;
   const bool isPersistedSleepWake = isSleepWake && !APP_STATE.showBootScreen;
 
@@ -584,6 +601,9 @@ void setup() {
   }
   SETTINGS.loadFromFile();
   settingsLoaded = true;
+#if CROSSPOINT_TEST_SUITE
+  testsuite::beginAfterSettings();  // pins test values in RAM (never saved); housekeeping on the card
+#endif
   // Push the saved timezone's POSIX rule into the clock (migrating the legacy
   // UTC-offset setting on first boot after the update).
   timezones::applyToClock();
@@ -643,7 +663,14 @@ void setup() {
   // light.
   const bool restoreLightOn =
       isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
+#if CROSSPOINT_TEST_SUITE
+  // Only a front-light test lights the boost, after the operator confirms a load:
+  // no restore on wake and no replay after a silent restart.
+  (void)restoreLightOn;
+  Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, /*on=*/false);
+#else
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+#endif
 
   LOG_DBG("MAIN", "Starting CrossPoint version " CROSSPOINT_VERSION);
 
