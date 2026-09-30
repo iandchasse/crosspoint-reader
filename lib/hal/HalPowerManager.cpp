@@ -77,8 +77,13 @@ void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
   // bus is released with nothing in flight (no-ops on boards without them). Both
   // before the serial teardown below, so their logs still reach the host. The
   // bus release is GPIO-level only (it frees a line a slave holds LOW), so even
-  // a minimal sleep entry runs it.
-  if (sleepCommands) gpio.prepareForSleep();
+  // a minimal sleep entry runs it, and a minimal entry still re-holds the pins a
+  // sleeping touch controller needs.
+  if (sleepCommands) {
+    gpio.prepareForSleep();
+  } else {
+    gpio.prepareForMinimalSleep();
+  }
   if (!freeink::i2c::releaseSensorBusForSleep()) {
     LOG_ERR("PWR", "I2C SDA still held LOW after bus recovery");
   }
@@ -149,20 +154,47 @@ void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
   }
 #endif
 
+  // PowerConfig::releaseWaitMaxMs: the bounded release wait below may last
+  // seconds, and nothing from here on needs full speed.
+  if (BoardConfig::powerPolicy().releaseWaitMaxMs != 0) setCpuFrequencyMhz(LOW_POWER_FREQ);
+
   // Waits for the power button to be physically released (so holding it doesn't
   // immediately wake the device again), then arms the wake source and sleeps.
   freeink::PowerManager::deepSleepUntilPowerButton();
 }
 
+bool HalPowerManager::lowBatteryCutoffTripped() {
+  if (cutoffTripped) return true;
+  const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBatteryCutoffMv;
+  if (cutoffMv == 0) return false;
+  static const BatteryMonitor cutoffBattery;
+  const bool radioOn = WiFi.getMode() != WIFI_MODE_NULL;
+  uint16_t mv = 0;
+  if (!cutoffBattery.isBelowCutoff(nullptr, &mv, radioOn)) return false;
+  cutoffTripped = true;
+  LOG_ERR("PWR", "Battery at %u mV%s, below the %u mV cutoff; sleeping", mv, radioOn ? " with Wi-Fi on" : "", cutoffMv);
+  return true;
+}
+
+bool HalPowerManager::radioOffWhenIdle() { return BoardConfig::powerPolicy().radioOffWhenIdle; }
+
+bool HalPowerManager::releaseIdleRadio(const char* tag) {
+  if (!radioOffWhenIdle() || WiFi.getMode() == WIFI_MODE_NULL) return false;
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  LOG_DBG(tag, "Work done; Wi-Fi off");
+  return true;
+}
+
 bool HalPowerManager::firmwareUpdateBlockedByBattery() const {
-  const uint16_t minMv = BoardConfig::ACTIVE.power.firmwareUpdateMinMv;
+  const uint16_t minMv = BoardConfig::powerPolicy().firmwareUpdateMinMv;
   if (minMv == 0) return false;
   const BatteryMonitor battery;
   bool known = false;
   if (battery.isExternalPowerPresent(&known) && known) return false;  // USB carries the write
   const uint16_t mv = battery.readMillivoltsAveraged(16);
   if (mv < BatteryMonitor::CELL_PRESENT_MIN_MV) return false;  // no cell: USB powers the board
-  const uint16_t allowanceMv = WiFi.getMode() != WIFI_MODE_NULL ? BoardConfig::ACTIVE.power.cutoffRadioAllowanceMv : 0;
+  const uint16_t allowanceMv = WiFi.getMode() != WIFI_MODE_NULL ? BoardConfig::powerPolicy().cutoffRadioAllowanceMv : 0;
   if (mv + allowanceMv >= minMv) return false;
   LOG_ERR("PWR", "Battery at %u mV (+%u mV radio allowance), below the %u mV a firmware write needs", mv, allowanceMv,
           minMv);

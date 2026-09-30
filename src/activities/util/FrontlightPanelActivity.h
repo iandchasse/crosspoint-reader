@@ -6,7 +6,8 @@
 #include "util/ButtonNavigator.h"
 
 // Top-anchored control center opened by a top-edge down-swipe, a status-bar tap,
-// or a button bound to "Control Center" (iOS Control Center style): a grabber,
+// or, on a board with keys and a light, Settings > Display > Frontlight (iOS
+// Control Center style): a grabber,
 // the frontlight brightness/warmth sliders (on boards with a light), and a grid
 // of quick-setting tiles — night mode, ghost-cleanup refresh, reading
 // orientation, and reader touch controls on/off. The
@@ -66,6 +67,9 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   int computePanelBottom() const;
   void adjustBrightness(int delta);
   void adjustWarmth(int delta);
+  // Up/Down on a board with keys: warmer/cooler. A fixed warm/cool selection
+  // jumps straight to the other string.
+  void stepWarmthByKey(bool warmer);
   void toggleLight();
   void runTile(int idx);
   // Copy the panel's live brightness/warmth/lightOn into SETTINGS and save if

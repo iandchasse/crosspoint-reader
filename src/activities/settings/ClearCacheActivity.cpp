@@ -1,6 +1,7 @@
 #include "ClearCacheActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -82,6 +83,8 @@ void ClearCacheActivity::render(RenderLock&&) {
     return;
   }
 }
+
+bool ClearCacheActivity::skipLoopDelay() { return !HalPowerManager::radioOffWhenIdle() || state == CLEARING; }
 
 void ClearCacheActivity::beginClear() {
   LOG_DBG("CLEAR_CACHE", "User confirmed, starting cache clear");

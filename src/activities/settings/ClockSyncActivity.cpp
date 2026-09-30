@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <HalClock.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
@@ -32,12 +33,16 @@ void ClockSyncActivity::onEnter() {
 void ClockSyncActivity::onExit() {
   Activity::onExit();
 
-  if (shouldTearDownWifiOnExit && WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    delay(30);
+  if (shouldTearDownWifiOnExit && (radioReleased || WiFi.getMode() != WIFI_MODE_NULL)) {
+    if (WiFi.getMode() != WIFI_MODE_NULL) {
+      WiFi.disconnect(false);
+      delay(30);
+    }
     silentRestart();
   }
 }
+
+bool ClockSyncActivity::skipLoopDelay() { return !HalPowerManager::radioOffWhenIdle() || state == SYNCING; }
 
 void ClockSyncActivity::launchWifiSelection() {
   LOG_INF("CLK", "Manual sync requested without WiFi, launching WiFi selection");
@@ -90,6 +95,9 @@ void ClockSyncActivity::loop() {
     // requestUpdateAndWait below forces the render before we block on WiFi.
     requestUpdateAndWait();
     runSync();
+    // The result screen only waits for Back: a radio this screen brought up goes
+    // off now (PowerConfig::radioOffWhenIdle), not when the user leaves.
+    if (shouldTearDownWifiOnExit && HalPowerManager::releaseIdleRadio("CLK")) radioReleased = true;
     return;
   }
 

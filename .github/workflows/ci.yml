@@ -33,6 +33,9 @@ jobs:
           PATH="/usr/lib/llvm-21/bin:$PATH" ./bin/clang-format-fix
           git diff --exit-code || (echo "Please run 'bin/clang-format-fix' to fix formatting issues" && exit 1)
 
+      - name: Sleep/wake source guard
+        run: bash scripts/check_sleep_wake_sources.sh
+
   cppcheck:
     runs-on: ubuntu-latest
     steps:

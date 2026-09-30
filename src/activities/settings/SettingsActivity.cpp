@@ -4,6 +4,7 @@
 #include <GfxRenderer.h>
 #include <HalClock.h>
 #include <HalDisplay.h>
+#include <HalFrontlight.h>
 #include <LibraryBuilder.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -33,6 +34,7 @@
 #include "StatusBarSettingsActivity.h"
 #include "TextSettingsActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "activities/util/FrontlightPanelActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
@@ -87,6 +89,10 @@ void SettingsActivity::rebuildSettingsLists() {
   }
 
   // Append device-only ACTION items
+  // The light's own controls are touch gestures; a board with keys reaches them here.
+  if (Frontlight.present() && BoardConfig::hasFrontButtons()) {
+    displaySettings.push_back(SettingInfo::Action(StrId::STR_FRONTLIGHT, SettingAction::FrontlightPanel));
+  }
   if (BoardConfig::hasFrontButtons()) {
     controlsSettings.insert(controlsSettings.begin(),
                             SettingInfo::Action(StrId::STR_REMAP_FRONT_BUTTONS, SettingAction::RemapFrontButtons));
@@ -440,6 +446,14 @@ void SettingsActivity::toggleCurrentSetting() {
           startActivityForResult(std::move(activity), nullptr);
         } else {
           LOG_ERR("SETTINGS", "OOM: AboutActivity");
+        }
+        break;
+      case SettingAction::FrontlightPanel:
+        // The panel saves its own changes on the way out.
+        if (auto activity = makeUniqueNoThrow<FrontlightPanelActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: FrontlightPanelActivity");
         }
         break;
       case SettingAction::None:

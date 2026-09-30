@@ -12,6 +12,9 @@ class HalFrontlight {
 
   bool present() const { return manager.present(); }
   bool hasColorTemperature() const { return manager.hasColorTemperature(); }
+  // Warmth picks one string (warm at >= 50%) instead of blending two
+  // (FrontlightConfig::colorSelectGpio).
+  bool warmthIsSelection() const;
 
   void setBrightness(uint8_t percent);
   void setWarmth(uint8_t warmPercent);
@@ -20,11 +23,14 @@ class HalFrontlight {
   uint8_t brightness() const { return lastBrightness; }
   uint8_t warmth() const { return manager.colorTemperature(); }
   // Off after the SDK's LED over-voltage monitor tripped (fault()), even though
-  // the user left it on; switching it on again is the retry.
+  // the user left it on; switching it on again is the retry. setOn(false) always
+  // clears the user's "on" and re-arms the monitor, faulted or not.
   bool isOn() const { return lit && !manager.fault(); }
   bool fault() const { return manager.fault(); }
 
-  // Take the light dark and release its pads before deep sleep.
+  // Take the light dark and release its pads before deep sleep. begin() also
+  // runs it from a shutdown handler before every software restart, so the
+  // driver is dark before the reset lets COLOR_SEL fall to its pull-down.
   void prepareForSleep() { manager.prepareForSleep(); }
 
  private:

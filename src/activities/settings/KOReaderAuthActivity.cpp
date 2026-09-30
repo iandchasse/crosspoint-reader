@@ -1,6 +1,7 @@
 #include "KOReaderAuthActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>
@@ -71,9 +72,11 @@ void KOReaderAuthActivity::onEnter() {
 void KOReaderAuthActivity::onExit() {
   Activity::onExit();
 
-  if (WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(false);
-    delay(30);
+  if (radioReleased || WiFi.getMode() != WIFI_MODE_NULL) {
+    if (WiFi.getMode() != WIFI_MODE_NULL) {
+      WiFi.disconnect(false);
+      delay(30);
+    }
     silentRestart();
   }
 }
@@ -110,6 +113,8 @@ void KOReaderAuthActivity::render(RenderLock&&) {
 
 void KOReaderAuthActivity::loop() {
   if (state == SUCCESS || state == FAILED) {
+    // The result only waits for Back (PowerConfig::radioOffWhenIdle).
+    if (HalPowerManager::releaseIdleRadio("KOAuth")) radioReleased = true;
     int x = 0;
     int y = 0;
     if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||

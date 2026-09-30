@@ -149,11 +149,23 @@ void CrossPointWebServer::begin() {
   server->enableCORS(true);
 
   // On a board with a battery awake ceiling (PowerConfig::awakeCeilingMin),
-  // every request counts as client traffic, so a device serving a client stays
-  // up however long ago its keys were touched.
-  if (BoardConfig::ACTIVE.power.awakeCeilingMin > 0) {
-    server->addMiddleware([](WebServer&, Middleware::Callback next) {
-      powerManager.noteClientTraffic();
+  // requests count as client traffic, so a device serving a client stays up
+  // however long ago its keys were touched. Not the methods an OS WebDAV client
+  // sends on its own to poll a mounted share (PowerConfig::awakeInputCapMin
+  // bounds the rest).
+  if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
+    server->addMiddleware([](WebServer& request, Middleware::Callback next) {
+      switch (request.method()) {
+        case HTTP_OPTIONS:
+        case HTTP_HEAD:
+        case HTTP_PROPFIND:
+        case HTTP_LOCK:
+        case HTTP_UNLOCK:
+          break;
+        default:
+          powerManager.noteClientTraffic();
+          break;
+      }
       return next();
     });
   }

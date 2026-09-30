@@ -1,5 +1,7 @@
 #pragma once
 
+#include <HalPowerManager.h>
+
 #include "activities/Activity.h"
 #include "components/OptionPopup.h"
 #include "network/OtaUpdater.h"
@@ -37,7 +39,6 @@ class OtaUpdateActivity : public Activity {
   void runUpdateInstall();
   // Enter NO_UPDATE or FAILED: nothing left to do but leave the screen.
   void finishCheck(State terminalState, const char* detail = nullptr);
-  static bool radioOffWhenIdle();
 
  public:
   explicit OtaUpdateActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -50,6 +51,6 @@ class OtaUpdateActivity : public Activity {
   // Prevent power-saving mode while the update works. With
   // PowerConfig::radioOffWhenIdle only then: a result screen needs no spinning.
   bool skipLoopDelay() override {
-    return !radioOffWhenIdle() || state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS;
+    return !HalPowerManager::radioOffWhenIdle() || state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS;
   }
 };

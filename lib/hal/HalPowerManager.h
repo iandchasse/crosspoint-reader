@@ -24,6 +24,7 @@ class HalPowerManager {
   LockMode currentLockMode = None;
   SemaphoreHandle_t modeMutex = nullptr;  // Protect access to currentLockMode
   unsigned long lastClientTrafficMs = 0;  // noteClientTraffic()
+  bool cutoffTripped = false;             // lowBatteryCutoffTripped() latch
 
   [[noreturn]] void sleepImpl(HalGPIO& gpio, bool sleepCommands) const;
 
@@ -54,6 +55,21 @@ class HalPowerManager {
   // and the last input.
   void noteClientTraffic() { lastClientTrafficMs = millis(); }
   unsigned long msSinceClientTraffic() const { return millis() - lastClientTrafficMs; }
+
+  // PowerConfig::lowBatteryCutoffMv (always false on boards without one): true
+  // once BatteryMonitor::isBelowCutoff() fires (with the radio allowance while
+  // Wi-Fi is on), and from then on for the session, so a reading that recovers
+  // when a transfer's load stops cannot undo it. At most one reading a second.
+  // Call from the loop task, including a blocking transfer's callbacks (which
+  // abort on it); loop() then sleeps.
+  bool lowBatteryCutoffTripped();
+
+  // PowerConfig::radioOffWhenIdle: a screen whose work has ended stops skipping
+  // the loop delay, and a network screen turns Wi-Fi off then instead of on exit.
+  static bool radioOffWhenIdle();
+  // With radioOffWhenIdle, switch Wi-Fi off now if it is on. Returns true when it
+  // did; the caller still restarts on exit to clear the heap the radio left.
+  static bool releaseIdleRadio(const char* tag);
 
   // True when writing a firmware image now could brown out: on battery below
   // PowerConfig::firmwareUpdateMinMv (less PowerConfig::cutoffRadioAllowanceMv

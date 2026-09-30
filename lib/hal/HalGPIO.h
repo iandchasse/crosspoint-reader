@@ -83,7 +83,8 @@ class HalGPIO {
   unsigned long getPowerButtonHeldTime() const;
   // True when any button contact is closed right now, read straight from the
   // hardware (ADC ladder off its idle rail, or the power GPIO asserted), without
-  // going through the debounced state. Cheap enough to call every few ms.
+  // going through the debounced state. Cheap enough to call every few ms: one
+  // conversion per idle ladder on InputStyle::AdcLadders boards.
   bool rawInputActive();
   bool hasTouch() const;
   // Physical navigation keys are fitted: every board without touch, and touch
@@ -94,6 +95,11 @@ class HalGPIO {
   // Deep-sleep entry: sends a touch controller on an always-on rail its sleep
   // command (no-op on other boards). Call before the I2C bus is released.
   void prepareForSleep();
+  // The GPIO-only part, for a sleep entry that sends no command (a release wake).
+  void prepareForMinimalSleep();
+  // A reset-loop sleep before the touch probe: reset a FocalTech controller on an
+  // always-on rail and send it hibernate once (no-op on other boards).
+  void resetTouchForSleep();
   // Capacitive Home key reported by the touch controller (X4 Pro). The tap
   // event fires on release and excludes a long hold.
   bool hasHomeKey() const;

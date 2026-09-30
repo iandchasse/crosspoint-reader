@@ -528,7 +528,9 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                                           home_button::ACTION_LABELS, home_button::KEYS[i], StrId::STR_CAT_CONTROLS));
     }
   }
-  if (BoardConfig::hasTouch()) {
+  // Decided by the board, not by a probe that may miss an optional touch tail:
+  // a board that keeps its keys shows it either way.
+  if (BoardConfig::hasTouch() && !BoardConfig::ACTIVE.touch.buttonsAlongsideTouch) {
     v.erase(std::remove_if(v.begin(), v.end(),
                            [](const SettingInfo& s) { return s.nameId == StrId::STR_SUNLIGHT_FADING_FIX; }),
             v.end());

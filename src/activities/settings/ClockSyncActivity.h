@@ -13,7 +13,9 @@ class ClockSyncActivity final : public Activity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
-  bool skipLoopDelay() override { return true; }
+  // Spin only while the sync runs (PowerConfig::radioOffWhenIdle; always on
+  // other boards).
+  bool skipLoopDelay() override;
   void render(RenderLock&&) override;
 
  private:
@@ -21,6 +23,9 @@ class ClockSyncActivity final : public Activity {
   State state = SYNCING;
   char syncedTime[16] = {0};
   bool shouldTearDownWifiOnExit = false;
+  // Wi-Fi was switched off at the result (PowerConfig::radioOffWhenIdle);
+  // onExit() still restarts to clear the heap the radio left fragmented.
+  bool radioReleased = false;
 
   void runSync();
   void launchWifiSelection();

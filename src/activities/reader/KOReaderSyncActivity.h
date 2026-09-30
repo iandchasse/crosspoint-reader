@@ -75,6 +75,8 @@ class KOReaderSyncActivity final : public Activity, private UiAppHost {
   // WiFi.getMode() because performUpload() calls esp_wifi_stop() on the way out,
   // which makes WiFi.getMode() return WIFI_MODE_NULL.
   bool wifiActivated = false;
+  // A result screen put the station in modem sleep (PowerConfig::radioOffWhenIdle).
+  bool modemSleepOn = false;
 
   void onWifiSelectionComplete(bool success);
   void performSync();

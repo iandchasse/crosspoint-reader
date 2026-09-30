@@ -29,6 +29,9 @@ class KOReaderAuthActivity final : public Activity {
   State state = WIFI_SELECTION;
   std::string statusMessage;
   std::string errorMessage;
+  // Wi-Fi was switched off at the result (PowerConfig::radioOffWhenIdle);
+  // onExit() still restarts to clear the heap the radio left fragmented.
+  bool radioReleased = false;
 
   void onWifiSelectionComplete(bool success);
   void performAuthentication();

@@ -33,14 +33,8 @@ class FontDownloadActivity final : public UiListActivity {
   void onEnter() override;
   void onExit() override;
   void render(RenderLock&&) override;
-  bool preventAutoSleep() override {
-    return state_ == LOADING_MANIFEST || state_ == DOWNLOADING ||
-           // The download is synchronous and blocks the main loop until it
-           // completes, so activityManager.preventAutoSleep() is never polled
-           // during downloading.
-           state_ == COMPLETE || state_ == ERROR;
-  }
-  bool skipLoopDelay() override { return true; }
+  bool preventAutoSleep() override;
+  bool skipLoopDelay() override;
 
  private:
   enum State {
@@ -108,6 +102,8 @@ class FontDownloadActivity final : public UiListActivity {
   int downloadingFamilyIndex_ = 0;
   std::string errorMessage_;
   bool cancelRequested_ = false;
+  // COMPLETE/ERROR has been polled by preventAutoSleep() since the last download.
+  bool resultPolled_ = false;
   // Set when the cancel came from the home gesture (consumed by the download
   // callback's own input pump); exit to home after the abort unwinds.
   bool goHomeRequested_ = false;

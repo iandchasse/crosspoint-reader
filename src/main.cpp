@@ -160,6 +160,26 @@ static bool settingsLoaded = false;
 // this long ends the run.
 constexpr unsigned long HEALTHY_UPTIME_MS = 60UL * 1000UL;
 
+// PowerConfig::wakeNoInputTimeoutS: armed by a power-button wake that boots,
+// disarmed by the first key, touch or tilt input after it.
+static bool wakeNoInputArmed = false;
+// PowerConfig::storageErrorSleepS: setup() ended on the SD-card error screen.
+static bool storageErrorScreen = false;
+
+// FrontlightConfig::monitorAdc: a tripped light is switched off and the saved
+// preference with it, so no wake, restart or power cycle turns the boost on
+// into the fault again; the user switching it on is the retry. From the loop
+// task only (the trip itself happens on the esp_timer task).
+static void handleFrontlightTrip() {
+  if (!Frontlight.present() || !Frontlight.fault()) return;
+  Frontlight.setOn(false);
+  LOG_ERR("LIGHT", "Front light tripped its LED over-voltage monitor; switched off until switched on again");
+  if (SETTINGS.frontlightOn != 0) {
+    SETTINGS.frontlightOn = 0;
+    SETTINGS.saveToFile();
+  }
+}
+
 // How the device is coming back to life, resolved once at boot. Both resume
 // flows suppress the splash and leave the panel holding its pre-boot frame; a
 // plain boot shows the splash. See setup() for the resolution.
@@ -277,6 +297,7 @@ static bool loadSleepFrameBuffer() {
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  handleFrontlightTrip();
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =
@@ -313,7 +334,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
-  if (BoardConfig::ACTIVE.power.earlyWakeDecision && settingsLoaded) {
+  if (BoardConfig::powerPolicy().earlyWakeDecision && settingsLoaded) {
     sleepWakePolicy =
         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ? WAKE_POLICY_CLICK : WAKE_POLICY_HOLD;
   }
@@ -322,12 +343,12 @@ void enterDeepSleep(bool fromTimeout = false) {
 
 // PowerConfig::abnormalResetLimit (0 on boards without one): after that many
 // panics, watchdog resets, brown-outs or aborted sleep entries in a row, go back
-// to deep sleep at once, before SD, touch, the panel or the radio start and with
-// no peripheral command (any of them may be what crashed). A crash or brown-out
+// to deep sleep at once, before SD, touch, the panel or the radio start and
+// without their drivers (any of them may be what crashed). A crash or brown-out
 // loop then costs one short boot per power-button press instead of boot after
 // boot at tens of mA; the press's deep-sleep wake starts a new count.
 static void sleepIfResetLoop() {
-  const uint8_t limit = BoardConfig::ACTIVE.power.abnormalResetLimit;
+  const uint8_t limit = BoardConfig::powerPolicy().abnormalResetLimit;
   if (limit == 0) return;
   const auto aborted = freeink::PowerManager::takeAbortedSleepInfo();
   if (aborted.aborted) {
@@ -341,6 +362,12 @@ static void sleepIfResetLoop() {
   }
   LOG_ERR("PWR", "%u abnormal resets in a row; sleeping until the power button", count);
   freeink::PowerManager::clearAbnormalResets();
+  // No sleep entry has put the panel or a touch controller on an always-on rail
+  // to sleep since the crash, and a crash after a fast refresh leaves the panel's
+  // analog block on. Reset each and send its sleep command without its driver
+  // (no-ops on boards whose profile does not call for it).
+  if (freeink::PowerManager::sleepPanelWithoutDriver()) LOG_DBG("PWR", "Panel reset and asleep");
+  gpio.resetTouchForSleep();
   powerManager.startDeepSleepMinimal(gpio);
 }
 
@@ -368,7 +395,7 @@ static void resolvePanelController() {
 // apart. A board still below the cutoff goes back to sleep before SD or the
 // panel draw any current.
 void sleepIfBatteryEmptyAtBoot() {
-  const uint16_t cutoffMv = BoardConfig::ACTIVE.power.lowBatteryCutoffMv;
+  const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBatteryCutoffMv;
   if (cutoffMv == 0) return;
   constexpr uint16_t kQuickCheckMarginMv = 100;
   const BatteryMonitor battery;
@@ -457,7 +484,7 @@ void setup() {
   // PowerConfig::releaseWaitMaxMs: the last sleep began with the power button
   // still held and woke on its release, which asks for nothing. Sleep again
   // before any peripheral starts.
-  if (freeink::PowerManager::takeReleaseWake()) {
+  if (BoardConfig::powerPolicy().releaseWaitMaxMs != 0 && freeink::PowerManager::takeReleaseWake()) {
     LOG_DBG("MAIN", "Woke on the power button's release; sleeping again");
     powerManager.startDeepSleepMinimal(gpio);
   }
@@ -479,7 +506,7 @@ void setup() {
 
   sleepIfResetLoop();
 
-  const bool earlyWakeDecision = BoardConfig::ACTIVE.power.earlyWakeDecision;
+  const bool earlyWakeDecision = BoardConfig::powerPolicy().earlyWakeDecision;
   gpio.begin(/*deferTouch=*/earlyWakeDecision);
   powerManager.begin();
 
@@ -533,6 +560,7 @@ void setup() {
     }
     setupDisplayAndFonts(isSilentReboot);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
+    storageErrorScreen = true;
     return;
   }
 
@@ -576,6 +604,7 @@ void setup() {
         powerManager.startDeepSleep(gpio);
       }
       wakePowerReleasePending = true;
+      wakeNoInputArmed = BoardConfig::powerPolicy().wakeNoInputTimeoutS > 0;
       break;
     case HalGPIO::WakeupReason::AfterUSBPower:
       // Most devices return to sleep after a USB-powered cold boot.
@@ -743,6 +772,8 @@ void loop() {
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
+  handleFrontlightTrip();
+
   // The ROM console does not depend on Arduino USB CDC's connection state.
   if ((Serial || FREEINK_LOG_TRANSPORT == FREEINK_LOG_TRANSPORT_ROM_PRINTF) && millis() - lastMemPrint >= 10000) {
     const auto heap = HalMemory::getInternalHeap();
@@ -779,12 +810,14 @@ void loop() {
   const bool userInput =
       gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity();
   if (userInput) lastInputTime = millis();
+  // The release of the press that woke the device is not the user's first input.
+  if (userInput && !wakePowerReleasePending) wakeNoInputArmed = false;
   if (userInput || activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
 
-  if (BoardConfig::ACTIVE.power.abnormalResetLimit > 0) {
+  if (BoardConfig::powerPolicy().abnormalResetLimit > 0) {
     static bool resetRunEnded = false;
     if (!resetRunEnded && millis() >= HEALTHY_UPTIME_MS) {
       resetRunEnded = true;
@@ -876,36 +909,55 @@ void loop() {
   // update) or a Never timeout still ends once nothing has pressed a key or
   // talked to the web server for this long. enterDeepSleep() drops Wi-Fi. A
   // timeout the user set still governs every other screen.
-  if (const unsigned long ceilingMs = BoardConfig::ACTIVE.power.awakeCeilingMin * 60UL * 1000UL; ceilingMs > 0) {
+  if (const unsigned long ceilingMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL; ceilingMs > 0) {
     const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep();
     if (!governedByTimeout && millis() - lastInputTime >= ceilingMs &&
         powerManager.msSinceClientTraffic() >= ceilingMs && !gpio.isUsbConnected()) {
       LOG_INF("SLP", "No input or client traffic for %u min on battery; sleeping",
-              BoardConfig::ACTIVE.power.awakeCeilingMin);
+              BoardConfig::powerPolicy().awakeCeilingMin);
       enterDeepSleep(true);
       return;
     }
   }
 
+  // Input-only cap on battery (PowerConfig::awakeInputCapMin; 0 on boards
+  // without one): client traffic cannot extend it, since a desktop that keeps a
+  // WebDAV share mounted polls without anyone at the device.
+  if (const unsigned long capMs = BoardConfig::powerPolicy().awakeInputCapMin * 60UL * 1000UL;
+      capMs > 0 && millis() - lastInputTime >= capMs && !gpio.isUsbConnected()) {
+    LOG_INF("SLP", "No input for %u min on battery; sleeping", BoardConfig::powerPolicy().awakeInputCapMin);
+    enterDeepSleep(true);
+    return;
+  }
+
+  // A power-button wake that gets no input (a press in a pocket that passed the
+  // hold check) sleeps again on battery (PowerConfig::wakeNoInputTimeoutS).
+  if (const unsigned long wakeMs = BoardConfig::powerPolicy().wakeNoInputTimeoutS * 1000UL;
+      wakeNoInputArmed && wakeMs > 0 && millis() - lastInputTime >= wakeMs && !activityManager.preventAutoSleep() &&
+      !gpio.isUsbConnected()) {
+    LOG_INF("SLP", "No input for %lu s after the wake on battery; sleeping", wakeMs / 1000UL);
+    enterDeepSleep(true);
+    return;
+  }
+
+  // Nothing can be done on the SD-card error screen (PowerConfig::storageErrorSleepS).
+  if (const unsigned long errorMs = BoardConfig::powerPolicy().storageErrorSleepS * 1000UL;
+      storageErrorScreen && errorMs > 0 && millis() - lastInputTime >= errorMs && !gpio.isUsbConnected()) {
+    LOG_INF("SLP", "SD card error screen idle for %lu s on battery; sleeping", errorMs / 1000UL);
+    enterDeepSleep(true);
+    return;
+  }
+
   // Low-battery cutoff (PowerConfig::lowBatteryCutoffMv; 0 on boards without
-  // one), checked once a second. The divider reads low under the radio's load,
-  // so with Wi-Fi on the reading is allowed PowerConfig::cutoffRadioAllowanceMv
-  // below the cutoff. BatteryMonitor needs several consecutive readings at or
-  // below it and never fires while external power carries the load.
-  if (BoardConfig::ACTIVE.power.lowBatteryCutoffMv > 0) {
-    static unsigned long lastCutoffCheckMs = 0;
-    if (millis() - lastCutoffCheckMs >= 1000) {
-      lastCutoffCheckMs = millis();
-      static const BatteryMonitor cutoffBattery;
-      const bool radioOn = WiFi.getMode() != WIFI_MODE_NULL;
-      uint16_t mv = 0;
-      if (cutoffBattery.isBelowCutoff(nullptr, &mv, radioOn)) {
-        LOG_ERR("PWR", "Battery at %u mV%s, below the %u mV cutoff; sleeping", mv, radioOn ? " with Wi-Fi on" : "",
-                BoardConfig::ACTIVE.power.lowBatteryCutoffMv);
-        enterDeepSleep();
-        return;
-      }
-    }
+  // one), at most one reading a second. The divider reads low under the radio's
+  // load, so with Wi-Fi on the reading is allowed
+  // PowerConfig::cutoffRadioAllowanceMv below the cutoff. BatteryMonitor needs
+  // several consecutive readings at or below it and never fires while external
+  // power carries the load. A blocking transfer checks the same latch from its
+  // callbacks and aborts, so this pass sleeps.
+  if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
+    enterDeepSleep();
+    return;
   }
 
   // A hold that woke the device must be released before it can count as a new

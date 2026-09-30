@@ -5,6 +5,7 @@
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
 #include <I18n.h>
 #include <WiFi.h>
 
@@ -288,7 +289,9 @@ void CrossPointWebServerActivity::startWebServer() {
     }
     leaveRequested = leaveRequested || mappedInput.isPressed(MappedInputManager::Button::Back) ||
                      mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture();
-    return leaveRequested;
+    // The loop's low-battery cutoff cannot run during an upload: abort on it
+    // here, and the next loop pass sleeps.
+    return leaveRequested || powerManager.lowBatteryCutoffTripped();
   });
   webServer->begin();
 

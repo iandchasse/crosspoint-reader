@@ -165,6 +165,9 @@ bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased(); }
 
 bool HalGPIO::rawInputActive() {
   if (inputMgr.isPowerButtonPhysicallyPressed()) return true;
+  // The ladder decoder's own released rule, from one sample per ladder; the
+  // oversampled decode stays with the debounced poll.
+  if (BoardConfig::hasAdcLadders()) return inputMgr.adcLadderContact();
   InputManager::ButtonAdcSample g1{}, g2{};
   inputMgr.readButtonAdc(g1, g2);
   // ADC ladders idle at the full-scale rail (~4095); Xteink button bands sit below 3900. A decoded key also
@@ -185,6 +188,7 @@ bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
 bool HalGPIO::hasFrontButtons() const { return !hasTouch() || BoardConfig::ACTIVE.touch.buttonsAlongsideTouch; }
 
 void HalGPIO::prepareForSleep() {
+  if (!FREEINK_CAP_TOUCH) return;
   switch (inputMgr.prepareTouchForSleep()) {
     case InputManager::TouchSleepResult::Asleep:
       LOG_DBG("HW", "Touch controller asleep");
@@ -197,6 +201,24 @@ void HalGPIO::prepareForSleep() {
       } else {
         LOG_DBG("HW", "No touch controller answered the sleep command");
       }
+      break;
+    case InputManager::TouchSleepResult::NotApplicable:
+      break;
+  }
+}
+
+void HalGPIO::prepareForMinimalSleep() {
+  if (FREEINK_CAP_TOUCH) inputMgr.holdTouchIntForSleep();
+}
+
+void HalGPIO::resetTouchForSleep() {
+  if (!FREEINK_CAP_TOUCH) return;
+  switch (inputMgr.resetAndHibernateTouch()) {
+    case InputManager::TouchSleepResult::Asleep:
+      LOG_DBG("HW", "Touch controller reset and asleep");
+      break;
+    case InputManager::TouchSleepResult::NoAnswer:
+      LOG_DBG("HW", "No touch controller answered after its reset");
       break;
     case InputManager::TouchSleepResult::NotApplicable:
       break;
@@ -287,12 +309,17 @@ bool HalGPIO::isUsbConnected() const {
   }
   if (BoardConfig::hasChargeStatusLadder()) {
     // No VBUS sense: infer USB from the decoded charge-status ladder (charger idle,
-    // charging or complete). Until it decodes (first ~1.5 s, unknown band), keep the
-    // last known answer, which starts as "not connected" at boot.
+    // charging or complete). Until it decodes (about 1.5 s after boot, or about
+    // 8.5-9.5 s with the cell already charged, because Complete needs 8 stable
+    // samples to rule out the no-battery blink), and during the no-battery blink,
+    // keep the last known answer, which starts as "not connected" at boot. Once a
+    // decoded state has been lost (readings stuck outside every window), report
+    // "not connected": that only re-arms the battery awake ceiling.
     static const BatteryMonitor ladderBattery;
     bool known = false;
     const bool present = ladderBattery.isExternalPowerPresent(&known);
-    return known ? present : lastUsbConnected;
+    if (known) return present;
+    return BatteryMonitor::chargeStatusLost() ? false : lastUsbConnected;
   }
   if (BoardConfig::ACTIVE.usbDetect >= 0) {
     return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;

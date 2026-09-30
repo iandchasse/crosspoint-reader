@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -75,6 +76,28 @@ void FontDownloadActivity::onEnter() {
   WiFi.mode(WIFI_STA);
   startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
                          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
+}
+
+bool FontDownloadActivity::preventAutoSleep() {
+  if (state_ != COMPLETE && state_ != ERROR) {
+    resultPolled_ = false;
+    return state_ == LOADING_MANIFEST || state_ == DOWNLOADING;
+  }
+  // The download is synchronous and blocks the main loop until it completes, so
+  // this is first polled on the result, with the idle timer run down by the
+  // download. Refresh it once, then (PowerConfig::radioOffWhenIdle) the user's
+  // timeout governs the result screen; other boards hold it off until left.
+  if (!HalPowerManager::radioOffWhenIdle()) return true;
+  const bool refresh = !resultPolled_;
+  resultPolled_ = true;
+  return refresh;
+}
+
+// Spin only while the manifest or a download is in flight
+// (PowerConfig::radioOffWhenIdle; always on other boards). The radio stays on:
+// the lists behind the result screens download again.
+bool FontDownloadActivity::skipLoopDelay() {
+  return !HalPowerManager::radioOffWhenIdle() || state_ == LOADING_MANIFEST || state_ == DOWNLOADING;
 }
 
 void FontDownloadActivity::onExit() {
@@ -528,6 +551,7 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
     fileTotal_ = 0;
     cancelRequested_ = false;
     goHomeRequested_ = false;
+    resultPolled_ = false;
   }
   requestUpdateAndWait();
 
@@ -588,6 +612,9 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
             cancelRequested_ = true;
             goHomeRequested_ = true;
           }
+          // The loop's low-battery cutoff cannot run during the download: abort
+          // on it here, and the next loop pass sleeps.
+          if (powerManager.lowBatteryCutoffTripped()) cancelRequested_ = true;
           requestUpdate(true);
         },
         // Bulk font transfers follow GitHub's release-asset redirect over plain

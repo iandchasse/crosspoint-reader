@@ -4,6 +4,7 @@
 #include <FontCacheManager.h>
 #include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <LibraryBuilder.h>
@@ -576,6 +577,9 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
           cancelDownload = true;
           goHomeAfterCancel = true;
         }
+        // The loop's low-battery cutoff cannot run during the download: abort on
+        // it here, and the next loop pass sleeps.
+        if (powerManager.lowBatteryCutoffTripped()) cancelDownload = true;
         routeTouch(mappedInput);
         const int percent = total > 0 ? static_cast<int>(static_cast<uint64_t>(downloaded) * 100 / total) : 0;
         const unsigned long now = millis();
@@ -598,8 +602,10 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
     return;
   } else if (result == HttpDownloader::ABORTED) {
     // The partial file is already removed. Reload the released catalog unless
-    // the cancel came from the home gesture.
+    // the cancel came from the home gesture or the low-battery cutoff (the loop
+    // sleeps next).
     LOG_INF("OPDS", "Download cancelled");
+    if (powerManager.lowBatteryCutoffTripped()) return;
     if (goHomeAfterCancel) {
       onGoHome();
       return;

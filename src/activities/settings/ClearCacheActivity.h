@@ -13,7 +13,9 @@ class ClearCacheActivity final : public Activity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
-  bool skipLoopDelay() override { return true; }  // Prevent power-saving mode
+  // Prevent power-saving mode; with PowerConfig::radioOffWhenIdle only while
+  // clearing.
+  bool skipLoopDelay() override;
   void render(RenderLock&&) override;
 
  private:

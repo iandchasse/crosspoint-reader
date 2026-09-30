@@ -209,8 +209,19 @@ void FrontlightPanelActivity::adjustWarmth(const int delta) {
   requestUpdate();
 }
 
+void FrontlightPanelActivity::stepWarmthByKey(const bool warmer) {
+  if (!Frontlight.warmthIsSelection()) {
+    adjustWarmth(warmer ? BRIGHTNESS_STEP : -BRIGHTNESS_STEP);
+    return;
+  }
+  const uint8_t target = warmer ? 100 : 0;
+  if (warmth != target) adjustWarmth(static_cast<int>(target) - static_cast<int>(warmth));
+}
+
 void FrontlightPanelActivity::toggleLight() {
-  lightOn = !lightOn;
+  // From the live state: a light the LED monitor switched off reads off, so the
+  // first press is the retry.
+  lightOn = !Frontlight.isOn();
   lightOnChanged = true;
   Frontlight.setOn(lightOn);
   requestUpdate();
@@ -265,6 +276,12 @@ void FrontlightPanelActivity::loop() {
                                        [this] { adjustBrightness(-BRIGHTNESS_STEP); });
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right},
                                        [this] { adjustBrightness(BRIGHTNESS_STEP); });
+  // Warmth has touch-only controls elsewhere; boards that keep their keys with
+  // (or without) touch get Up/Down for it.
+  if (Frontlight.hasColorTemperature() && gpio.hasFrontButtons()) {
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this] { stepWarmthByKey(true); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [this] { stepWarmthByKey(false); });
+  }
 }
 
 int FrontlightPanelActivity::computePanelBottom() const {
@@ -407,6 +424,8 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
 
 void FrontlightPanelActivity::render(RenderLock&&) {
   panelBottom = computePanelBottom();
+  // The LED monitor can switch the light off while the panel is open.
+  lightOn = Frontlight.isOn();
 
   // fui::sheet draws the card body, its bottom rule, and the grabber during
   // renderUi(); the battery band at the card's top is part of the screen build.

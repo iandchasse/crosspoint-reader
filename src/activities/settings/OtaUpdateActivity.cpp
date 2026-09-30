@@ -1,6 +1,5 @@
 #include "OtaUpdateActivity.h"
 
-#include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <HalPowerManager.h>
 #include <I18n.h>
@@ -13,8 +12,6 @@
 #include "fontIds.h"
 #include "network/OtaUpdater.h"
 
-bool OtaUpdateActivity::radioOffWhenIdle() { return BoardConfig::ACTIVE.power.radioOffWhenIdle; }
-
 void OtaUpdateActivity::finishCheck(const State terminalState, const char* detail) {
   {
     RenderLock lock(*this);
@@ -23,12 +20,7 @@ void OtaUpdateActivity::finishCheck(const State terminalState, const char* detai
   }
   // PowerConfig::radioOffWhenIdle: the result screen only waits for the user to
   // leave, so the radio goes off now instead of when they do.
-  if (radioOffWhenIdle() && WiFi.getMode() != WIFI_MODE_NULL) {
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    radioReleased = true;
-    LOG_DBG("OTA", "Update check over; Wi-Fi off");
-  }
+  if (HalPowerManager::releaseIdleRadio("OTA")) radioReleased = true;
 }
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {

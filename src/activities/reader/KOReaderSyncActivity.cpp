@@ -1,6 +1,7 @@
 #include "KOReaderSyncActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -300,6 +301,10 @@ void KOReaderSyncActivity::performSync() {
 }
 
 void KOReaderSyncActivity::performUpload() {
+  if (modemSleepOn) {
+    WiFi.setSleep(false);  // modem sleep can stall the transfer into a timeout
+    modemSleepOn = false;
+  }
   {
     RenderLock lock(*this);
     state = UPLOADING;
@@ -667,6 +672,15 @@ void KOReaderSyncActivity::render(RenderLock&&) {
 }
 
 void KOReaderSyncActivity::loop() {
+  // PowerConfig::radioOffWhenIdle: a failed sync only waits for a key, so its
+  // radio goes off; a result that may still upload keeps it in modem sleep.
+  if (state == SYNC_FAILED) {
+    HalPowerManager::releaseIdleRadio("KOSync");
+  } else if ((state == SHOWING_RESULT || state == NO_REMOTE_PROGRESS) && !modemSleepOn &&
+             HalPowerManager::radioOffWhenIdle()) {
+    WiFi.setSleep(true);
+    modemSleepOn = true;
+  }
   if (state == NO_CREDENTIALS || state == SYNC_FAILED || state == UPLOAD_COMPLETE || state == SYNC_COMPLETE) {
     if (autoReturnAt != 0 && millis() >= autoReturnAt) {
       returnToReader();
