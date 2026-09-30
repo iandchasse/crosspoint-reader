@@ -1,0 +1,324 @@
+#if CROSSPOINT_TEST_SUITE
+// P1: system info and boot checks (bring-up B1). Read-only: nothing here writes
+// an eFuse, consumes a reset record or changes a clock.
+#include <Arduino.h>
+#include <BatteryMonitor.h>
+#include <BoardConfig.h>
+#include <HalClock.h>
+#include <HalFrontlight.h>
+#include <HalGPIO.h>
+#include <HalMemory.h>
+#include <HalPowerManager.h>
+#include <HalStorage.h>
+#include <Memory.h>
+#include <PowerManager.h>
+#include <WiFi.h>
+#include <esp_arduino_version.h>
+#include <esp_efuse.h>
+#include <esp_efuse_table.h>
+#include <esp_idf_version.h>
+#include <esp_sleep.h>
+#include <esp_system.h>
+
+#include <cstdio>
+#include <cstring>
+
+#include "TestFactories.h"
+#include "TestNames.h"
+#include "activities/testsuite/TestCatalog.h"
+#include "activities/testsuite/TestScreen.h"
+#include "activities/testsuite/TestSuite.h"
+#include "network/FirmwareBoardTag.h"
+
+namespace testsuite {
+namespace {
+
+// The module the board carries: ESP32-S3-WROOM-1-N16R8 (HARDWARE.md §4).
+constexpr uint32_t EXPECTED_FLASH_BYTES = 16UL * 1024UL * 1024UL;
+// 8 MB octal PSRAM, less what the allocator keeps for itself.
+constexpr uint32_t MIN_PSRAM_BYTES = 7UL * 1024UL * 1024UL;
+// With no input, the loop drops to HalPowerManager::LOW_POWER_FREQ after
+// IDLE_POWER_SAVING_MS; well past that it counts as a failure.
+constexpr unsigned long IDLE_CLOCK_LATE_MS = 10000;
+
+constexpr char INTRO[] =
+    "Open after a cold boot and after a power-button wake: each opening is logged. For the idle clock, leave the "
+    "keys 3 s, then Record.";
+
+const char* resetName(const esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON:
+      return "POWERON";
+    case ESP_RST_EXT:
+      return "EXT";
+    case ESP_RST_SW:
+      return "SW";
+    case ESP_RST_PANIC:
+      return "PANIC";
+    case ESP_RST_INT_WDT:
+      return "INT_WDT";
+    case ESP_RST_TASK_WDT:
+      return "TASK_WDT";
+    case ESP_RST_WDT:
+      return "WDT";
+    case ESP_RST_DEEPSLEEP:
+      return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:
+      return "BROWNOUT";
+    case ESP_RST_SDIO:
+      return "SDIO";
+    case ESP_RST_USB:
+      return "USB";
+    case ESP_RST_JTAG:
+      return "JTAG";
+    case ESP_RST_EFUSE:
+      return "EFUSE";
+    case ESP_RST_PWR_GLITCH:
+      return "PWR_GLITCH";
+    case ESP_RST_CPU_LOCKUP:
+      return "CPU_LOCKUP";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const char* wakeName(const esp_sleep_wakeup_cause_t cause) {
+  switch (cause) {
+    case ESP_SLEEP_WAKEUP_UNDEFINED:
+      return "none";
+    case ESP_SLEEP_WAKEUP_EXT0:
+      return "EXT0";
+    case ESP_SLEEP_WAKEUP_EXT1:
+      return "EXT1";
+    case ESP_SLEEP_WAKEUP_TIMER:
+      return "TIMER";
+    case ESP_SLEEP_WAKEUP_GPIO:
+      return "GPIO";
+    default:
+      return "other";
+  }
+}
+
+// "0x" + hex of a 64-bit mask; printf's %llx is not relied on.
+void formatMask(char* buf, const size_t size, const uint64_t mask) {
+  const auto hi = static_cast<unsigned long>(mask >> 32);
+  const auto lo = static_cast<unsigned long>(mask & 0xFFFFFFFFUL);
+  if (hi != 0) {
+    snprintf(buf, size, "0x%lx%08lx", hi, lo);
+  } else {
+    snprintf(buf, size, "0x%lx", lo);
+  }
+}
+
+class SystemInfoTest final : public TestScreen {
+ public:
+  SystemInfoTest(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput)
+      : TestScreen(info, renderer, mappedInput) {}
+
+ private:
+  // Taken once when the screen opens; none of it changes while the board runs.
+  struct Snapshot {
+    const char* chip = "";
+    uint16_t chipRevision = 0;
+    uint8_t cores = 0;
+    uint32_t flashBytes = 0;
+    uint32_t psramBytes = 0;
+    esp_reset_reason_t reset = ESP_RST_UNKNOWN;
+    esp_sleep_wakeup_cause_t wake = ESP_SLEEP_WAKEUP_UNDEFINED;
+    uint64_t ext1Mask = 0;
+    freeink::PowerManager::BootResetRecord bootRecord;
+    uint8_t abnormalNow = 0;
+    bool abortedPending = false;
+    bool pinPowerSelection = false;
+    uint32_t normalMhz = 0;
+  };
+
+  enum class IdleClock : uint8_t { Waiting, Reached, Held, Late };
+
+  void onStart() override {
+    snap.chip = ESP.getChipModel();
+    snap.chipRevision = ESP.getChipRevision();
+    snap.cores = ESP.getChipCores();
+    snap.flashBytes = ESP.getFlashChipSize();
+    snap.psramBytes = ESP.getPsramSize();
+    snap.reset = esp_reset_reason();
+    snap.wake = esp_sleep_get_wakeup_cause();
+    snap.ext1Mask = snap.wake == ESP_SLEEP_WAKEUP_EXT1 ? esp_sleep_get_ext1_wakeup_status() : 0;
+    // Non-consuming reads: main.cpp has already counted and taken these records.
+    snap.bootRecord = freeink::PowerManager::bootResetRecord();
+    snap.abnormalNow = freeink::PowerManager::peekAbnormalResets();
+    snap.abortedPending = freeink::PowerManager::peekAbortedSleepInfo().aborted;
+#if CONFIG_IDF_TARGET_ESP32S3
+    // Informational only (HW-01, POWER.md §4); read, never written.
+    snap.pinPowerSelection = esp_efuse_read_field_bit(ESP_EFUSE_PIN_POWER_SELECTION);
+#endif
+    snap.normalMhz = getCpuFrequencyMhz();
+    hostAttached = usbHostAttached();
+    recordChecks();
+  }
+
+  void onTick() override {
+    // The render task reads these; usbHostAttached() is loop-task only.
+    const bool host = usbHostAttached();
+    if (host != hostAttached) {
+      hostAttached = host;
+      requestUpdate();
+    }
+    if (idle == IdleClock::Reached) return;
+    if (getCpuFrequencyMhz() <= static_cast<uint32_t>(HalPowerManager::LOW_POWER_FREQ)) {
+      idle = IdleClock::Reached;
+      idleAfterMs = msSinceInput();
+      requestUpdate();
+      return;
+    }
+    // A USB data host or the radio holds the full clock by design.
+    const IdleClock now = host || WiFi.getMode() != WIFI_MODE_NULL ? IdleClock::Held
+                          : msSinceInput() >= IDLE_CLOCK_LATE_MS   ? IdleClock::Late
+                                                                   : IdleClock::Waiting;
+    if (now != idle) {
+      idle = now;
+      requestUpdate();
+    }
+  }
+
+  const char* slotLabel(const Slot slot) const override { return slot == Slot::Confirm ? "Record" : nullptr; }
+
+  void onSlot(const Slot slot) override {
+    if (slot == Slot::Confirm) recordChecks();
+  }
+
+  bool isBoard() const { return BoardConfig::ACTIVE.board == BoardConfig::Board::Silkscreen; }
+
+  // The power button's bit in the ext1 wake mask.
+  static uint64_t powerWakeBit() {
+    const int8_t pin = BoardConfig::ACTIVE.input.power;
+    return pin >= 0 ? (1ULL << pin) : 0;
+  }
+
+  void recordChecks() {
+    char failed[96] = "";
+    const auto fail = [&failed](const char* what) {
+      if (failed[0] != '\0') strncat(failed, "+", sizeof(failed) - strlen(failed) - 1);
+      strncat(failed, what, sizeof(failed) - strlen(failed) - 1);
+    };
+    if (!isBoard()) fail("board");
+    if (snap.flashBytes != EXPECTED_FLASH_BYTES) fail("flash");
+    if (snap.psramBytes < MIN_PSRAM_BYTES) fail("psram");
+    if (snap.bootRecord.counted && snap.bootRecord.abnormalResets > 0) fail("abnormal_resets");
+    if (snap.bootRecord.abortedSleepTaken && snap.bootRecord.abortedSleep.aborted) fail("aborted_sleep");
+    // A deep-sleep wake has one source on this board: ext1 on the power button.
+    if (snap.reset == ESP_RST_DEEPSLEEP &&
+        (snap.wake != ESP_SLEEP_WAKEUP_EXT1 || (snap.ext1Mask & powerWakeBit()) == 0)) {
+      fail("wake");
+    }
+    if (idle == IdleClock::Late) fail("idle_clock");
+    // Read here, on the loop task: the render task keeps off the RTC's bus.
+    rtcValid = halClock.isAvailable() && halClock.hasValidTime();
+
+    char mask[24];
+    formatMask(mask, sizeof(mask), snap.ext1Mask);
+    const auto& touch = BoardConfig::ACTIVE.touch;
+    record(failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+           "board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
+           "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d idle_clock=%s fails=%s",
+           BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
+           static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
+           resetName(snap.reset), wakeName(snap.wake), mask, snap.bootRecord.abnormalResets, snap.abnormalNow,
+           snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0, Storage.ready() ? 1 : 0,
+           halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
+           gpio.hasTouch() ? touchControllerName(touch.controller) : "none", touch.i2cAddress,
+           Frontlight.present() ? 1 : 0, idleClockName(), failed[0] == '\0' ? "none" : failed);
+  }
+
+  const char* idleClockName() const {
+    switch (idle) {
+      case IdleClock::Reached:
+        return "reached";
+      case IdleClock::Held:
+        return "held";
+      case IdleClock::Late:
+        return "late";
+      case IdleClock::Waiting:
+        break;
+    }
+    return "waiting";
+  }
+
+  void drawBody(TestPage& page) const override {
+    page.paragraph(INTRO, 2);
+    page.gap(4);
+    page.setCompact(true);
+    page.rowf("Profile / board tag", "%s / %.*s%s", BoardConfig::ACTIVE.name,
+              static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(), isBoard() ? "" : " (wrong board)");
+    page.row("Firmware", CROSSPOINT_VERSION);
+    page.rowf("Chip", "%s rev %u.%u, %u cores", snap.chip, snap.chipRevision / 100U, snap.chipRevision % 100U,
+              snap.cores);
+    page.rowf("ESP-IDF / Arduino core", "%s / %s", esp_get_idf_version(), ESP_ARDUINO_VERSION_STR);
+    page.rowf("Flash / PSRAM", "%lu MB%s / %lu KB%s", static_cast<unsigned long>(snap.flashBytes >> 20),
+              snap.flashBytes == EXPECTED_FLASH_BYTES ? "" : " (want 16)",
+              static_cast<unsigned long>(snap.psramBytes >> 10), snap.psramBytes >= MIN_PSRAM_BYTES ? "" : " (low)");
+    const auto heap = HalMemory::getInternalHeap();
+    const auto psram = HalMemory::getPsramHeap();
+    page.rowf("Heap free (min) / PSRAM free", "%u (%u) / %u KB", static_cast<unsigned>(heap.freeBytes >> 10),
+              static_cast<unsigned>(heap.minFreeBytes >> 10), static_cast<unsigned>(psram.freeBytes >> 10));
+    switch (idle) {
+      case IdleClock::Reached:
+        page.rowf("Idle clock", "%d MHz after %.1f s (normal %lu)", HalPowerManager::LOW_POWER_FREQ,
+                  static_cast<double>(idleAfterMs) / 1000.0, static_cast<unsigned long>(snap.normalMhz));
+        break;
+      case IdleClock::Held:
+        page.rowf("Idle clock", "held at %lu MHz (USB host or radio)", static_cast<unsigned long>(snap.normalMhz));
+        break;
+      case IdleClock::Late:
+        page.rowf("Idle clock", "NOT reached after %lu s", IDLE_CLOCK_LATE_MS / 1000UL);
+        break;
+      case IdleClock::Waiting:
+        page.row("Idle clock", "waiting: leave the keys 3 s");
+        break;
+    }
+
+    char mask[24];
+    formatMask(mask, sizeof(mask), snap.ext1Mask);
+    page.rowf("Reset / wake / ext1 mask", "%s / %s / %s", resetName(snap.reset), wakeName(snap.wake), mask);
+    if (snap.reset == ESP_RST_DEEPSLEEP) {
+      const bool ok = snap.wake == ESP_SLEEP_WAKEUP_EXT1 && (snap.ext1Mask & powerWakeBit()) != 0;
+      page.rowf("Power-button wake", "%s (IO%d)", ok ? "yes" : "NO", BoardConfig::ACTIVE.input.power);
+    }
+    page.rowf("Abnormal resets (boot / now), aborted sleep", "%u / %u, %s%s", snap.bootRecord.abnormalResets,
+              snap.abnormalNow, snap.bootRecord.abortedSleep.aborted ? "YES" : "none",
+              snap.abortedPending ? " (+1 pending)" : "");
+    page.rowf("eFuse PIN_POWER_SELECTION", "%d (information)", snap.pinPowerSelection ? 1 : 0);
+
+    page.rowf("SD card / RTC", "%s / %s", Storage.ready() ? "mounted" : "not mounted",
+              !halClock.isAvailable() ? "absent"
+              : rtcValid              ? "time valid"
+                                      : "time lost");
+    const auto& touch = BoardConfig::ACTIVE.touch;
+    char touchText[24];
+    if (gpio.hasTouch()) {
+      snprintf(touchText, sizeof(touchText), "%s 0x%02x", touchControllerName(touch.controller), touch.i2cAddress);
+    } else {
+      snprintf(touchText, sizeof(touchText), "not found");
+    }
+    page.rowf("Touch / front light", "%s / %s", touchText, Frontlight.present() ? "in this build" : "not built");
+    page.rowf("USB_STAT / USB host", "%s / %s", chargeStateName(BatteryMonitor::chargeStatus()),
+              hostAttached ? "attached" : "none");
+    page.setCompact(false);
+  }
+
+  Snapshot snap;
+  IdleClock idle = IdleClock::Waiting;
+  unsigned long idleAfterMs = 0;
+  bool hostAttached = false;
+  bool rtcValid = false;
+};
+
+}  // namespace
+
+std::unique_ptr<Activity> createSystemInfoTest(const TestInfo& info, GfxRenderer& renderer,
+                                               MappedInputManager& mappedInput) {
+  return makeUniqueNoThrow<SystemInfoTest>(info, renderer, mappedInput);
+}
+
+}  // namespace testsuite
+#endif

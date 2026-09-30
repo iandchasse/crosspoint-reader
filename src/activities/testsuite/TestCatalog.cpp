@@ -6,6 +6,7 @@
 #include <iterator>
 
 #include "PlaceholderTest.h"
+#include "tests/TestFactories.h"
 
 namespace testsuite {
 namespace {
@@ -13,12 +14,12 @@ namespace {
 // Grouped by subsystem, in bring-up order within each group (PORTING.md B1-B10).
 // The ids are stable: results.csv and the serial log use them.
 constexpr TestInfo TESTS[] = {
-    {"P1", "System info", "Chip, memory, reset records, profile and boot checks", nullptr},
-    {"P2", "I2C bus scan", "Devices on the sensor bus (RTC, touch, J6)", nullptr},
-    {"T1", "Battery", "BAT_MONIT (IO8) against a meter, cell detection", nullptr},
-    {"T2", "Charge status", "USB_STAT (IO9) ladder states and USB presence", nullptr},
+    {"P1", "System info", "Chip, memory, reset records, profile and boot checks", createSystemInfoTest},
+    {"P2", "I2C bus scan", "Devices on the sensor bus (RTC, touch, J6)", createI2cScanTest},
+    {"T1", "Battery", "BAT_MONIT (IO8) against a meter, cell detection", createBatteryTest},
+    {"T2", "Charge status", "USB_STAT (IO9) ladder states and USB presence", createChargeTest},
     {"P4", "USB", "USB host and ladder presence, USB Drive", nullptr},
-    {"T3", "Keys", "Eight ladder keys (mV and decode) and the power button", nullptr},
+    {"T3", "Keys", "Eight ladder keys (mV and decode) and the power button", createKeysTest},
     {"T4", "Refresh modes", "Full, half and fast refreshes, as the panel ran them", nullptr},
     {"T5", "Grayscale", "Anti-aliasing passes", nullptr},
     {"T6", "Inversion", "Night-mode output polarity", nullptr},

@@ -220,7 +220,7 @@ Queued work, in this order.
 
    It covers the firmware side of the bring-up checklist (B1-B10) and uses the same SDK managers as the reader, so a failure there points at the board rather than the reader.
 
-   In progress as `[env:silkscreen-test]`: the menu, the result log and the safety rules are in place, the tests land one group at a time. See [TEST-SUITE.md](TEST-SUITE.md).
+   In progress as `[env:silkscreen-test]`: the menu, the result log, the safety rules and the first tests (system info, I2C scan, battery, charge status and keys) are in place; the rest land one group at a time. See [TEST-SUITE.md](TEST-SUITE.md).
 3. **Research: Silkscreen modularity against the freeink-sdk ecosystem.** Which Silkscreen blocks the SDK's board-data model can describe as optional or swappable:
    - the J3 panel light or a J6 strip;
    - the J4 touch tail;

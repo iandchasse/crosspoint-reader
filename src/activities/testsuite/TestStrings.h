@@ -20,7 +20,8 @@ inline constexpr char EXIT[] = "Exit";
 inline constexpr char OPEN[] = "Open";
 inline constexpr char UP[] = "Up";
 inline constexpr char DOWN[] = "Down";
-inline constexpr char HOLD_BACK_TO_EXIT[] = "Keys are part of this test: hold Back 1.5 s or tap Exit to leave.";
+inline constexpr char HOLD_BACK_TO_EXIT[] =
+    "Keys are part of this test. Hold a front key 1.5 s for the button above it (Back: Exit), or tap the button.";
 
 inline constexpr char RESULT[] = "Result";
 inline constexpr char SAVED[] = "Saved to /.silkscreen-test/results.csv and the serial log";

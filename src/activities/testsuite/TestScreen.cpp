@@ -3,6 +3,7 @@
 
 #include <GfxRenderer.h>
 #include <HalFrontlight.h>
+#include <HalGPIO.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
@@ -11,9 +12,11 @@
 #include <cstdio>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "MappedInputManager.h"
 #include "TestCatalog.h"
+#include "TestChoiceActivity.h"
 #include "TestStrings.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "components/UITheme.h"
@@ -44,15 +47,23 @@ void TestPage::heading(const char* text) {
 }
 
 void TestPage::row(const char* label, const char* value) {
-  const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int font = compact ? UI_10_FONT_ID : UI_12_FONT_ID;
+  const int lineHeight = renderer.getLineHeight(font);
   if (y + lineHeight > bottom) return;
   if (value == nullptr) value = "";
-  const int valueWidth = renderer.getTextWidth(UI_12_FONT_ID, value, EpdFontFamily::BOLD);
-  renderer.drawText(UI_12_FONT_ID, x + width - valueWidth, y, value, true, EpdFontFamily::BOLD);
+  const int valueWidth = renderer.getTextWidth(font, value, EpdFontFamily::BOLD);
+  if (valueWidth > width) {
+    // A value wider than the page keeps its start and drops the label.
+    const std::string fitted = renderer.truncatedText(font, value, width, EpdFontFamily::BOLD);
+    renderer.drawText(font, x, y, fitted.c_str(), true, EpdFontFamily::BOLD);
+    y += lineHeight;
+    return;
+  }
+  renderer.drawText(font, x + width - valueWidth, y, value, true, EpdFontFamily::BOLD);
   constexpr int labelGap = 12;
   if (label != nullptr && width - valueWidth - labelGap > 0) {
-    const std::string fitted = renderer.truncatedText(UI_12_FONT_ID, label, width - valueWidth - labelGap);
-    renderer.drawText(UI_12_FONT_ID, x, y, fitted.c_str());
+    const std::string fitted = renderer.truncatedText(font, label, width - valueWidth - labelGap);
+    renderer.drawText(font, x, y, fitted.c_str());
   }
   y += lineHeight;
 }
@@ -75,6 +86,7 @@ TestScreen::TestScreen(const TestInfo& info, GfxRenderer& renderer, MappedInputM
 
 void TestScreen::onEnter() {
   Activity::onEnter();
+  lastInputAt = millis();
   resetUi();
   app.on(ACTION_SLOT, &TestScreen::slotTrampoline, this);
   app.setScreen(&TestScreen::screenTrampoline, this);
@@ -94,15 +106,28 @@ void TestScreen::onExit() {
 }
 
 void TestScreen::loop() {
+  if (mappedInput.wasAnyPressed() || mappedInput.wasAnyReleased() || gpio.wasTouchActivity()) lastInputAt = millis();
   const auto route = routeTouch(mappedInput);
   if (route.routed && app.invalidated()) requestUpdate();
   if (route) return;  // a footer button; slotTrampoline handled it
 
   using Button = MappedInputManager::Button;
   if (keysAreTestInput()) {
-    if (mappedInput.wasLongPressed(Button::Back, EXIT_HOLD_MS)) {
+    // A hold stands in for the footer button; its release never reaches the
+    // test (wasLongPressed() consumes it).
+    if (mappedInput.wasLongPressed(Button::Back, ACTION_HOLD_MS)) {
       exitTest();
       return;
+    }
+    constexpr struct {
+      Button button;
+      Slot slot;
+    } HOLDS[] = {{Button::Confirm, Slot::Confirm}, {Button::Left, Slot::Left}, {Button::Right, Slot::Right}};
+    for (const auto& hold : HOLDS) {
+      if (slotLabel(hold.slot) != nullptr && mappedInput.wasLongPressed(hold.button, ACTION_HOLD_MS)) {
+        pressSlot(hold.slot);
+        break;
+      }
     }
   } else if (mappedInput.wasReleased(Button::Back)) {
     exitTest();
@@ -170,11 +195,11 @@ void TestScreen::render(RenderLock&&) {
   TestPage page(renderer, metrics.contentSidePadding, headerBottom + metrics.verticalSpacing,
                 width - 2 * metrics.contentSidePadding, footerTop - metrics.verticalSpacing);
   drawResult(page);
-  drawBody(page);
   if (keysAreTestInput()) {
-    page.gap();
     page.paragraph(text::HOLD_BACK_TO_EXIT, 2);
+    page.gap();
   }
+  drawBody(page);
   renderer.displayBuffer();
 }
 
@@ -230,6 +255,22 @@ bool TestScreen::confirmLightLoad() {
   });
   return true;
 }
+
+bool TestScreen::ask(const int question, const char* heading, const char* body, const char* const* answers,
+                     const int count) {
+  auto prompt = makeUniqueNoThrow<TestChoiceActivity>(renderer, mappedInput, heading, body, answers, count);
+  if (!prompt) {
+    LOG_ERR("TEST", "OOM: question prompt");
+    return false;
+  }
+  startActivityForResult(std::move(prompt), [this, question](const ActivityResult& result) {
+    const auto* choice = std::get_if<MenuResult>(&result.data);
+    onAnswer(question, result.isCancelled || choice == nullptr ? -1 : choice->action);
+  });
+  return true;
+}
+
+unsigned long TestScreen::msSinceInput() const { return millis() - lastInputAt; }
 
 void TestScreen::pressSlot(const Slot slot) {
   if (slot == Slot::Back || slotLabel(slot) == nullptr) return;
