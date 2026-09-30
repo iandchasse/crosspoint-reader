@@ -350,6 +350,8 @@ void enterDeepSleep(bool fromTimeout = false) {
   powerManager.startDeepSleep(gpio);
 }
 
+static void resolvePanelController();
+
 // PowerConfig::abnormalResetLimit (0 on boards without one): after that many
 // panics, watchdog resets, brown-outs or aborted sleep entries in a row, go back
 // to deep sleep at once, before SD, touch, the panel or the radio start and
@@ -374,11 +376,44 @@ static void sleepIfResetLoop() {
   // No sleep entry has put the panel or a touch controller on an always-on rail
   // to sleep since the crash, and a crash after a fast refresh leaves the panel's
   // analog block on. Reset each and send its sleep command without its driver
-  // (no-ops on boards whose profile does not call for it).
+  // (no-ops on boards whose profile does not call for it). The controller is
+  // resolved first so the panel gets its own command; after a crash that is a
+  // probe, which is only a reset and a register read.
+  resolvePanelController();
   if (freeink::PowerManager::sleepPanelWithoutDriver()) LOG_DBG("PWR", "Panel reset and asleep");
   gpio.resetTouchForSleep();
   powerManager.startDeepSleepMinimal(gpio);
 }
+
+#if FREEINK_CAP_DISPLAY_PROBE_POLICY
+// DisplayProbeConfig boards: the controller this boot chose and how, with the
+// probe's IDs (VER byte 2 is an UltraChip part's LUT_VER), for tuning a panel.
+static void logPanelController() {
+  const char* source = "not resolved";
+  switch (freeink::displayControllerSource()) {
+    case freeink::DisplayControllerSource::Probed:
+      source = "probed";
+      break;
+    case freeink::DisplayControllerSource::Cached:
+      source = "kept from the probe before the sleep";
+      break;
+    case freeink::DisplayControllerSource::Forced:
+      source = "forced by the build";
+      break;
+    case freeink::DisplayControllerSource::NotResolved:
+      break;
+  }
+  const char* controller = BoardConfig::controllerPartName(BoardConfig::ACTIVE.displayController);
+  const auto& probe = freeink::getXteinkDisplayProbeDiag();
+  if (!probe.valid) {
+    LOG_INF("MAIN", "Panel controller %s (%s)", controller, source);
+    return;
+  }
+  LOG_INF("MAIN", "Panel controller %s (%s): VER %02X %02X %02X %02X %02X, FLG %02X, variant %02X", controller, source,
+          probe.ver[0], probe.ver[1], probe.ver[2], probe.ver[3], probe.ver[4], probe.flg,
+          BoardConfig::ACTIVE.displayControllerVariant);
+}
+#endif
 
 // The panel controller probe some boards need before display.begin().
 static void resolvePanelController() {
@@ -392,6 +427,9 @@ static void resolvePanelController() {
     if (freeink::applyXteinkDisplayController()) {
       LOG_DBG("MAIN", "Panel controller: UltraChip UC81xx variant detected");
     }
+#if FREEINK_CAP_DISPLAY_PROBE_POLICY
+    logPanelController();
+#endif
   }
 #endif
 }

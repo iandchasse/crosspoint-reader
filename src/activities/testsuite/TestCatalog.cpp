@@ -15,7 +15,7 @@ namespace {
 // Grouped by subsystem, in bring-up order within each group (PORTING.md B1-B10).
 // The ids are stable: results.csv and the serial log use them.
 constexpr TestInfo TESTS[] = {
-    {"P1", "System info", "Chip, memory, reset records, profile and boot checks", createSystemInfoTest},
+    {"P1", "System info", "Chip, memory, panel controller, reset records and boot checks", createSystemInfoTest},
     {"P2", "I2C bus scan", "Devices on the sensor bus (RTC, touch, J6)", createI2cScanTest},
     {"T1", "Battery", "BAT_MONIT (IO8) against a meter, cell detection", createBatteryTest},
     {"T2", "Charge status", "USB_STAT (IO9) ladder states and USB presence", createChargeTest},

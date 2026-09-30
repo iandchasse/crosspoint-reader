@@ -51,8 +51,13 @@ namespace {
 // The X4 Pro and X4 Classic carry the X4's panel but sit outside isXteinkDevice()
 // (that helper also gates power management). Overlay refresh choices are per-panel:
 // this family runs the grayscale anti-aliasing pass, so chrome painted over a
-// fresh page needs the HALF ghost-cleanup and closing re-renders the page.
-bool xteinkClassPanel() { return gpio.isXteinkDevice() || BoardConfig::isX4Pro() || BoardConfig::isX4Classic(); }
+// fresh page needs the HALF ghost-cleanup and closing re-renders the page. A
+// profile declaring X4-class glass (DisplayProbeConfig::x4ClassPanel) joins the
+// family whenever the driver for the controller its probe found runs that pass.
+bool xteinkClassPanel() {
+  return gpio.isXteinkDevice() || BoardConfig::isX4Pro() || BoardConfig::isX4Classic() ||
+         (BoardConfig::displayProbePolicy().x4ClassPanel && display.grayscaleCapabilities().supported());
+}
 
 constexpr int PAGE_TURN_RATES[] = {1, 1, 3, 6, 12};
 constexpr size_t initialBookmarkCacheCapacity = 16;

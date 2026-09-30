@@ -1,8 +1,9 @@
 #if CROSSPOINT_TEST_SUITE
 // T4: B/W refresh modes (bring-up B2). A run alternates two full-screen frames
 // with one kind of refresh and logs, per refresh, the mode the driver actually
-// ran (a FAST can be promoted to HALF), its update-sequence byte and its BUSY
-// time; the operator judges the ghosting. The turn-off variants run the
+// ran (a FAST can be promoted to HALF), its sequence byte (SSD1677: 0x22;
+// UC8279: TSSET) and its BUSY time, with the panel controller the boot resolved;
+// the operator judges the ghosting. The turn-off variants run the
 // Sunlight Fading Fix through SETTINGS.fadingFix, which the loop hands to the
 // renderer, so they exercise the reader's own path.
 #include <Arduino.h>
@@ -15,6 +16,7 @@
 
 #include "CrossPointSettings.h"
 #include "PanelPatterns.h"
+#include "PanelProbe.h"
 #include "PanelRun.h"
 #include "TestFactories.h"
 #include "activities/testsuite/TestCatalog.h"
@@ -29,7 +31,8 @@ constexpr int QUESTION_LOOK = 1;
 
 // X4-class references for this panel and waveform set (Ssd1677Driver's default
 // config: FULL about 1800 ms, FAST about 500 ms; HalDisplay.h: HALF about
-// 1720 ms). A mean outside +/-50 % is flagged, not failed.
+// 1720 ms). A mean outside +/-50 % is flagged, not failed. A UC8279 panel runs
+// other waveforms: its runs set the baseline instead.
 constexpr uint32_t REFERENCE_MS[MODES] = {1800, 1720, 500};
 constexpr uint32_t REFERENCE_TOLERANCE_PCT = 50;
 
@@ -186,7 +189,7 @@ class RefreshTest final : public PanelRunTest {
   void afterStep(const int step) override {
     const RefreshSample& s = samples[step];
     completedSteps = step + 1;
-    LOG_INF("TEST", "T4 %s %d/%d: asked %s, ran %s, 0x22=0x%02X, BUSY %lu ms%s, call %u ms%s%s%s",
+    LOG_INF("TEST", "T4 %s %d/%d: asked %s, ran %s, seq=0x%02X, BUSY %lu ms%s, call %u ms%s%s%s",
             VARIANTS[runVariant].key, step + 1, runSteps, refreshModeName(s.requested), refreshModeName(s.ran),
             s.sequence, static_cast<unsigned long>(s.busyMs), s.timedOut ? " (timed out)" : "", s.callMs,
             s.async ? ", async" : "", s.async && s.busyAtReturn ? " (returned while BUSY)" : "",
@@ -258,8 +261,10 @@ class RefreshTest final : public PanelRunTest {
               static_cast<unsigned long>(stats.maxMs));
       if (!nearReference(mode, stats.meanMs())) addFailure(outside, sizeof(outside), refreshModeName(mode));
     }
-    snprintf(resultLine, sizeof(resultLine), "variant=%s ran=%s busy_ms=%s host_ms=%lu promoted=%d bad=%d", variant.key,
-             ran, busy[0] != '\0' ? busy : "-",
+    char panel[40];
+    formatPanelToken(panel, sizeof(panel));
+    snprintf(resultLine, sizeof(resultLine), "variant=%s panel=%s ran=%s busy_ms=%s host_ms=%lu promoted=%d bad=%d",
+             variant.key, panel, ran, busy[0] != '\0' ? busy : "-",
              static_cast<unsigned long>(summary.hostSumMs / static_cast<uint32_t>(summary.steps)), summary.promoted,
              summary.bad);
     if (variant.async) appendf(resultLine, sizeof(resultLine), " async=%d/%d", summary.asyncOk, summary.steps);
@@ -282,6 +287,7 @@ class RefreshTest final : public PanelRunTest {
     page.setCompact(true);
     if (variant.cadence) page.rowf("Reader refresh frequency (N)", "%d", cadenceTurns());
     page.rowf("Panel SPI clock", "%lu kHz", static_cast<unsigned long>(panelSpiHz() / 1000));
+    drawPanelProbe(page, /*brief=*/true);
     if (stoppedAfter >= 0) page.rowf("Last run", "stopped after %d refreshes", stoppedAfter);
     if (summary.valid) {
       page.gap(4);
@@ -291,7 +297,7 @@ class RefreshTest final : public PanelRunTest {
       for (int mode = 0; mode < MODES; ++mode) {
         if (summary.ranCount[mode] == 0) continue;
         char label[40];
-        snprintf(label, sizeof(label), "Ran %s x%u, 0x22 = 0x%02X", refreshModeName(mode), summary.ranCount[mode],
+        snprintf(label, sizeof(label), "Ran %s x%u, seq 0x%02X", refreshModeName(mode), summary.ranCount[mode],
                  summary.sequence[mode]);
         const BusyStats& stats = summary.busy[mode];
         page.rowf(label, "BUSY %lu / %lu / %lu ms", static_cast<unsigned long>(stats.minMs),
@@ -330,7 +336,7 @@ class RefreshTest final : public PanelRunTest {
   int stoppedAfter = -1;
   RefreshSample samples[MAX_STEPS];
   RunSummary summary;
-  char resultLine[256] = "";  // the result being built (off the loop task's stack)
+  char resultLine[320] = "";  // the result being built (off the loop task's stack)
 };
 
 }  // namespace

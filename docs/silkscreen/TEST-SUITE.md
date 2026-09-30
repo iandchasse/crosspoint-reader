@@ -80,11 +80,20 @@ The ids are stable; `results.csv` and the serial log use them. Every test in the
 
 **Purpose:** the module, the firmware and the boot records are what this board should have, and the wake and the idle clock behave. **Bring-up:** B1 (and the wake of B3).
 
-Each opening logs the boot checks (`action=boot`), so open it after a cold boot and again after a power-button wake; Record logs them again. It shows the profile and board tag, the firmware, the chip, ESP-IDF and the Arduino core, flash, PSRAM and heap, the reset reason, the wake cause with the ext1 mask, the abnormal resets this boot counted and the count in RTC memory now, any aborted sleep entry, eFuse `PIN_POWER_SELECTION` (information only; HW-01), and whether the card, the RTC, touch and the front light are there. The reset records are read with the SDK's non-consuming accessors, after `main.cpp` has used them.
+Each opening logs the panel controller (`action=panel`), then the boot checks (`action=boot`), so open it after a cold boot and again after a power-button wake; Record logs both again. It shows the profile and board tag, the firmware, the chip, the panel controller, ESP-IDF and the Arduino core, flash, PSRAM and heap, the reset reason, the wake cause with the ext1 mask, the abnormal resets this boot counted and the count in RTC memory now, any aborted sleep entry, eFuse `PIN_POWER_SELECTION` (information only; HW-01), and whether the card, the RTC, touch and the front light are there. The reset records are read with the SDK's non-consuming accessors, after `main.cpp` has used them.
 
 It also watches the idle clock: with no input for 3 s the loop drops to 80 MHz (POWER.md §5). A USB data host or the radio holds the full clock by design, and the screen says "held". The idle clock logs its own row (`action=idle_clock`), once per opening: PASS when the loop reached 80 MHz, with the time it took; FAIL when it had not after 10 s without input while nothing held it. Held logs nothing. The boot row carries the idle clock as it stood, without judging it.
 
-PASS (`action=boot`): profile `silkscreen`; 16 MB flash; at least 7 MB PSRAM (the 8 MB part less the allocator's share); no abnormal reset and no aborted sleep entry this boot; and after a deep-sleep wake, cause `EXT1` with the power button's bit (IO18, `0x40000`) in the mask. The touch address shown is the one the driver uses (a GT911 fallback may answer at its alternate, 0x14).
+**Panel controller.** The 4.26" panel is a Good Display GDEQ0426T82 (SSD1677) or the custom panel (UC8279D). The SDK probes it at every cold boot with a half-duplex read on SDI (IO12) and keeps a conclusive verdict in RTC memory for a deep-sleep wake (never in NVS). An UltraChip part answers the read; an SSD1677 is recognized only because nothing answers. P1 shows:
+
+- the controller and how it was chosen: probed this boot, kept from the probe before the sleep, or forced by the build (`-DSILKSCREEN_DISPLAY_CONTROLLER`, no probe);
+- the probe's verdict: UltraChip answered; no UltraChip answer (SSD1677); or inconclusive, which runs as SSD1677;
+- the VER bytes and the FLG status byte, and on a UC8279 its LUT_VER (VER byte 2) and the driver variant (the same byte: 0x02/0x03 select the QY gray tables, 0x67 no gray, anything else the default tables);
+- the first MTP bytes when the probe read them.
+
+The `action=panel` row logs all of it (`controller`, `source`, `verdict`, `ver`, `flg`, `lut_ver`, `variant`, and the 48 MTP bytes as `mtp`). PASS: a probe resolved the controller, this boot or before the sleep. INFO: the build forced it. FAIL: `probe_inconclusive`, or `not_resolved`. After a wake the row must say `source=cached` with the cold boot's IDs.
+
+PASS (`action=boot`): profile `silkscreen`; 16 MB flash; at least 7 MB PSRAM (the 8 MB part less the allocator's share); no abnormal reset and no aborted sleep entry this boot; after a deep-sleep wake, cause `EXT1` with the power button's bit (IO18, `0x40000`) in the mask; and the panel controller resolved (the row carries it as `panel=<controller>:<source>:<VER>:<FLG>` and fails `panel` with the panel row). The touch address shown is the one the driver uses (a GT911 fallback may answer at its alternate, 0x14).
 
 ### P2 I2C bus scan
 
@@ -168,11 +177,11 @@ Holding POWER longer than 0.4 s sleeps the board (the reader's long press); a cl
 The display tests run the reader's own calls (`GfxRenderer`, `HalDisplay`) and read what the SDK driver did from its bring-up record (`EpdBus::diagnostics()`, freeink-sdk README "Bring-up diagnostics"). For every refresh they show and log:
 
 - the mode the driver actually ran. The SDK promotes a FAST to HALF on the first paint after boot or a wake, after a gray pass left without its cleanup, and on the first refresh after a polarity change, so a FAST request is not proof that a FAST ran;
-- the update-sequence byte (`0x22`). The Silkscreen profile uses the X4 defaults: FULL `0xF7`, HALF `0xD7` (after the `0x5A` temperature write), FAST `0xFC`, and `0xCC` for the gray waveform (`0xCF` with the Fading Fix power-down);
+- the update-sequence byte (`0x22`). The Silkscreen profile uses the X4 defaults: FULL `0xF7`, HALF `0xD7` (after the `0x5A` temperature write), FAST `0xFC`, and `0xCC` for the gray waveform (`0xCF` with the Fading Fix power-down). A UC8279 panel reports its `TSSET` byte instead: `0x1E` (GC) for FULL and HALF, `0x5A` (DU) for FAST and for the non-flashing base of a gray page, and its CDI (`0x97`) for the gray waveform;
 - the BUSY time, from the activation to the end of the completion wait;
 - the host time, which is the rest of the call: SPI transfers, the RAM resync after the refresh, and the power-down.
 
-A refresh is in the **BUSY window** when the driver reported it, it did not time out, and it took at least 100 ms and less than 30 s. The floor is 100 ms, not the 20 ms of the first proposal, because the completion wait gives up after 20 ms when BUSY never rises. That happens with no panel (the BUSY pull-down reads idle) or with BUSY stuck LOW, so a 20 ms floor would pass a missing panel. The quickest real waveform, FAST, takes about 500 ms. 30 s is the SDK's timeout, reached when BUSY is stuck HIGH.
+A refresh is in the **BUSY window** when the driver reported it, it did not time out, and it took at least 100 ms and less than 30 s. The floor is 100 ms, not the 20 ms of the first proposal, because the completion wait gives up after 20 ms when BUSY never rises. That happens with no panel (the BUSY pull reads idle) or with BUSY stuck LOW, so a 20 ms floor would pass a missing panel. It also catches a UC8279 panel driven as an SSD1677 after a wrong verdict: its waits either end at once or run to the 30 s timeout. The quickest real waveform, FAST, takes about 500 ms. 30 s is the SDK's timeout, reached when BUSY is stuck HIGH.
 
 The tests change only what the reader's settings change: `SETTINGS.fadingFix` (Sunlight Fading Fix, which the loop hands to the renderer) and `SETTINGS.screenInverted` (night mode, which the render task hands to the display before each render). T8 also changes the panel's SPI clock. All three live in RAM only. They go back to the pinned values at the end of every run and when the screen closes, and a sleep and wake restores the clock anyway. When a test frame is still on the glass as the screen closes, the next screen's first refresh is a HALF. No display test turns the radio on (PWR-02: no Wi-Fi TX during a refresh).
 
@@ -189,7 +198,7 @@ Left/Right (or Up/Down) pick a refresh; Confirm runs it. A run alternates two fr
 | FULL, HALF, FAST with turn-off | 6 refreshes with the Sunlight Fading Fix on | the same as without it |
 | Cadence | the reader's page turns at its refresh frequency N (the reader's setting: 5, 10, 15 or 30; 1 runs as 2): N-1 FAST, then a HALF | ghosting builds, then the HALF clears it; the frame before the HALF stays up for a look |
 
-The screen shows the last run per mode (count, sequence byte, BUSY min/mean/max, host time, promotions, refreshes outside the window, and for the variants the async returns and turn-off requests), the mean BUSY per mode over this boot's runs against the X4-class references, and whether FULL >= HALF > FAST holds.
+The screen shows the panel controller with the probe's verdict and IDs (as P1 does), the last run per mode (count, sequence byte, BUSY min/mean/max, host time, promotions, refreshes outside the window, and for the variants the async returns and turn-off requests), the mean BUSY per mode over this boot's runs against the X4-class references, and whether FULL >= HALF > FAST holds. Every run's result carries `panel=<controller>:<source>:<VER>:<FLG>`, so each row in `results.csv` names the panel it ran on.
 
 PASS:
 
@@ -199,7 +208,7 @@ PASS:
 - once FULL, HALF and FAST have all been run this boot, their means keep FULL >= HALF > FAST;
 - the frames looked as the refresh expects.
 
-A mean more than 50 % from the X4-class reference (FULL about 1800 ms, HALF about 1720 ms, FAST about 500 ms) is flagged in the log (`x4_ref=outside:...`) and on the screen, but does not fail the test. Record the Silkscreen figures as its baseline.
+A mean more than 50 % from the X4-class reference (FULL about 1800 ms, HALF about 1720 ms, FAST about 500 ms) is flagged in the log (`x4_ref=outside:...`) and on the screen, but does not fail the test. Record the Silkscreen figures as its baseline. The references are the SSD1677's; on a UC8279 panel the runs set that panel's baseline.
 
 ### T5 Grayscale
 
@@ -263,7 +272,7 @@ Each edge carries a staircase of 1 px steps, each one pixel deeper than the last
 
 - Edge picks the next edge;
 - +1 px (it wraps), Up and Down change the value;
-- Record logs the four as INFO, with the profile's values, for the SDK profile (`viewableInsets` is still the X4 default, `{9, 3, 3, 3}`);
+- Record logs the four as INFO, with the profile's values, for the SDK profile (`viewableInsets` is `{0, 0, 0, 0}`: every measured case window is the active area plus 0.5-0.7 mm);
 - Back returns to the orientations.
 
 The renderer goes back to portrait when the screen closes.
@@ -567,7 +576,8 @@ The pinned settings, the no-write rule and the tests left out (P6 forced panics,
   - the chip's behaviour in LDO dropout: brown-out or a reset loop, and at what voltage (POWER.md §7);
   - HW-08's cross-check: Charging or Complete with P+ at or below the cutoff and not rising for 5 min counts as on battery. T2 shows the flag, but only a supply at the cutoff with `USB_STAT` held in the charging window drives it.
 - **Web server and updates.** The 15-min ceiling with the web server idle, WebDAV polling not counting as traffic, and `IO8` with the web server running (the 100 mV allowance under its load; T15's idle station is lighter). OTA and the SD firmware update refusing below 3.6 V (the test firmware has neither), and the radio released at the OTA, Clock Sync and KOReader result screens, then the restart on exit.
-- **Reset loop** (WK-03): 3 forced panics in a row, with the panel refreshed fast before them. The device then sleeps at the floor, with the driver-free panel and touch sleep.
+- **Reset loop** (WK-03): 3 forced panics in a row, with the panel refreshed fast before them. The device then sleeps at the floor, with the driver-free panel and touch sleep. With the custom panel, check that the log names UC8279 before the driver-free sleep, and that the floor matches the one after a menu sleep.
+- **Reader overlay** (B2): on both panels, open the toolbar menu over a page with anti-aliased text and close it. The page is re-rendered with its gray levels, as on the X4 (`xteinkClassPanel()`).
 
 Bench checks no test firmware screen can make, for a meter, a scope or esptool:
 

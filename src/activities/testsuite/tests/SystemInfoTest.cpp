@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "PanelProbe.h"
 #include "TestFactories.h"
 #include "TestNames.h"
 #include "TextBuffer.h"
@@ -44,8 +45,8 @@ constexpr uint32_t MIN_PSRAM_BYTES = 7UL * 1024UL * 1024UL;
 constexpr unsigned long IDLE_CLOCK_LATE_MS = 10000;
 
 constexpr char INTRO[] =
-    "Open after a cold boot and after a power-button wake: each opening is logged. Leave the keys 3 s: the idle "
-    "clock logs itself.";
+    "Open after a cold boot and after a power-button wake: each opening logs the panel controller and the boot. "
+    "Leave the keys 3 s: the idle clock logs itself.";
 
 class SystemInfoTest final : public TestScreen {
  public:
@@ -94,6 +95,7 @@ class SystemInfoTest final : public TestScreen {
     snap.touchAddr = TestSuiteAccess::input(gpio).touchDiagnostics().address;
     if (snap.touchAddr == 0) snap.touchAddr = BoardConfig::ACTIVE.touch.i2cAddress;
     hostAttached = usbHostAttached();
+    recordPanel();
     recordChecks();
   }
 
@@ -140,7 +142,9 @@ class SystemInfoTest final : public TestScreen {
   const char* slotLabel(const Slot slot) const override { return slot == Slot::Confirm ? "Record" : nullptr; }
 
   void onSlot(const Slot slot) override {
-    if (slot == Slot::Confirm) recordChecks();
+    if (slot != Slot::Confirm) return;
+    recordPanel();
+    recordChecks();
   }
 
   bool isBoard() const { return BoardConfig::ACTIVE.board == BoardConfig::Board::Silkscreen; }
@@ -149,6 +153,15 @@ class SystemInfoTest final : public TestScreen {
   static uint64_t powerWakeBit() {
     const int8_t pin = BoardConfig::ACTIVE.input.power;
     return pin >= 0 ? (1ULL << pin) : 0;
+  }
+
+  // The panel controller the boot resolved (probed, kept across the sleep, or
+  // forced by the build) with the probe's IDs, in its own row before the boot row.
+  void recordPanel() {
+    char fails[24];
+    const Verdict verdict = panelProbeVerdict(fails, sizeof(fails));
+    formatPanelProbe(panelLine, sizeof(panelLine));
+    record(verdict, "action=panel %s fails=%s", panelLine, fails);
   }
 
   // The boot checks. The idle clock is logged here as it stands but judged in
@@ -166,6 +179,10 @@ class SystemInfoTest final : public TestScreen {
         (snap.wake != ESP_SLEEP_WAKEUP_EXT1 || (snap.ext1Mask & powerWakeBit()) == 0)) {
       fail("wake");
     }
+    char panelFails[24];
+    if (panelProbeVerdict(panelFails, sizeof(panelFails)) == Verdict::Fail) fail("panel");
+    char panel[40];
+    formatPanelToken(panel, sizeof(panel));
     // Read here, on the loop task: the render task keeps off the RTC's bus.
     rtcValid = halClock.isAvailable() && halClock.hasValidTime();
 
@@ -175,14 +192,14 @@ class SystemInfoTest final : public TestScreen {
     record(
         failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
         "action=boot board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
-        "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d idle_clock=%s fails=%s",
+        "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d panel=%s idle_clock=%s fails=%s",
         BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
         static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
         resetReasonName(snap.reset), wakeCauseName(snap.wake), mask, snap.bootRecord.abnormalResets, snap.abnormalNow,
         snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0, Storage.ready() ? 1 : 0,
         halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
         gpio.hasTouch() ? touchControllerName(touch.controller) : "none", snap.touchAddr, Frontlight.present() ? 1 : 0,
-        idleClockName(), failed[0] == '\0' ? "none" : failed);
+        panel, idleClockName(), failed[0] == '\0' ? "none" : failed);
   }
 
   const char* idleClockName() const {
@@ -208,6 +225,7 @@ class SystemInfoTest final : public TestScreen {
     page.row("Firmware", CROSSPOINT_VERSION);
     page.rowf("Chip", "%s rev %u.%u, %u cores", snap.chip, snap.chipRevision / 100U, snap.chipRevision % 100U,
               snap.cores);
+    drawPanelProbe(page, /*brief=*/false);
     page.rowf("ESP-IDF / Arduino core", "%s / %s", esp_get_idf_version(), ESP_ARDUINO_VERSION_STR);
     page.rowf("Flash / PSRAM", "%lu MB%s / %lu KB%s", static_cast<unsigned long>(snap.flashBytes >> 20),
               snap.flashBytes == EXPECTED_FLASH_BYTES ? "" : " (want 16)",
@@ -262,6 +280,7 @@ class SystemInfoTest final : public TestScreen {
   }
 
   Snapshot snap;
+  char panelLine[224] = "";  // the panel row being built (off the loop task's stack)
   IdleClock idle = IdleClock::Waiting;
   unsigned long idleAfterMs = 0;
   bool idleRecorded = false;
