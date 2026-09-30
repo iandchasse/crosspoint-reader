@@ -71,6 +71,9 @@ class HalStorage {
   class StorageLock;  // private class, used internally
 
  private:
+#if CROSSPOINT_TEST_SUITE
+  friend struct TestSuiteAccess;  // the hardware test firmware (src/activities/testsuite/)
+#endif
   static HalStorage instance;
 
   bool initialized = false;

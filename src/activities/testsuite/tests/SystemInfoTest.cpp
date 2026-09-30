@@ -45,71 +45,6 @@ constexpr char INTRO[] =
     "Open after a cold boot and after a power-button wake: each opening is logged. For the idle clock, leave the "
     "keys 3 s, then Record.";
 
-const char* resetName(const esp_reset_reason_t reason) {
-  switch (reason) {
-    case ESP_RST_POWERON:
-      return "POWERON";
-    case ESP_RST_EXT:
-      return "EXT";
-    case ESP_RST_SW:
-      return "SW";
-    case ESP_RST_PANIC:
-      return "PANIC";
-    case ESP_RST_INT_WDT:
-      return "INT_WDT";
-    case ESP_RST_TASK_WDT:
-      return "TASK_WDT";
-    case ESP_RST_WDT:
-      return "WDT";
-    case ESP_RST_DEEPSLEEP:
-      return "DEEPSLEEP";
-    case ESP_RST_BROWNOUT:
-      return "BROWNOUT";
-    case ESP_RST_SDIO:
-      return "SDIO";
-    case ESP_RST_USB:
-      return "USB";
-    case ESP_RST_JTAG:
-      return "JTAG";
-    case ESP_RST_EFUSE:
-      return "EFUSE";
-    case ESP_RST_PWR_GLITCH:
-      return "PWR_GLITCH";
-    case ESP_RST_CPU_LOCKUP:
-      return "CPU_LOCKUP";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-const char* wakeName(const esp_sleep_wakeup_cause_t cause) {
-  switch (cause) {
-    case ESP_SLEEP_WAKEUP_UNDEFINED:
-      return "none";
-    case ESP_SLEEP_WAKEUP_EXT0:
-      return "EXT0";
-    case ESP_SLEEP_WAKEUP_EXT1:
-      return "EXT1";
-    case ESP_SLEEP_WAKEUP_TIMER:
-      return "TIMER";
-    case ESP_SLEEP_WAKEUP_GPIO:
-      return "GPIO";
-    default:
-      return "other";
-  }
-}
-
-// "0x" + hex of a 64-bit mask; printf's %llx is not relied on.
-void formatMask(char* buf, const size_t size, const uint64_t mask) {
-  const auto hi = static_cast<unsigned long>(mask >> 32);
-  const auto lo = static_cast<unsigned long>(mask & 0xFFFFFFFFUL);
-  if (hi != 0) {
-    snprintf(buf, size, "0x%lx%08lx", hi, lo);
-  } else {
-    snprintf(buf, size, "0x%lx", lo);
-  }
-}
-
 class SystemInfoTest final : public TestScreen {
  public:
   SystemInfoTest(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -216,16 +151,16 @@ class SystemInfoTest final : public TestScreen {
     rtcValid = halClock.isAvailable() && halClock.hasValidTime();
 
     char mask[24];
-    formatMask(mask, sizeof(mask), snap.ext1Mask);
+    formatWakeMask(mask, sizeof(mask), snap.ext1Mask);
     const auto& touch = BoardConfig::ACTIVE.touch;
     record(failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
            "board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
            "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d idle_clock=%s fails=%s",
            BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
            static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
-           resetName(snap.reset), wakeName(snap.wake), mask, snap.bootRecord.abnormalResets, snap.abnormalNow,
-           snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0, Storage.ready() ? 1 : 0,
-           halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
+           resetReasonName(snap.reset), wakeCauseName(snap.wake), mask, snap.bootRecord.abnormalResets,
+           snap.abnormalNow, snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0,
+           Storage.ready() ? 1 : 0, halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
            gpio.hasTouch() ? touchControllerName(touch.controller) : "none", touch.i2cAddress,
            Frontlight.present() ? 1 : 0, idleClockName(), failed[0] == '\0' ? "none" : failed);
   }
@@ -278,8 +213,8 @@ class SystemInfoTest final : public TestScreen {
     }
 
     char mask[24];
-    formatMask(mask, sizeof(mask), snap.ext1Mask);
-    page.rowf("Reset / wake / ext1 mask", "%s / %s / %s", resetName(snap.reset), wakeName(snap.wake), mask);
+    formatWakeMask(mask, sizeof(mask), snap.ext1Mask);
+    page.rowf("Reset / wake / ext1 mask", "%s / %s / %s", resetReasonName(snap.reset), wakeCauseName(snap.wake), mask);
     if (snap.reset == ESP_RST_DEEPSLEEP) {
       const bool ok = snap.wake == ESP_SLEEP_WAKEUP_EXT1 && (snap.ext1Mask & powerWakeBit()) != 0;
       page.rowf("Power-button wake", "%s (IO%d)", ok ? "yes" : "NO", BoardConfig::ACTIVE.input.power);

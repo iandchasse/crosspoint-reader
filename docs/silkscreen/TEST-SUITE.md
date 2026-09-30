@@ -20,22 +20,22 @@ pio run -e silkscreen-test -t upload
 
 | Area | Test firmware |
 |---|---|
-| Boot | `setup()` runs unchanged up to the routing: release wake, reset loop, early wake decision, touch probe, boot cutoff, SD, settings. Then the splash, then the test menu, on every boot. After a panic, the crash screen first, then the menu. |
+| Boot | `setup()` runs unchanged up to the routing: release wake, reset loop, early wake decision, touch probe, boot cutoff, SD, settings. Then the splash, then the test menu, on every boot. When the menu first opens, the reader's files are compared with the P8 baseline (the first boot with a card takes it). After a panic, the crash screen first, then the menu. |
 | What is built | The reader, library, home screen, file browser, image viewer, OPDS browser and the reader's sleep screen are left out of the build (`build_src_filter`), so a live reference to any of them fails the link. Settings, the web server, OTA and the SD firmware update are compiled but unreachable, and the linker drops them. Every reader entry point (`goHome`, `goToReader`, `goToSettings` and the rest) lands on the menu. |
 | Settings | `/.crosspoint/settings.json` is read once, then these are pinned in RAM: night mode off, Sunlight Fading Fix off, portrait, Short Power Button = Ignore, light off with no restore on wake, the keys in their default roles, English, the Lyra theme, no SD reader font, and a 10-minute sleep timeout if it was Never. |
-| Card writes | Never under `/.crosspoint/`: every settings, state, Wi-Fi, recent-books, OPDS and KOReader save is a no-op, `state.json` is not read, and the Quick Resume frame is neither written nor removed. The test firmware writes only `/.silkscreen-test/`. |
+| Card writes | Never under `/.crosspoint/`: every settings, state, Wi-Fi, recent-books, OPDS and KOReader save is a no-op, `state.json` is not read, and the Quick Resume frame is neither written nor removed. The test firmware writes only `/.silkscreen-test/`: `results.csv`, the P8 baseline `crosspoint.sha`, and scratch files ending in `.tmp`. |
 | No card | The menu opens with "SD not mounted" and results go to the serial log only. The reader's SD-card error screen and its 60 s timeout are not in the test firmware. |
 | Front light | Off at every boot and after every silent restart, with no light panel (gesture, status-bar tap). Only a front-light test lights it, after the operator names the load. The over-voltage trip handling is the reader's; T10 lowers its level in RAM for one run. |
 | USB | While a USB data host is attached, auto-sleep is held off (the USB Serial/JTAG host frames, with a 2 s hold). A charger alone or a cell never holds it. The 15-minute ceiling and the 60-minute input cap still apply whenever the `USB_STAT` ladder does not report external power, so a misread ladder shows up as a sleep during a bench session. |
-| Sleep | The same sleep entry, wake source and timeouts as the reader. The sleep screen shows the firmware and board tag. A power-button click does nothing and a hold longer than 400 ms sleeps; waking needs POWER held. |
+| Sleep | The same sleep entry, wake source and timeouts as the reader. The sleep screen shows the firmware and board tag, the MEAS-01 current targets and the pins to probe. Once its refresh has returned it times the RTC and keeps a record of the entry in RTC memory, for T14 and P5. A power-button click does nothing and a hold longer than 400 ms sleeps; waking needs POWER held. |
 
 ## Using it
 
-**The menu.** Up/Down or Left/Right move, Confirm opens. With touch, tap a row, and swipe to scroll. Back does nothing here. The line under the title says where results go (`/.silkscreen-test/results.csv`, or "SD not mounted") and shows the firmware version. Each row shows the test id and name, what it checks (or "Not implemented yet"), and the last result this boot. With touch, a swipe up from the bottom edge returns to the menu from any test, except while T11's targets or gestures are on.
+**The menu.** Up/Down or Left/Right move, Confirm opens. With touch, tap a row, and swipe to scroll. Back does nothing here. The line under the title says where results go (`/.silkscreen-test/results.csv`, or "SD not mounted") and shows the firmware version. Each row shows the test id and name, what it checks, and the last result this boot. With touch, a swipe up from the bottom edge returns to the menu from any test, except while T11's targets or gestures are on.
 
 **A test screen** has the test id and name in the header, the last result recorded on this screen, the test's instructions and live readings, and four touch buttons along the bottom. The buttons sit in the order of the front keys and do what the keys do: Exit (Back), then the test's Confirm, Left and Right actions. Up/Down step values where a test has any. Back, the header's back button or Exit leaves the test. In a test that reads the keys itself (T3), a front key held 1.5 s does what the button above it does (Back: Exit), and the screen says so. In a test whose input is the touch panel (T11's targets and gestures), the touch buttons do nothing and the header has no back button: the keys drive the screen, and Back stops. Leaving any test switches the front light and the radio off.
 
-**Questions.** When a result needs something only the operator can see (T2 asks whether D2 is lit), a list of answers opens: Up/Down and Confirm, or tap an answer. Back, or a tap outside the list, records nothing.
+**Questions.** When a result needs something only the operator can see (T2 and P4 ask whether D2 is lit), a list of answers opens: Up/Down and Confirm, or tap an answer. Back, or a tap outside the list, records nothing.
 
 **Display runs.** T4, T5, T6 and T8 show full-screen frames. Confirm starts a run. Each refresh is one step, drawn and refreshed a loop pass after the one before, so Back stops a run between two refreshes. A frame that says "Any key or tap: continue" stays on the glass until you press a key or tap; Back stops there too. A tap in the top-left corner, where the header's back button sits, counts as Back. The touch buttons are not on the glass during a run and do nothing. The run ends with the test's screen repainted by a HALF refresh, which clears the last frame, and then a question about what you saw. A stopped run records nothing.
 
@@ -45,10 +45,11 @@ pio run -e silkscreen-test -t upload
 - CSV columns: `timestamp,time_source,session,board,firmware,test,verdict,details`. The timestamp is the RTC's local time when the RTC holds a valid time (`time_source` = `rtc`), otherwise seconds since boot (`uptime`). `session` is random per boot, `board` is the end of the Wi-Fi MAC, and `details` is quoted, with `key=value` pairs by convention.
 - Verdicts: `PASS`, `FAIL`, `SKIP` and `INFO` (a reading with no pass criterion).
 - Tests keep scratch files in `/.silkscreen-test/` with names ending `.tmp`. Any left behind by a sleep or a crash are removed at the next boot.
+- P8 also records a row at every boot with a card (`when=boot`).
 
 ## Tests
 
-The ids are stable; `results.csv` and the serial log use them.
+The ids are stable; `results.csv` and the serial log use them. Every test in the menu is built; none has run on a board yet. Each section gives the purpose and the bring-up step, the steps, what the screen shows and the PASS criteria. The thresholds marked "proposal" are to tune after the first board.
 
 | Id | Test | Bring-up step | Status |
 |---|---|---|---|
@@ -56,7 +57,7 @@ The ids are stable; `results.csv` and the serial log use them.
 | P2 | I2C bus scan | B7, B9 | [Built](#p2-i2c-bus-scan), not yet run on a board |
 | T1 | Battery (`BAT_MONIT`) and cell detection | B6 | [Built](#t1-battery), not yet run on a board |
 | T2 | Charge status (`USB_STAT`) and USB presence | B6 | [Built](#t2-charge-status), not yet run on a board |
-| P4 | USB presence and USB Drive | B4, B6 | Not implemented yet |
+| P4 | USB presence and USB Drive | B4, B6 | [Built](#p4-usb-presence-and-usb-drive), not yet run on a board |
 | T3 | Keys: eight ladder keys and the power button | B5 | [Built](#t3-keys), not yet run on a board |
 | T4 | Refresh modes | B2 | [Built](#t4-refresh-modes), not yet run on a board |
 | T5 | Grayscale | B2 | [Built](#t5-grayscale), not yet run on a board |
@@ -67,14 +68,16 @@ The ids are stable; `results.csv` and the serial log use them.
 | T10 | Front-light over-voltage trip | B8 | [Built](#t10-front-light-over-voltage-trip), not yet run on a board |
 | T11 | Touch probe, mapping and gestures | B9 | [Built](#t11-touch-probe-mapping-and-gestures), not yet run on a board |
 | T12 | Touch sleep command | B9 | [Built](#t12-touch-sleep-command), not yet run on a board |
-| T13 | RTC | B7 | Not implemented yet |
-| T14 | RTC across deep sleep | B7 | Not implemented yet |
-| P3 | SD card | B4 | Not implemented yet |
-| T15 | Wi-Fi and NTP | B7 | Not implemented yet |
-| P5 | Sleep, wake and sleep current | B3, B10 | Not implemented yet |
-| P8 | Reader-data integrity | - | Not implemented yet |
+| T13 | RTC | B7 | [Built](#t13-rtc), not yet run on a board |
+| T14 | RTC across deep sleep | B7, B10 | [Built](#t14-rtc-across-deep-sleep), not yet run on a board |
+| P3 | SD card | B4 | [Built](#p3-sd-card), not yet run on a board |
+| T15 | Wi-Fi and NTP | B7, B6 | [Built](#t15-wi-fi-and-ntp), not yet run on a board |
+| P5 | Sleep, wake and sleep current | B3, B10 | [Built](#p5-sleep-wake-and-sleep-current), not yet run on a board |
+| P8 | Reader-data integrity | - (guards the reader's card) | [Built](#p8-reader-data-integrity), not yet run on a board |
 
 ### P1 System info and boot checks
+
+**Purpose:** the module, the firmware and the boot records are what this board should have, and the wake and the idle clock behave. **Bring-up:** B1 (and the wake of B3).
 
 Each opening logs a result, so open it after a cold boot and again after a power-button wake; Record logs it again. It shows the profile and board tag, the firmware, the chip, ESP-IDF and the Arduino core, flash, PSRAM and heap, the reset reason, the wake cause with the ext1 mask, the abnormal resets this boot counted and the count in RTC memory now, any aborted sleep entry, eFuse `PIN_POWER_SELECTION` (information only; HW-01), and whether the card, the RTC, touch and the front light are there. The reset records are read with the SDK's non-consuming accessors, after `main.cpp` has used them.
 
@@ -84,11 +87,15 @@ PASS: profile `silkscreen`; 16 MB flash; at least 7 MB PSRAM (the 8 MB part less
 
 ### P2 I2C bus scan
 
+**Purpose:** the sensor bus is healthy and the expected devices answer on it. **Bring-up:** B7 (RTC), B9 (touch).
+
 Confirm scans with J6 empty; Right (Scan+J6) scans with an accessory on J6. Each scan is logged. It probes 0x08-0x77 by address only, at 100 kHz and at 400 kHz, through `freeink::i2c::scanSensorBus()`. A bus the RTC or touch driver already runs is used as it is: only its clock changes for the 400 kHz pass, and it is put back. A bus no driver runs is started for the scan and ended after it. The SDA/SCL idle levels are read only while a driver owns the bus, and nothing here runs the stuck-bus recovery. Every device that answers is listed with what the profile puts at that address.
 
 PASS: exactly one RTC answers (0x68 DS3231 or 0x51 RV-8263); the touch controller found at boot answers; no touch address answers when none was found at boot; both clocks find the same devices; both lines idle HIGH; and, with J6 empty, nothing else answers. An FT6336U in Monitor mode may not answer a scan started from a key: tap Scan instead, and the touch wakes it.
 
 ### T1 Battery
+
+**Purpose:** the battery reading that the cutoff, the firmware-write floor and the percentage use. **Bring-up:** B6.
 
 Measure P+ at J5 or across the cell, and enter it: Left/Right -/+10 mV, Up/Down +/-100 mV, starting from the firmware's reading. Confirm records. Repeat on battery, on USB with a cell, and on USB with no cell after a cold boot.
 
@@ -99,6 +106,8 @@ It takes one reading a second, repaints at most every 5 s, and takes no reading 
 PASS: |P+ - meter| at most 150 mV (+/-50 mV ADC error at the pin, doubled by the divider, plus the 12-14 mV load offset and the 1 % divider tolerance); with a cell, the pin at 1500-2100 mV; off the charger, a 30 s spread at the pin of at most 20 mV. Without a meter value the result is INFO.
 
 ### T2 Charge status
+
+**Purpose:** the `USB_STAT` ladder decodes every charger state, and USB presence follows it. **Bring-up:** B6.
 
 Pick the bench state with Left/Right, set it up, then Confirm: it asks whether D2 is lit, then records. D2 shows USB power, not charging (HARDWARE.md §3).
 
@@ -115,7 +124,34 @@ The ladder is sampled by the SDK only, once a second (usbstat-slow-sampling); th
 
 PASS: the stage's state is published; the last sample sits in its window; `isUsbConnected()` and D2 are as the table says; a change into the state during the stage settled in time (3 s; Complete 10 s, since it needs 8 stable samples, about 8.5-9.5 s after the change itself; the no-battery blink 8 s); and in stage 5 Complete was never published. Switching the stage restarts its history.
 
+### P4 USB presence and USB Drive
+
+**Purpose:** USB presence as the firmware sees it, with no VBUS sense on the board (HW-11), the D2 LED, and USB Drive in and out. **Bring-up:** B4 (USB Drive), B6 (presence, AW-03).
+
+Left/Right pick the bench stage. Set it up, wait for the readings to settle, then Confirm, which asks whether D2 is lit and records. The screen shows:
+
+- the USB host: `HWCDC::isPlugged()`, which follows the host's start-of-frame traffic, and whether the CDC port is open;
+- USB power as the reader sees it: `HalGPIO::isUsbConnected()` from the `USB_STAT` ladder, with the ladder state;
+- the last four changes of either, and how far apart the two signals' last changes were.
+
+| Stage | Set-up | USB host | USB power | D2 |
+|---|---|---|---|---|
+| 1 Data cable | A USB data cable to a computer | yes | yes | lit |
+| 2 Charger only | A charger or a power-only cable | no | yes | lit |
+| 3 Unplugged | On the cell | no | no | dark |
+| 4 USB Drive | A data cable | | | |
+
+PASS (stages 1-3):
+
+- the host and USB power as the table says, and D2 as the operator saw it (D2 shows USB power, usb-power-led);
+- in stage 2, no host at any time;
+- in stages 1 and 3, the two signals' last changes at most 3 s apart. With the ladder at Complete or in the no-battery blink the limit is 10 s: Complete needs 8 stable samples, about 8.5-9.5 s after the plug.
+
+Stage 4: Confirm asks first. The host gets the raw card and can write anything on it, `/.crosspoint` included (P8 shows it afterwards). The test logs an INFO row and opens the reader's own USB Drive screen. End the session by ejecting on the host, or, on the cell, by pulling the cable: the session must end within about 5 s (AW-03). Either way the board restarts. The next opening of P4 asks how it ended. PASS: an eject, or a cable pull that ended it. FAIL: the host never mounted the card, or the session did not end as expected.
+
 ### T3 Keys
+
+**Purpose:** every key decodes to its own switch with margin, chords are harmless, and nothing fires by itself. **Bring-up:** B5.
 
 The keys are this test's input. A front key held 1.5 s does what the button above it does: Back leaves, OK records, Left changes the mode, Right switches the radio (an idle station, for the "with Wi-Fi on" runs). Each press is matched to its switch by sampling the ladders the way `InputManager` does.
 
@@ -141,6 +177,8 @@ The tests change only what the reader's settings change: `SETTINGS.fadingFix` (S
 
 ### T4 Refresh modes
 
+**Purpose:** the three B/W waveforms run as asked, in time and cleanly. **Bring-up:** B2.
+
 Left/Right (or Up/Down) pick a refresh; Confirm runs it. A run alternates two frames. Each frame is cut into six bands: a 20 px checkerboard, a 1 px checkerboard, 1 px lines, UI text, solid black and white, and dithered grays. Frame B puts a different pattern in every band, so a ghost of the other frame shows up as a foreign texture.
 
 | Refresh | Run | Expect |
@@ -163,6 +201,8 @@ PASS:
 A mean more than 50 % from the X4-class reference (FULL about 1800 ms, HALF about 1720 ms, FAST about 500 ms) is flagged in the log (`x4_ref=outside:...`) and on the screen, but does not fail the test. Record the Silkscreen figures as its baseline.
 
 ### T5 Grayscale
+
+**Purpose:** every gray pass the reader runs gives four levels and cleans up after itself. **Bring-up:** B2.
 
 Left/Right pick one of the reader's gray-pass routes; Confirm runs it. The chart has a four-level ramp (white, light gray, dark gray, black), narrow columns cycling through the four levels, and two lines in the reader's anti-aliased font. The same lines are drawn below in B/W only, for comparison. After the pass, a plain page gets a FAST refresh. Each stays up for a look.
 
@@ -188,6 +228,8 @@ PASS:
 
 ### T6 Inversion
 
+**Purpose:** night mode on this panel: clean frames, the right waveforms, and no gray pass while inverted. **Bring-up:** B2.
+
 Confirm runs night mode through `SETTINGS.screenInverted`, the way the reader does. Setting the display directly would be undone by the render task on the next render.
 
 | Step | Night mode | Asked | Must run |
@@ -202,6 +244,8 @@ Confirm runs night mode through `SETTINGS.screenInverted`, the way the reader do
 PASS: every step ran the mode in the table and is in the BUSY window. While inverted, no gray waveform ran, the B/W store worked, and the panel did not offer the tiled gray route, which is the reader's gate. The operator saw clean white-on-black frames on FAST and on HALF, a chart in crisp black and white, and no ghost after switching back.
 
 ### T7 Orientation and bezel ruler
+
+**Purpose:** the four orientations are the right way up, and the bezel insets for `viewableInsets`. **Bring-up:** B2.
 
 The whole screen, header and touch buttons included, is drawn in the chosen orientation. An arrow points to the logical bottom. Rotate (or Up/Down) steps through the orientations, each with a HALF refresh, so the ruler reads cleanly. Judge asks about the current one and moves on to the next unjudged one. When all four are judged, the result is recorded.
 
@@ -225,6 +269,8 @@ The renderer goes back to portrait when the screen closes.
 
 ### T8 Panel SPI clock
 
+**Purpose:** whether the panel takes a faster SPI clock than the profile's 20 MHz. **Bring-up:** B2 (an open question in REQUIREMENTS).
+
 The SSD1677 is specified to 20 MHz for writes, which is the profile's clock. This test tries a faster one. Left/Right pick the profile clock, 26.7 MHz or 40 MHz. Confirm runs 20 B/W refreshes at that clock: four FAST, then a HALF, four times, with the T4 frames. It then runs the T5 chart through the strip route and a plain page. The last B/W frame, the chart and the plain page each stay up for a look.
 
 The clock is set in RAM only, through the SDK's `FreeInkDisplay::setSpiClockTrial()` (a `FREEINK_DIAGNOSTICS` control). It goes back to the profile's at the end of the run, when the screen closes, and at every wake, when the display restarts. The panel has no read-back on this board, so the frames are compared by eye with a run at the profile clock: run that first. The host time per refresh shows the clock at work. At 20 MHz, a blocking FAST moves 144,000 B (the frame, then both RAM planes resynced), about 58 ms of transfer, and at 40 MHz about half that. The screen keeps each clock's mean BUSY and host time for FAST and HALF over this boot, with its verdict.
@@ -238,6 +284,8 @@ Both light the boost only after a question names the load, every time the light 
 The pads are read from the GPIO registers (`gpio_get_io_config()` and the output register), never set: IO42 (ADIM) on its LEDC carrier while lit, and held LOW by the GPIO output register while dark; IO40 (COLOR_SEL) at the lit string (HIGH = warm), and LOW (cool) while dark.
 
 ### T9 Front light
+
+**Purpose:** both strings light at every brightness step, and `LED_MONIT` reads the LED rail. **Bring-up:** B8.
 
 Confirm lights the boost after the load question; Confirm again switches it off. Up/Down step the brightness through 10, 25, 50, 75 and 100 %. That is the SDK's perceptual curve, so about 2, 9, 32, 62 and 100 % duty, or roughly 0.3, 1.3, 4.2, 8.3 and 13.3 mA of LED current (duty × 13.3 mA). Left switches between the cool and warm strings; while lit, the driver goes dark for at least 3 ms and gets its enable pulse again. Take both strings through every step, then Record, which asks what the light did. Record before anything was lit logs INFO with the dark reading.
 
@@ -263,6 +311,8 @@ PASS:
 
 ### T10 Front-light over-voltage trip
 
+**Purpose:** the software over-voltage trip switches the boost off, and keeps it off. **Bring-up:** B8.
+
 This replaces the rebuild with a lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` in PORTING.md B8. Confirm, after the load question, runs about 5 s. Back stops it, and a stopped run records nothing.
 
 | Step | What happens | Expect |
@@ -280,6 +330,8 @@ The level only ever goes down, never above the profile's. It goes back at the en
 PASS: every step as in the table, the level back at the profile's, and the operator's yes.
 
 ### T11 Touch probe, mapping and gestures
+
+**Purpose:** the touch probe, the controller's orientation and raw ranges, and the gestures. **Bring-up:** B9.
 
 The screen opens on the probe and the mapping:
 
@@ -299,6 +351,8 @@ The mapping stays in force until the next boot, so the menu uses it. With no con
 
 ### T12 Touch sleep command
 
+**Purpose:** the controller takes its sleep command, so it draws 55 µA and not 220 µA through deep sleep. **Bring-up:** B9, B10.
+
 J4's 3V3 is not switched, so every sleep entry has to put a fitted FT6336U into hibernate (`0xA5 = 0x03`, TP-01).
 
 - **The sleep entry.** Opening T12 after a deep-sleep wake logs the sleep entry that boot woke from, once per boot. That is the result of `prepareTouchForSleep()`, which the sleep path runs through `HalGPIO::prepareForSleep()`, from the SDK's RTC record, with whether its first command was NACKed and needed the reset and a second one (TP-02). Hold POWER to sleep, wake, then open T12. PASS: Asleep.
@@ -315,6 +369,165 @@ J4 pin 2 current: a µA meter in place of R42 (3V3 to pin 2), or a 100 Ω resist
 
 `IO11` reads 3.3 V on a meter in every state. No test holds `TP_RST` LOW or writes a controller configuration register.
 
+### T13 RTC
+
+**Purpose:** which RTC is fitted, whether its init left the bits the sleep budget relies on, and whether it keeps and takes the time. **Bring-up:** B7.
+
+The screen shows:
+
+- which of the two addresses answers: 0x68 (U13 DS3231MZ) and 0x51 (U14 RV-8263-C7), and the RTC `HalClock` began at boot;
+- a dump of its registers (DS3231 0x00-0x12, RV-8263 0x00-0x0A) and the time in them, in UTC, even while the lost-time flag is set;
+- `hasValidTime()`;
+- DS3231: OSF, EN32KHZ and BSY (0x0F), EOSC and INTCN (0x0E), the temperature and the aging offset. RV-8263: OS, STOP and the CLKOUT field;
+- the reads on this screen, the errors and the last read's latency.
+
+The actions:
+
+- **Record** (Confirm) reads again and records the register checks. With nothing answering, it asks whether an RTC is fitted: none is a PASS (the RTC is optional, rtc-devices), a fitted one a FAIL.
+- **Set time** (Left) sets the time by hand, with no Wi-Fi. Year, month, day, hour and minute are in local time (the reader's time zone). Left/Right or Up/Down change the field, and Confirm moves to the next. On the minute Confirm writes, with the seconds at 0, so write on the minute. Back cancels. It writes through `Rtc::set()`, which writes the time and then clears OSF, and reads the time back.
+- **Timing** (Right) asks which to run:
+  - the 60 s check times 60 s of RTC seconds against the CPU clock, from one seconds tick to another;
+  - the bench reads the time 1000 times at 100 kHz, then 1000 times at 400 kHz, then puts the bus back at its own clock. The touch controller shares the bus.
+
+PASS:
+
+- **Record:** exactly one RTC answers, and `HalClock` began it at boot. DS3231: EN32KHZ 0 (rtc-en32khz-clear), EOSC 0 (rtc-eosc-zero), 10-40 °C (proposal), and OSF 0 once the time has been set on this screen. RV-8263: STOP 0, CLKOUT off, and OS 0 after a set;
+- **Set:** written, read back within 2 s of the value written, the lost-time flag clear, and `hasValidTime()`;
+- **60 s check:** RTC and CPU within 1 s (5 ppm is 0.3 ms);
+- **Bench:** no error at either clock (rtc-i2c-bench-verify). Scope the SDA/SCL edges at 400 kHz before raising `SensorsConfig::i2cHz` (B7).
+
+After the first cell insert, Record first (OSF reads 1: the oscillator has not kept time), then set the time here or in T15, and Record again (rtc-osf-check). The test never writes the control register, so EOSC stays 0. It writes the status register only through `Rtc::set()`, which clears OSF, and EN32KHZ with it on this board.
+
+### T14 RTC across deep sleep
+
+**Purpose:** the RTC keeps time by itself through a deep sleep (VBAT only, rtc-accuracy). **Bring-up:** B7, with B10's sleep.
+
+1. Hold POWER to sleep. Start a stopwatch when the sleep screen has finished drawing.
+2. Wait at least 10 min. MEAS-01 can run meanwhile.
+3. Stop the stopwatch as you press POWER to wake, and hold POWER until the splash.
+4. Open T14 and enter the stopwatch reading. The value starts at the RTC's figure; Left/Right change it by 0.1 s, Up/Down by 1 s. Then Record.
+
+The sleep screen times the RTC once its refresh has returned, the moment the stopwatch starts, to the RTC's next seconds tick. It keeps the reading in RTC memory (`SleepRecord`): the record survives deep sleep and the ghost and release wakes, and any other reset clears it. T14 times the RTC the same way and works back to the moment the boot began, which is the press that woke the board. There is no timer wake (ZD-01): the stopwatch is the reference. The boot's own time before `millis()` starts (ROM and bootloader, about 0.1-0.3 s) counts as asleep.
+
+PASS:
+
+- |RTC elapsed - stopwatch| at most 2 s: each end has the operator's timing and the RTC's 1 s steps, while 5 ppm is 3 ms per 10 min;
+- the time still valid (OSF 0);
+- the wake is `EXT1` on IO18;
+- the RTC was not set since the wake (T13 or T15 would set it).
+
+Under 10 min, or without a stopwatch value, the result is INFO. After a sleep of an hour or more, run T15 next: its "RTC - NTP before the sync" is the RTC's drift.
+
+### P3 SD card
+
+**Purpose:** the card, the 4-bit bus at 20 MHz, and a transfer verified end to end. **Bring-up:** B4.
+
+The screen shows the card and the link as the mount left them, from the SDK's bring-up record (`SDCardManager::cardInfo()`, no card I/O):
+
+- the type and CSD capacity, and the CID name, manufacturer, OEM, revision and date;
+- the bus width;
+- the clock the link runs, the host cap and the card's maximum;
+- the power cycles the parked mount needed, and its last error;
+- the volume's used and total space.
+
+**Run** (Confirm) writes a scratch file, `/.silkscreen-test/sdcheck.tmp`, of 8, 64 or 200 MB (Left picks). The data is pseudo-random, hashed with SHA-256 as it is written. The test reads the file back, hashes it and compares every byte with the data regenerated, then removes the file. The writes go through `HalStorage` in 32 KB calls, the reader's own path (the SDK passes every 4 KB through its DMA buffer), so the MB/s are the reader's.
+
+- Back stops a run: nothing is recorded, and the file is removed. A run cut short by a sleep or a crash leaves the `.tmp` file for the next boot to remove.
+- On the cell a run needs the firmware-write floor, 3.6 V (`HalPowerManager::firmwareUpdateBlockedByBattery()`), or it records SKIP. A brown-out mid-write could damage the FAT the reader shares.
+- **Overlap** (Right) runs Wi-Fi scans back to back and a FAST refresh every 2 s during the run (sd-clock: try a faster clock only after the overlap passes). USB or a bench supply only: it is refused on the cell (PWR-02).
+- A run needs the file's size and 16 MB free.
+
+PASS:
+
+- the profile's 4 data lines;
+- the clock at the profile's cap (20 MHz) or up to 10 % below it;
+- SHA-256 and every byte equal, with no I/O error;
+- the file removed.
+
+The MB/s go into `results.csv` as the card's baseline. B4 asks for 200 MB.
+
+With no card mounted, Confirm asks whether one is fitted. None is a PASS: the parked mount failed cleanly, and the screen shows its power cycles and last error. A fitted card is a FAIL. `SD_VDD` at cold boot and in sleep is meter work (below).
+
+### T15 Wi-Fi and NTP
+
+**Purpose:** the radio and antenna, the RTC set over NTP (B7), and the radio's load on `BAT_MONIT` (B6). **Bring-up:** B7, B6.
+
+Confirm runs:
+
+1. On the cell with P+ below the cutoff, 3.4 V (bat-wifi-gate): SKIP. The light goes off.
+2. The RTC before (valid, timed at a tick), and P+ with the radio off.
+3. A scan: the number of networks and the three strongest.
+4. The reader's Wi-Fi screen. A network saved in `/.crosspoint/wifi.json` connects by itself: the file is read, and the store's saves are no-ops. Or pick a network and type its password, which stays in RAM. Its first-connection hook syncs only a clock that has lost its time.
+5. RSSI, channel, P+ with the radio on, then `HalClock::syncFromNTP()`, timed. The RTC against NTP time before the sync (its drift since the last set) and after, and OSF.
+6. The radio off (`WIFI_MODE_NULL`), 1 s, P+ again, then the result, drawn and written with the radio off (PWR-02).
+
+PASS:
+
+- at least one network, and a connection;
+- RSSI above -80 dBm (proposal);
+- the sync within 5 s (`HalClock.h`);
+- the RTC valid, OSF 0, and within 1 s of NTP time;
+- Wi-Fi off at the end (AW-02);
+- on the cell, P+ with the radio on at most 100 mV below the reading with it off (`cutoffRadioAllowanceMv`).
+
+The idle station loads the radio less than the reader's web server, so the allowance check with the web server running (B6) needs the reader image.
+
+### P5 Sleep, wake and sleep current
+
+**Purpose:** every sleep path ends in the same sleep state and current, and only the power button wakes the board. **Bring-up:** B3, B10 (MEAS-01).
+
+Set up MEAS-01 (POWER.md §4): a µA meter or logger in series with the cell, or 3.8 V, at J5; USB and any UART adapter off; the card fitted; the light off; J6 empty. The test image has no USB-serial wait, so its wake timing matches a release build.
+
+Left/Right pick a path and Confirm arms it; Confirm again disarms, and so does leaving P5. The test only arms: the reader's own loop puts the board to sleep.
+
+| Path | How | Expect |
+|---|---|---|
+| Long press | Hold POWER longer than 0.4 s | A power-button entry |
+| Auto-sleep | The timeout at 1 min, in RAM. No USB data host: one holds auto-sleep off | A timeout 58-75 s after arming |
+| Awake ceiling | On the cell. Timeout Never and the ceiling at 1 min, in RAM | A timeout 58-75 s after arming, not on USB power |
+| Input cap | On the cell. The input-only cap at 1 min, in RAM | As above |
+| No input after a wake | On the cell. Hold POWER to sleep, wake it, touch nothing | The next sleep a timeout 178-200 s after the wake |
+| Ghost wake | Hold POWER to sleep, then tap POWER briefly while it sleeps | Each tap awake 0.3 s at most, the screen unchanged (asked) |
+| Release wake | POWER taped down through the sleep entry, then released | The floor + about 30 µA within about 5 s, then one short wake at the release (asked) |
+
+The sleep screen leaves on the glass the path, the current targets and the pins to probe while asleep:
+
+- about 3.3 V: IO47, IO14, IO48, IO11, IO38, IO39, IO10;
+- 0 V: IO12, IO13, IO21, IO40, IO5-7, IO15-17;
+- IO42 below 0.385 V; `SD_VDD` (C36) below 0.5 V;
+- the un-held RTC pads IO1-4, IO8 and IO9: probe and note them, since their sleep state is undocumented (POWER.md §7);
+- IO41: unheld with an FT6336U, 0 V with a GT911.
+
+Wait at least 60 s after the sleep screen, then average at least 60 s. Wake with POWER and open P5. It shows:
+
+- the path that slept, and how the entry came: a timeout or POWER, the time from arming or the uptime, and USB power, a USB host and touch at the entry;
+- the reset reason, wake cause and ext1 mask;
+- the time asleep, from the RTC.
+
+Enter the average the meter showed (Left/Right 1 µA, Up/Down 10 µA) and Confirm. The ghost and release paths first ask what the meter showed. Back skips the result.
+
+PASS:
+
+- the entry came the path's way, as in the table;
+- the wake is `EXT1` on IO18;
+- the current is at most 95 µA without touch, or 150 µA with a tail. Typical is 58-73 and 113-130 µA; above 150 µA work through the A/B list in POWER.md §4;
+- within 3 µA of the other paths measured in the same set-up since the last reset ("about 2 µA", plus the meter's last digit; the readings are kept in RTC memory);
+- for the ghost and release paths, the operator saw what the table says.
+
+With no current entered, or "Not measured", the result is INFO. The loop and boot cutoffs, three forced panics and the SD-error screen's 60 s timeout are sleep paths too; they need the reader image or a bench supply (below).
+
+### P8 Reader-data integrity
+
+**Purpose:** the test firmware leaves the reader's data alone: it must never write `/.crosspoint`. It is not a bring-up step; it guards the card the reader shares.
+
+The first boot of the test firmware with a card writes `/.silkscreen-test/crosspoint.sha`. It holds the SHA-256 and size of every file directly in `/.crosspoint`, up to 32: settings, state, Wi-Fi, recent books, OPDS, KOReader and the Quick Resume frame. It also holds the names of the folders there, in directory order (one per book cache; their contents are not hashed).
+
+- Every later boot compares the card with it and records a P8 row (`when=boot`): PASS when nothing changed, FAIL with the files that did. The boot that takes the baseline records INFO.
+- The screen compares again when it opens, lists each file with its state, and Confirm records a check (`when=on_demand`).
+- After running the reader image in between, which changes these files itself, take a new baseline (Right; it asks first).
+
+PASS: every file the same, none missing or new, the same folder names, `/.crosspoint` there or not as before, and no I/O error. Run P8 before and after a session with sleeps, Wi-Fi and light changes. After flashing the reader back, check that it resumes into its book.
+
 ## Safety
 
 - **Front light.** The TPS923610 boost must never run without a load. A front-light test asks, every time it lights the boost from dark, which load is connected (the J3 panel light or a J6 strip, with "No load" preselected), and lights nothing without an answer. T9 does not light when `LED_MONIT` reads nothing in the dark, and switches the light off above 22 V. T10 lowers the trip level in RAM only, never raises it, and puts it back on every way out. Nothing else in the test firmware can light it.
@@ -324,12 +537,42 @@ J4 pin 2 current: a µA meter in place of R42 (3V3 to pin 2), or a 100 Ω resist
 - **Sleep and wake.** No new sleep or wake source; `scripts/check_sleep_wake_sources.sh` is unchanged and covers the test code. Timing across a sleep uses a power-button wake and a stopwatch.
 - **Card.** Besides `/.silkscreen-test/`, the only writes are the reader's own: `/crash_report.txt` after a panic, `/screenshots/` (POWER + Down), and the host during USB Drive.
 - **Display.** The display tests change only Sunlight Fading Fix, night mode (both through `SETTINGS`) and the panel SPI clock, all in RAM, and put them back at the end of every run and on exit. They never turn the radio on during a refresh (PWR-02).
+- **RTC.** T13 writes the RTC only through `Rtc::set()` (the time, then OSF cleared) and never the control register, so EOSC stays 0 (rtc-eosc-zero). Its 400 kHz bench puts the bus back at its own clock. T15 sets the RTC through `HalClock::syncFromNTP()`, as the reader does.
+- **Wi-Fi.** T15 and P3's overlap bring the radio up only on USB or with P+ at 3.4 V on the cell (bat-wifi-gate; P3's overlap only on USB), switch it off (`WIFI_MODE_NULL`) before they write or draw a result, and leaving any test switches it off. Wi-Fi credentials are read, never written.
+- **Card.** P3 writes only `/.silkscreen-test/sdcheck.tmp`, needs 3.6 V on the cell, and removes the file at the end, on Back and on exit; a file a crash leaves is removed at the next boot. P4's USB Drive gives the host the whole card, after a warning, and P8 shows what changed.
+- **Sleep paths.** P5 lowers the sleep timeout, the awake ceiling or the input cap to 1 min in RAM only, and puts them back when disarmed or left. It never sleeps by itself: the reader's loop does, through `enterDeepSleep()`.
 
-**Checks that need the reader image.** The pinned settings and the no-write rule take these paths out of the test firmware, so run them on the reader:
+## Checks that need the reader image
 
-- a click wake (Short Power Button = Sleep) and Quick Resume;
-- Restore Light on Wake, a ghost wake that must not light the LEDs, and a light trip that stays off across a sleep, a wake and a Wi-Fi screen's restart;
-- the SD-card error screen and its 60 s sleep.
+The pinned settings, the no-write rule and the tests left out (P6 forced panics, P7 the low-battery ramp) take these paths out of the test firmware. Run them on the reader image (`silkscreen`, or `silkscreen-gh_release` for current and wake timing), with the bench equipment named:
+
+- **Wake policy.** A click wake: Short Power Button = Sleep leaves `WAKE_POLICY_CLICK`, and the early wake decision then boots on a click. The test firmware pins Ignore, so every entry leaves the hold rule.
+- **Resume.** Quick Resume and the splash-less wake (`sleep_frame.bin`, `APP_STATE`); the test firmware neither reads the state nor writes the frame.
+- **Front light across sleep and restarts** (B8):
+  - Restore Light on Wake;
+  - a ghost wake (short tap) must not light the LEDs;
+  - a light trip stays off across a sleep, a wake and a Wi-Fi screen's silent restart (the saved preference);
+  - IO42 and IO40 at 0 V after sleeping with the light on, warm and cool (ZD-08);
+  - ADIM falls at least 3 ms before COLOR_SEL across a silent restart with the light on (a scope; the shutdown handler in `HalFrontlight::begin()`).
+
+  The test firmware switches the light off before every sleep and restart, so none of these happens there.
+- **No card.** The SD-card error screen and its 60 s sleep on battery (`storageErrorSleepS`, a MEAS-01 path), and "no card gives a clean SD card error with the bus parked" (B4). The test firmware opens its menu without a card.
+- **Battery cutoff** (B6, BAT-01), with a bench supply on J5:
+  - ramp it down: the reader sleeps at about 3.40 V, and at about 3.30 V as read with the web server running;
+  - 10 min after the cutoff, the resting P+ is at least 3.5 V;
+  - the chip's behaviour in LDO dropout: brown-out or a reset loop, and at what voltage (POWER.md §7);
+  - HW-08's cross-check: Charging or Complete with P+ at or below the cutoff and not rising for 5 min counts as on battery. T2 shows the flag, but only a supply at the cutoff with `USB_STAT` held in the charging window drives it.
+- **Web server and updates.** The 15-min ceiling with the web server idle, WebDAV polling not counting as traffic, and `IO8` with the web server running (the 100 mV allowance under its load; T15's idle station is lighter). OTA and the SD firmware update refusing below 3.6 V (the test firmware has neither), and the radio released at the OTA, Clock Sync and KOReader result screens, then the restart on exit.
+- **Reset loop** (WK-03): 3 forced panics in a row, with the panel refreshed fast before them. The device then sleeps at the floor, with the driver-free panel and touch sleep.
+
+Bench checks no test firmware screen can make, for a meter, a scope or esptool:
+
+- B1: from EN release, CS (IO14) HIGH before the first SCLK (IO13) edge, IO42/IO40 LOW, IO10 HIGH;
+- B3: `esptool chip_id` after a wake and after an SW11 reset (HW-01's flash back-feed symptom), and IO47 on a scope across a ghost wake (no LOW excursion);
+- B3, B10: ghost-wake timing on a current logger, with and without a card;
+- B4: `SD_VDD` at cold boot, below 0.5 V for at least 20 ms with the bus LOW before power-on (sd-coldboot-powercycle), and below 0.5 V in sleep;
+- B9: unplug the touch tail while asleep; the next cold boot finds it absent;
+- POWER.md §5: the awake idle current at 80 MHz (about 25-40 mA), and result screens idling at the Wi-Fi-off level.
 
 ## Writing a test
 
@@ -346,3 +589,7 @@ J4 pin 2 current: a µA meter in place of R42 (3V3 to pin 2), or a 100 Ω resist
 - A test that needs an SDK object behind the HAL uses `TestSuiteAccess` (`src/activities/testsuite/TestSuiteAccess.h`). The HAL class declares it a friend under `#if CROSSPOINT_TEST_SUITE`, so the reader gains no API. `HalDisplay` (the panel driver), `HalGPIO` (`InputManager`) and `HalFrontlight` (`FrontlightManager`) do so today.
 - A front-light test calls `confirmLightLoad()` and lights the boost only in `onLightLoadConfirmed(load)`, which says whether J3 or J6 was named. `tests/LightCheck.h` reads `LED_MONIT` and the SDK monitor's record, reads a pad's drive from the registers, and lowers and restores the trip level.
 - Scratch files go in `/.silkscreen-test/` and end in `.tmp`, never `.txt` (a book type).
+- The RTC: `tests/RtcAccess.h` gives HalClock's own driver (`Rtc::address()`/`type()` say which part `begin()` found), raw register reads, UTC epoch arithmetic, and `readAtTick()`, which times the RTC to its next seconds tick. A test that writes the RTC calls `rtc::noteWritten()`, so HalClock reads the chip again and T14 does not judge a span across the write. `TestSuiteAccess` reaches the driver behind `HalClock`, and HalStorage's mutex for the SD manager's bring-up record.
+- A test that needs the sleep entry this boot woke from reads `SleepRecord.h` (`wokeFromSleep()`); P5 arms a path with `armSleepPath()`. `ActivityManager::goToSleep()` and the sleep screen fill the record, never a test.
+- `tests/Supply.h` reads what powers the board (P+, USB power, a cell) for a gate or a judgement on the cell; `tests/Sha256.h` wraps mbedTLS's SHA-256.
+- A test holds auto-sleep off or skips the loop delay (`preventAutoSleep()`, `skipLoopDelay()`) only while a bounded run is on (P3, T15).

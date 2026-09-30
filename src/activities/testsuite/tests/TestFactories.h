@@ -41,6 +41,20 @@ std::unique_ptr<Activity> createTouchMappingTest(const TestInfo& info, GfxRender
                                                  MappedInputManager& mappedInput);  // T11
 std::unique_ptr<Activity> createTouchSleepTest(const TestInfo& info, GfxRenderer& renderer,
                                                MappedInputManager& mappedInput);  // T12
+std::unique_ptr<Activity> createRtcTest(const TestInfo& info, GfxRenderer& renderer,
+                                        MappedInputManager& mappedInput);  // T13
+std::unique_ptr<Activity> createRtcSleepTest(const TestInfo& info, GfxRenderer& renderer,
+                                             MappedInputManager& mappedInput);  // T14
+std::unique_ptr<Activity> createWifiTest(const TestInfo& info, GfxRenderer& renderer,
+                                         MappedInputManager& mappedInput);  // T15
+std::unique_ptr<Activity> createSdCardTest(const TestInfo& info, GfxRenderer& renderer,
+                                           MappedInputManager& mappedInput);  // P3
+std::unique_ptr<Activity> createUsbTest(const TestInfo& info, GfxRenderer& renderer,
+                                        MappedInputManager& mappedInput);  // P4
+std::unique_ptr<Activity> createSleepWakeTest(const TestInfo& info, GfxRenderer& renderer,
+                                              MappedInputManager& mappedInput);  // P5
+std::unique_ptr<Activity> createReaderDataTest(const TestInfo& info, GfxRenderer& renderer,
+                                               MappedInputManager& mappedInput);  // P8
 
 }  // namespace testsuite
 #endif

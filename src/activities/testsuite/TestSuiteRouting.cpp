@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "SleepRecord.h"
 #include "TestSleepActivity.h"
 #include "TestSuiteActivity.h"
 #include "activities/ActivityManager.h"
@@ -34,6 +35,8 @@ void ActivityManager::goToBrowser() { goHome(); }
 void ActivityManager::goToFileTransfer() { goHome(); }
 
 void ActivityManager::goToSleep(const bool fromTimeout) {
+  // Before the current screen closes: P5's armed path is still set.
+  testsuite::beginSleepEntry(fromTimeout);
   auto screen = makeUniqueNoThrow<TestSleepActivity>(renderer, mappedInput, fromTimeout);
   if (!screen) {
     LOG_ERR("TEST", "OOM: sleep screen");

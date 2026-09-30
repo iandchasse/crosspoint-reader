@@ -148,6 +148,23 @@ The first port was audited item by item against HARDWARE.md. What changed:
 
 Do these in order. Each step says what to measure.
 
+The hardware test firmware ([TEST-SUITE.md](TEST-SUITE.md), `[env:silkscreen-test]`) runs the firmware side of each step and logs every result to `/.silkscreen-test/results.csv`:
+
+| Step | Tests |
+|---|---|
+| B1 | P1 |
+| B2 | T4-T8 |
+| B3 | P1 (the wake), P5 |
+| B4 | P3, P4 (USB Drive) |
+| B5 | T3 |
+| B6 | T1, T2, P4, T15 (the radio's load) |
+| B7 | P2, T13, T14, T15 |
+| B8 | T9, T10 |
+| B9 | P2, T11, T12 |
+| B10 | P5, T12 (the touch current), T14 |
+
+What only the reader image or bench equipment can check is listed under [Checks that need the reader image](#checks-that-need-the-reader-image).
+
 1. **B0 - Power, no flash.** No panel, no card, `J3` unplugged, current-limited USB. 3V3 present; `IO42` ≈ 0 V; `IO10` HIGH, so `SD_VDD` ≈ 0 V. The USB-Serial-JTAG port enumerates.
 2. **B1 - Boot safety and console.** Flash. The log shows `Device: silkscreen` and about 8 MB PSRAM. Scope `IO14`/`IO13` from EN release: CS is HIGH before the first SCLK edge. `IO42`, `IO40` LOW; `IO10` HIGH. A power-button press is logged; pressed `IO18` ≈ 3.0 V.
 3. **B2 - Display.** Attach the GDEQ0426T82. FULL/HALF/FAST refreshes and the grayscale anti-aliasing pass are clean at 20 MHz SPI. Check orientation (text upright relative to the bottom keys) and measure the bezel for `viewableInsets`. Check night-mode ghosting. Then add Silkscreen to `xteinkClassPanel()` in `EpubReaderActivity.cpp` (same panel as X4).
@@ -169,6 +186,16 @@ Do these in order. Each step says what to measure.
     - Above ≈150 µA, work through the A/B list in POWER.md. It includes the J2-flex / R5 test for GPIO47/48 back-feed and the `espefuse` summary.
     - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (a test build). All should agree within about 2 µA.
     - On battery, also check that `D2` is dark and `USB_VBUS` ≈ 0 V.
+
+### Checks that need the reader image
+
+The test firmware pins its settings in RAM, never writes `/.crosspoint`, and has no forced-panic (P6) or battery-ramp (P7) test, so these checks run on the reader image. The full list, with the bench-only checks (scope, meter, esptool), is in [TEST-SUITE.md](TEST-SUITE.md#checks-that-need-the-reader-image).
+
+- B3: a click wake (Short Power Button = Sleep, the `WAKE_POLICY_CLICK` early decision) and Quick Resume / the splash-less wake (`sleep_frame.bin`).
+- B8: Restore Light on Wake; a ghost wake must not light the LEDs; a light trip stays off across a sleep, a wake and a Wi-Fi screen's restart; IO42/IO40 at 0 V after sleeping with the light on, warm and cool (ZD-08); ADIM falls at least 3 ms before COLOR_SEL across a silent restart with the light on.
+- B4, B10: the SD-card error screen with no card, the bus left parked, and its 60 s sleep on battery.
+- B6: the supply ramp on J5 (sleep at 3.40 V, 3.30 V with the web server; resting P+ at least 3.5 V after 10 min; behaviour in LDO dropout), HW-08's 5-min cross-check with `USB_STAT` held in the charging window, `IO8` under the web server's load, the 15-min ceiling on the web-server screen, and OTA / SD update refusing below 3.6 V.
+- B10: 3 forced panics in a row (WK-03) end at the sleep floor.
 
 ## Commit plan
 
@@ -220,7 +247,7 @@ Queued work, in this order.
 
    It covers the firmware side of the bring-up checklist (B1-B10) and uses the same SDK managers as the reader, so a failure there points at the board rather than the reader.
 
-   In progress as `[env:silkscreen-test]`: the menu, the result log, the safety rules and the first tests (system info, I2C scan, battery, charge status, keys, the display tests T4-T8 for B2, the front-light tests T9-T10 for B8 and the touch tests T11-T12 for B9) are in place; the rest land one group at a time. See [TEST-SUITE.md](TEST-SUITE.md).
+   Built as `[env:silkscreen-test]`, not yet run on a board: the menu, the result log, the safety rules and every test of the plan: system info, I2C scan, battery, charge status, USB, keys, the display tests T4-T8 (B2), the front light T9-T10 (B8), touch T11-T12 (B9), the RTC T13-T14 and Wi-Fi/NTP T15 (B7), the SD card P3 (B4), the sleep paths and current P5 (B3, B10) and the reader-data check P8. Forced panics (P6) and the low-battery ramp (P7) were left out; they run on the reader image with a bench supply. See [TEST-SUITE.md](TEST-SUITE.md) and the table at the head of the [bring-up checklist](#bring-up-checklist-real-board).
 3. **Research: Silkscreen modularity against the freeink-sdk ecosystem.** Which Silkscreen blocks the SDK's board-data model can describe as optional or swappable:
    - the J3 panel light or a J6 strip;
    - the J4 touch tail;

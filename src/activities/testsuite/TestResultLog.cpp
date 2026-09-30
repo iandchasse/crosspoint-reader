@@ -48,18 +48,6 @@ const char* boardId() {
   return id;
 }
 
-// Writes the timestamp into buf and returns its source.
-const char* formatTimestamp(char* buf, const size_t size) {
-  struct tm now{};
-  if (halClock.isAvailable() && halClock.hasValidTime() && halClock.localTime(now) &&
-      strftime(buf, size, "%Y-%m-%d %H:%M:%S", &now) > 0) {
-    return "rtc";
-  }
-  const unsigned long ms = millis();
-  snprintf(buf, size, "%lu.%03lu", ms / 1000UL, ms % 1000UL);
-  return "uptime";
-}
-
 // Builds the CSV row for a result in rowBuffer; returns its length.
 size_t formatRow(const TestInfo& test, const Verdict verdict, const char* details) {
   char timestamp[24];
@@ -101,6 +89,17 @@ bool findScratchFile(char* path, const size_t size) {
 }
 
 }  // namespace
+
+const char* formatTimestamp(char* buf, const size_t size) {
+  struct tm now{};
+  if (halClock.isAvailable() && halClock.hasValidTime() && halClock.localTime(now) &&
+      strftime(buf, size, "%Y-%m-%d %H:%M:%S", &now) > 0) {
+    return "rtc";
+  }
+  const unsigned long ms = millis();
+  snprintf(buf, size, "%lu.%03lu", ms / 1000UL, ms % 1000UL);
+  return "uptime";
+}
 
 const char* verdictName(const Verdict verdict) {
   switch (verdict) {

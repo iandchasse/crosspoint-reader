@@ -14,6 +14,7 @@
 #include "TestStrings.h"
 #include "components/UITheme.h"
 #include "tests/LightCheck.h"
+#include "tests/ReaderData.h"
 
 namespace fui = freeink::ui;
 namespace text = testsuite::text;
@@ -21,6 +22,7 @@ namespace text = testsuite::text;
 namespace {
 // The row opened last, so a new menu (the home gesture) keeps the place.
 int lastOpened = 0;
+bool readerDataChecked = false;
 }  // namespace
 
 void TestSuiteActivity::onEnter() {
@@ -28,6 +30,13 @@ void TestSuiteActivity::onEnter() {
   // Nothing outside a front-light test leaves the boost lit, or the trip level lowered (T10).
   if (Frontlight.isOn()) Frontlight.setOn(false);
   testsuite::light::restoreTripMv();
+  // P8, once per boot, when setup() is done (the time zone applied, so the
+  // row's timestamp is local like the others): the reader's files against the
+  // baseline, which the first boot with a card takes.
+  if (!readerDataChecked) {
+    readerDataChecked = true;
+    testsuite::readerdata::checkAtBoot();
+  }
   const int count = listCount();
   for (int i = 0; i < count; ++i) {
     const auto& test = testsuite::testAt(static_cast<size_t>(i));

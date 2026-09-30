@@ -29,6 +29,8 @@ size_t testCount();
 const TestInfo& testAt(size_t index);
 // Index of an entry of this catalog.
 size_t testIndex(const TestInfo& info);
+// The entry with this id, or nullptr.
+const TestInfo* findTest(const char* id);
 // The test's screen, or the "not implemented yet" placeholder.
 std::unique_ptr<Activity> createTest(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput);
 

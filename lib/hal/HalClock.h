@@ -7,6 +7,9 @@ class HalClock;
 extern HalClock halClock;  // Singleton
 
 class HalClock {
+#if CROSSPOINT_TEST_SUITE
+  friend struct TestSuiteAccess;  // the hardware test firmware (src/activities/testsuite/)
+#endif
   bool _available = false;
   mutable Rtc _sdkRtc;
   // The RTC keeps UTC; local time comes from newlib's localtime_r under the

@@ -37,5 +37,9 @@ bool lastVerdict(const TestInfo& test, Verdict& verdict);
 // Removes scratch files ("*.tmp") an interrupted test left in RESULTS_DIR.
 void removeStaleScratchFiles();
 
+// The results' timestamp: the RTC's local time when it holds a valid time
+// (returns "rtc"), otherwise seconds since boot ("uptime"). Loop task only.
+const char* formatTimestamp(char* buf, size_t size);
+
 }  // namespace testsuite
 #endif
