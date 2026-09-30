@@ -2,6 +2,7 @@
 
 // Base screen of every hardware test (CROSSPOINT_TEST_SUITE builds only).
 #if CROSSPOINT_TEST_SUITE
+#include <atomic>
 #include <cstdint>
 
 #include "TestResultLog.h"
@@ -26,6 +27,11 @@ class TestPage {
   void gap(int px = 8) { y += px; }
   // Rows in the small UI font from here on, for a screen with many readings.
   void setCompact(bool on) { compact = on; }
+  // The page's frame and where the next line goes, for graphics below the text.
+  int left() const { return x; }
+  int cursorY() const { return y; }
+  int pageWidth() const { return width; }
+  int bottomY() const { return bottom; }
 
  private:
   const GfxRenderer& renderer;
@@ -40,10 +46,10 @@ class TestPage {
 // recorded here, a body the test draws, and a touch footer whose four buttons
 // mirror the front keys (Back, Confirm, Left, Right), so every test runs from the
 // keys or from touch. Up/Down step values. Back (the key, the header's back
-// button or the footer's Exit) leaves the test; a test that reads the keys
-// itself sets keysAreTestInput(), and then a front key held for ACTION_HOLD_MS
-// does what its footer button does (Back: leave). Leaving switches the front
-// light and the radio off.
+// button or the footer's Exit) leaves the test unless onBack() uses it; a test
+// that reads the keys itself sets keysAreTestInput(), and then a front key held
+// for ACTION_HOLD_MS does what its footer button does (Back: leave). Leaving
+// switches the front light and the radio off.
 class TestScreen : public Activity, protected UiAppHost {
  public:
   void onEnter() override;
@@ -54,6 +60,14 @@ class TestScreen : public Activity, protected UiAppHost {
  protected:
   enum class Slot : uint8_t { Back, Confirm, Left, Right };
   static constexpr unsigned long ACTION_HOLD_MS = 1500;
+  // Bands along the screen edges that a test draws itself (T7's rulers): the
+  // header, the body and the footer stay inside them.
+  struct EdgeBands {
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+    int left = 0;
+  };
 
   TestScreen(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput);
 
@@ -69,6 +83,10 @@ class TestScreen : public Activity, protected UiAppHost {
   virtual void onLightLoadConfirmed() {}
   // The operator's answer to ask(): the answer's index, or -1 after Back.
   virtual void onAnswer(int /*question*/, int /*answer*/) {}
+  // Back (the key, the header's back button or Exit): true when the test used
+  // it (to end a run, or leave a sub-mode) and stays open.
+  virtual bool onBack() { return false; }
+  virtual EdgeBands edgeBands() const { return {}; }  // none by default
 
   // --- helpers ---------------------------------------------------------------
   // Logs the result (TestResultLog) and shows it at the top of the screen.
@@ -84,6 +102,9 @@ class TestScreen : public Activity, protected UiAppHost {
   bool ask(int question, const char* heading, const char* body, const char* const* answers, int count);
   // Milliseconds since the last key edge or touch contact on this screen.
   unsigned long msSinceInput() const;
+  // The next repaint of this screen is a HALF refresh, which clears what a
+  // display test left on the glass.
+  void requestCleanRepaint() { cleanRepaint = true; }
 
   const TestInfo& info;
 
@@ -103,7 +124,9 @@ class TestScreen : public Activity, protected UiAppHost {
   Verdict verdict = Verdict::Info;
   LogOutcome outcome = LogOutcome::SerialOnly;
   unsigned long lastInputAt = 0;
-  // Written by the screen function, read by render(); both on the render task.
+  std::atomic<bool> cleanRepaint{false};  // set by the loop task, consumed by render()
+  // Written by render() and the screen function, both on the render task.
+  EdgeBands bands;
   int headerBottom = 0;
   int footerTop = 0;
 };

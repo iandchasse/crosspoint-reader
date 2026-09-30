@@ -37,6 +37,8 @@ pio run -e silkscreen-test -t upload
 
 **Questions.** When a result needs something only the operator can see (T2 asks whether D2 is lit), a list of answers opens: Up/Down and Confirm, or tap an answer. Back, or a tap outside the list, records nothing.
 
+**Display runs.** T4, T5, T6 and T8 show full-screen frames. Confirm starts a run. Each refresh is one step, drawn and refreshed a loop pass after the one before, so Back stops a run between two refreshes. A frame that says "Any key or tap: continue" stays on the glass until you press a key or tap; Back stops there too. A tap in the top-left corner, where the header's back button sits, counts as Back. The touch buttons are not on the glass during a run and do nothing. The run ends with the test's screen repainted by a HALF refresh, which clears the last frame, and then a question about what you saw. A stopped run records nothing.
+
 **Results.** Each result is shown on the screen, logged to serial and appended to `/.silkscreen-test/results.csv`:
 
 - Serial: `[INF] [TEST] TEST,<id>,<verdict>,<details>`.
@@ -56,11 +58,11 @@ The ids are stable; `results.csv` and the serial log use them.
 | T2 | Charge status (`USB_STAT`) and USB presence | B6 | [Built](#t2-charge-status), not yet run on a board |
 | P4 | USB presence and USB Drive | B4, B6 | Not implemented yet |
 | T3 | Keys: eight ladder keys and the power button | B5 | [Built](#t3-keys), not yet run on a board |
-| T4 | Refresh modes | B2 | Not implemented yet |
-| T5 | Grayscale | B2 | Not implemented yet |
-| T6 | Inversion | B2 | Not implemented yet |
-| T7 | Orientation and bezel ruler | B2 | Not implemented yet |
-| T8 | 40 MHz panel SPI trial | B2 | Not implemented yet |
+| T4 | Refresh modes | B2 | [Built](#t4-refresh-modes), not yet run on a board |
+| T5 | Grayscale | B2 | [Built](#t5-grayscale), not yet run on a board |
+| T6 | Inversion | B2 | [Built](#t6-inversion), not yet run on a board |
+| T7 | Orientation and bezel ruler | B2 | [Built](#t7-orientation-and-bezel-ruler), not yet run on a board |
+| T8 | 40 MHz panel SPI trial | B2 | [Built](#t8-panel-spi-clock), not yet run on a board |
 | T9 | Front light | B8 | Not implemented yet |
 | T10 | Front-light over-voltage trip | B8 | Not implemented yet |
 | T11 | Touch probe, mapping and gestures | B9 | Not implemented yet |
@@ -124,6 +126,111 @@ The keys are this test's input. A front key held 1.5 s does what the button abov
 
 Holding POWER longer than 0.4 s sleeps the board (the reader's long press); a click does nothing else. POWER + DOWN takes a screenshot to `/screenshots/`, as in the reader.
 
+### Display tests (T4-T8)
+
+The display tests run the reader's own calls (`GfxRenderer`, `HalDisplay`) and read what the SDK driver did from its bring-up record (`EpdBus::diagnostics()`, freeink-sdk README "Bring-up diagnostics"). For every refresh they show and log:
+
+- the mode the driver actually ran. The SDK promotes a FAST to HALF on the first paint after boot or a wake, after a gray pass left without its cleanup, and on the first refresh after a polarity change, so a FAST request is not proof that a FAST ran;
+- the update-sequence byte (`0x22`). The Silkscreen profile uses the X4 defaults: FULL `0xF7`, HALF `0xD7` (after the `0x5A` temperature write), FAST `0xFC`, and `0xCC` for the gray waveform (`0xCF` with the Fading Fix power-down);
+- the BUSY time, from the activation to the end of the completion wait;
+- the host time, which is the rest of the call: SPI transfers, the RAM resync after the refresh, and the power-down.
+
+A refresh is in the **BUSY window** when the driver reported it, it did not time out, and it took at least 100 ms and less than 30 s. The floor is 100 ms, not the 20 ms of the first proposal, because the completion wait gives up after 20 ms when BUSY never rises. That happens with no panel (the BUSY pull-down reads idle) or with BUSY stuck LOW, so a 20 ms floor would pass a missing panel. The quickest real waveform, FAST, takes about 500 ms. 30 s is the SDK's timeout, reached when BUSY is stuck HIGH.
+
+The tests change only what the reader's settings change: `SETTINGS.fadingFix` (Sunlight Fading Fix, which the loop hands to the renderer) and `SETTINGS.screenInverted` (night mode, which the render task hands to the display before each render). T8 also changes the panel's SPI clock. All three live in RAM only. They go back to the pinned values at the end of every run and when the screen closes, and a sleep and wake restores the clock anyway. When a test frame is still on the glass as the screen closes, the next screen's first refresh is a HALF. No display test turns the radio on (PWR-02: no Wi-Fi TX during a refresh).
+
+### T4 Refresh modes
+
+Left/Right (or Up/Down) pick a refresh; Confirm runs it. A run alternates two frames. Each frame is cut into six bands: a 20 px checkerboard, a 1 px checkerboard, 1 px lines, UI text, solid black and white, and dithered grays. Frame B puts a different pattern in every band, so a ghost of the other frame shows up as a foreign texture.
+
+| Refresh | Run | Expect |
+|---|---|---|
+| FULL, HALF, FAST | 6 refreshes | FULL: no ghost. HALF: a faint ghost at most. FAST: ghosting builds up, every frame readable |
+| FAST, async | 6 refreshes through `displayBufferAsync()`, each waited out and its baseline rebuilt as the reader's overlay chrome does | as FAST |
+| FULL, HALF, FAST with turn-off | 6 refreshes with the Sunlight Fading Fix on | the same as without it |
+| Cadence | the reader's page turns at its refresh frequency N (the reader's setting: 5, 10, 15 or 30; 1 runs as 2): N-1 FAST, then a HALF | ghosting builds, then the HALF clears it; the frame before the HALF stays up for a look |
+
+The screen shows the last run per mode (count, sequence byte, BUSY min/mean/max, host time, promotions, refreshes outside the window, and for the variants the async returns and turn-off requests), the mean BUSY per mode over this boot's runs against the X4-class references, and whether FULL >= HALF > FAST holds.
+
+PASS:
+
+- every refresh is in the BUSY window, and none was promoted (the test starts from a clean panel state);
+- async: every call returned with BUSY still asserted, sooner than its BUSY time;
+- turn-off: the driver saw the power-down request on every refresh. `0xF7` and `0xD7` always power down; after a `0xFC` the driver runs the separate power-off;
+- once FULL, HALF and FAST have all been run this boot, their means keep FULL >= HALF > FAST;
+- the frames looked as the refresh expects.
+
+A mean more than 50 % from the X4-class reference (FULL about 1800 ms, HALF about 1720 ms, FAST about 500 ms) is flagged in the log (`x4_ref=outside:...`) and on the screen, but does not fail the test. Record the Silkscreen figures as its baseline.
+
+### T5 Grayscale
+
+Left/Right pick one of the reader's gray-pass routes; Confirm runs it. The chart has a four-level ramp (white, light gray, dark gray, black), narrow columns cycling through the four levels, and two lines in the reader's anti-aliased font. The same lines are drawn below in B/W only, for comparison. After the pass, a plain page gets a FAST refresh. Each stays up for a look.
+
+| Route | The reader's calls |
+|---|---|
+| Text page, planes buffered | FAST base through `displayBufferAsync()`; both planes rendered in 80-row bands into two 48,000 B buffers while the base refreshes; then `waitRefreshComplete()`, both planes streamed, `displayGrayBuffer()`, `cleanupGrayscaleWithFrameBuffer()` (`EpubReaderActivity` overlapped path) |
+| Text page, 80-row strips | the same base, waited out, then each band rendered into an 8,000 B scratch and streamed (the reader's fallback when the plane buffers do not fit) |
+| Text page, Fading Fix on | `displayGrayscaleBase(FAST)` with the Sunlight Fading Fix: no async base, a power-down after each refresh, then the strips |
+| Cleanup page, HALF base | `displayBuffer(HALF)` and `preconditionGrayscale()`, then the strips |
+| Image page, FAST base | a blocking `displayBuffer(FAST)`, then the strips |
+| Buffered (sleep, images) | `displayGrayscaleBase(HALF)`, `storeBwBuffer()`, both planes drawn whole and copied, `displayGrayBuffer()`, `restoreBwBuffer()` |
+
+The plane buffers and the scratch are allocated when the screen opens (`makeUniqueNoThrow`) and freed when it closes. The screen says whether they were allocated and whether they sit in PSRAM. Without them, the route that needs them records SKIP. The screen also shows the panel's gray capabilities, and for the last run: the base as asked and as run, the gray waveform, the time to render, wait and write the planes, the cleanup, the plain page's refresh, and the internal and PSRAM heap free before the pass and at its lowest.
+
+PASS:
+
+- the base refresh is in the BUSY window and ran as asked;
+- the two async routes' base returned while BUSY;
+- the Fading Fix route saw the power-down request on the base and on the gray waveform;
+- the gray waveform ran and is in the window. The pass is skipped only while inverted (T6); here a skip fails;
+- the plain page ran as FAST, not promoted to HALF. A promotion would mean the gray state was not cleaned up, and its HALF would hide leftover gray;
+- the operator saw four distinct levels, and no gray on the plain page.
+
+### T6 Inversion
+
+Confirm runs night mode through `SETTINGS.screenInverted`, the way the reader does. Setting the display directly would be undone by the render task on the next render.
+
+| Step | Night mode | Asked | Must run |
+|---|---|---|---|
+| 1 Normal frame | off | HALF | HALF |
+| 2 Inverted frame, first after the switch | on | FAST | HALF |
+| 3 Inverted frame | on | FAST | FAST |
+| 4 Inverted frame | on | HALF | HALF |
+| 5 Gray chart, the buffered route | on | HALF base | HALF; no gray waveform |
+| 6 Normal frame, first after the switch back | off | FAST | HALF |
+
+PASS: every step ran the mode in the table and is in the BUSY window. While inverted, no gray waveform ran, the B/W store worked, and the panel did not offer the tiled gray route, which is the reader's gate. The operator saw clean white-on-black frames on FAST and on HALF, a chart in crisp black and white, and no ghost after switching back.
+
+### T7 Orientation and bezel ruler
+
+The whole screen, header and touch buttons included, is drawn in the chosen orientation. An arrow points to the logical bottom. Rotate (or Up/Down) steps through the orientations, each with a HALF refresh, so the ruler reads cleanly. Judge asks about the current one and moves on to the next unjudged one. When all four are judged, the result is recorded.
+
+| Orientation | With the board upright, keys at the bottom, the arrow points |
+|---|---|
+| Portrait | down, at the front keys |
+| Landscape CW | right |
+| Portrait inverted | up, away from the keys |
+| Landscape CCW | left (the panel's native orientation) |
+
+PASS: in all four orientations the arrow points as in the table, and the text reads upright with the board turned so that the arrow points down.
+
+Each edge carries a staircase of 1 px steps, each one pixel deeper than the last (0-20 px), labelled every 5 px. The first step that shows whole is the bezel inset on that edge. The screen also shows the insets the profile gives for the current orientation. **Insets** switches to portrait, the frame `BoardConfig::ViewableInsets` uses:
+
+- Edge picks the next edge;
+- +1 px (it wraps), Up and Down change the value;
+- Record logs the four as INFO, with the profile's values, for the SDK profile (`viewableInsets` is still the X4 default, `{9, 3, 3, 3}`);
+- Back returns to the orientations.
+
+The renderer goes back to portrait when the screen closes.
+
+### T8 Panel SPI clock
+
+The SSD1677 is specified to 20 MHz for writes, which is the profile's clock. This test tries a faster one. Left/Right pick the profile clock, 26.7 MHz or 40 MHz. Confirm runs 20 B/W refreshes at that clock: four FAST, then a HALF, four times, with the T4 frames. It then runs the T5 chart through the strip route and a plain page. The last B/W frame, the chart and the plain page each stay up for a look.
+
+The clock is set in RAM only, through the SDK's `FreeInkDisplay::setSpiClockTrial()` (a `FREEINK_DIAGNOSTICS` control). It goes back to the profile's at the end of the run, when the screen closes, and at every wake, when the display restarts. The panel has no read-back on this board, so the frames are compared by eye with a run at the profile clock: run that first. The host time per refresh shows the clock at work. At 20 MHz, a blocking FAST moves 144,000 B (the frame, then both RAM planes resynced), about 58 ms of transfer, and at 40 MHz about half that. The screen keeps each clock's mean BUSY and host time for FAST and HALF over this boot, with its verdict.
+
+PASS: every refresh is in the BUSY window, none was promoted, the gray waveform ran and is in the window, the plain page ran as FAST, and every frame, the chart and the plain page looked as they do at the profile clock. Raise `displaySpiHz` in the profile only after clean runs at the higher clock on more than one board (REQUIREMENTS: the EPD SPI clock is an open question).
+
 ## Safety
 
 - **Front light.** The TPS923610 boost must never run without a load. A front-light test asks, every time, that the J3 panel light or a J6 strip is connected, and lights nothing until the operator confirms. Nothing else in the test firmware can light it.
@@ -131,6 +238,7 @@ Holding POWER longer than 0.4 s sleeps the board (the reader's long press); a cl
 - **Battery.** A screen that holds auto-sleep off also holds the CPU at full clock. Live readings on battery run for a bounded time or only on USB. The 15-minute ceiling, the 60-minute input cap and the low-battery cutoff are the reader's and still apply on battery.
 - **Sleep and wake.** No new sleep or wake source; `scripts/check_sleep_wake_sources.sh` is unchanged and covers the test code. Timing across a sleep uses a power-button wake and a stopwatch.
 - **Card.** Besides `/.silkscreen-test/`, the only writes are the reader's own: `/crash_report.txt` after a panic, `/screenshots/` (POWER + Down), and the host during USB Drive.
+- **Display.** The display tests change only Sunlight Fading Fix, night mode (both through `SETTINGS`) and the panel SPI clock, all in RAM, and put them back at the end of every run and on exit. They never turn the radio on during a refresh (PWR-02).
 
 **Checks that need the reader image.** The pinned settings and the no-write rule take these paths out of the test firmware, so run them on the reader:
 
@@ -147,5 +255,8 @@ Holding POWER longer than 0.4 s sleeps the board (the reader's long press); a cl
 - UI text is English `constexpr` strings in the test code, not `tr()` keys. This is a deliberate exception to AGENTS.md rule 5: `gen_i18n.py` collects `STR_` keys from every source file whatever its `#if`, so test-only keys would ship in every reader image. Shared screens (popups, Wi-Fi, keyboard) keep `tr()`, with the language pinned to English.
 - The env builds the SDK with `-DFREEINK_DIAGNOSTICS=1`, so the bring-up records in the freeink-sdk README ("Bring-up diagnostics") are available.
 - The main loop and the render task re-apply `SETTINGS.fadingFix` and `SETTINGS.screenInverted` on every pass: a display test changes those fields in RAM, never the renderer or the HAL directly.
+- A display test derives from `PanelRunTest` (`tests/PanelRun.h`). `startRun(steps)` starts a run. `runStep()` draws one frame and refreshes it on the render task. `afterStep()` stores the measurement, and calls `pauseRun()` to hold the frame. `onRunEnd()` asks and records after the closing HALF repaint. `restorePanel()` puts back anything the run changed on the panel. `refreshTimed()`, `refreshAsyncStart()`/`refreshAsyncFinish()` and `grayTimed()` return a `RefreshSample` with what the driver ran. `tests/PanelPatterns.h` has the frames, and `tests/GrayPass.h` has the reader's gray-pass routes.
+- `TestScreen` also offers `onBack()` (use Back for a sub-mode, or to stop a run), `edgeBands()` (edge bands the test draws itself, such as T7's rulers) and `requestCleanRepaint()` (the next repaint is a HALF).
+- A test that needs an SDK object behind the HAL uses `TestSuiteAccess` (`src/activities/testsuite/TestSuiteAccess.h`). The HAL class declares it a friend under `#if CROSSPOINT_TEST_SUITE`, so the reader gains no API. `HalDisplay` does so today.
 - A front-light test calls `confirmLightLoad()` and lights the boost only in `onLightLoadConfirmed()`.
 - Scratch files go in `/.silkscreen-test/` and end in `.tmp`, never `.txt` (a book type).

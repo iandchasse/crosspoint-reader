@@ -161,7 +161,9 @@ void TestScreen::slotTrampoline(const fui::ActionEvent& event, void* user) {
 
 void TestScreen::buildFooter(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(headerBottom), 0, 4, 0});
+  screen.setContentMarginFromScreen(fui::Insets{static_cast<int16_t>(headerBottom), static_cast<int16_t>(bands.right),
+                                                static_cast<int16_t>(4 + bands.bottom),
+                                                static_cast<int16_t>(bands.left)});
   // Physical order of the front keys (the settings pin their default roles).
   constexpr Slot ORDER[] = {Slot::Back, Slot::Confirm, Slot::Left, Slot::Right};
   fui::FooterAction actions[4];
@@ -183,16 +185,17 @@ void TestScreen::buildFooter(UiScreen& screen) {
 
 void TestScreen::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const int width = renderer.getScreenWidth();
+  bands = edgeBands();
+  const int width = renderer.getScreenWidth() - bands.left - bands.right;
   renderer.clearScreen();
   // A test that reads the keys leaves only by Exit or a Back hold, so no header back button.
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, width, metrics.headerHeight}, title, nullptr,
-                 /*backButton=*/!keysAreTestInput());
-  headerBottom = metrics.topPadding + metrics.headerHeight;
-  footerTop = renderer.getScreenHeight();
+  GUI.drawHeader(renderer, Rect{bands.left, bands.top + metrics.topPadding, width, metrics.headerHeight}, title,
+                 nullptr, /*backButton=*/!keysAreTestInput());
+  headerBottom = bands.top + metrics.topPadding + metrics.headerHeight;
+  footerTop = renderer.getScreenHeight() - bands.bottom;
   renderUi();
 
-  TestPage page(renderer, metrics.contentSidePadding, headerBottom + metrics.verticalSpacing,
+  TestPage page(renderer, bands.left + metrics.contentSidePadding, headerBottom + metrics.verticalSpacing,
                 width - 2 * metrics.contentSidePadding, footerTop - metrics.verticalSpacing);
   drawResult(page);
   if (keysAreTestInput()) {
@@ -200,7 +203,7 @@ void TestScreen::render(RenderLock&&) {
     page.gap();
   }
   drawBody(page);
-  renderer.displayBuffer();
+  renderer.displayBuffer(cleanRepaint.exchange(false) ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
 }
 
 void TestScreen::drawResult(TestPage& page) const {
@@ -278,6 +281,7 @@ void TestScreen::pressSlot(const Slot slot) {
 }
 
 void TestScreen::exitTest() {
+  if (onBack()) return;
   app.clearTapFlash();
   finish();
 }

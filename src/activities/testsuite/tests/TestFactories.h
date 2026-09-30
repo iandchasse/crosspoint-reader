@@ -23,6 +23,16 @@ std::unique_ptr<Activity> createChargeTest(const TestInfo& info, GfxRenderer& re
                                            MappedInputManager& mappedInput);  // T2
 std::unique_ptr<Activity> createKeysTest(const TestInfo& info, GfxRenderer& renderer,
                                          MappedInputManager& mappedInput);  // T3
+std::unique_ptr<Activity> createRefreshTest(const TestInfo& info, GfxRenderer& renderer,
+                                            MappedInputManager& mappedInput);  // T4
+std::unique_ptr<Activity> createGrayscaleTest(const TestInfo& info, GfxRenderer& renderer,
+                                              MappedInputManager& mappedInput);  // T5
+std::unique_ptr<Activity> createInversionTest(const TestInfo& info, GfxRenderer& renderer,
+                                              MappedInputManager& mappedInput);  // T6
+std::unique_ptr<Activity> createOrientationTest(const TestInfo& info, GfxRenderer& renderer,
+                                                MappedInputManager& mappedInput);  // T7
+std::unique_ptr<Activity> createSpiClockTest(const TestInfo& info, GfxRenderer& renderer,
+                                             MappedInputManager& mappedInput);  // T8
 
 }  // namespace testsuite
 #endif

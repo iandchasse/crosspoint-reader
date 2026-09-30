@@ -127,6 +127,9 @@ class HalDisplay {
   uint32_t getBufferSize() const;
 
  private:
+#if CROSSPOINT_TEST_SUITE
+  friend struct TestSuiteAccess;  // the hardware test firmware (src/activities/testsuite/)
+#endif
   EInkDisplay einkDisplay;
 };
 
