@@ -5,18 +5,21 @@
 // and 400 kHz, and a time set by hand (no Wi-Fi). The only writes are
 // Rtc::set()'s: the time registers, then OSF cleared (EN32KHZ with it). The
 // control register is never written here, so EOSC stays 0; the bus clock goes
-// back to its own after the bench.
+// back to its own after the bench. The register pattern the boot's identity
+// check (SensorsConfig::rtcIdentityCheck) needs is checked again on the dump.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalClock.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <ProbeChecks.h>
 #include <SharedI2c.h>
 
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 
+#include "BootProbes.h"
 #include "RtcAccess.h"
 #include "TestFactories.h"
 #include "TestNames.h"
@@ -253,6 +256,13 @@ class RtcTest final : public TestScreen {
 
   bool isDs3231() const { return dump.type == RtcType::Ds3231; }
 
+  // The DS3231 pattern the boot's identity check needs (ProbeChecks.h), on the
+  // dump: 0 = it matches.
+  uint16_t patternMismatch() const {
+    if (!dump.ok || !isDs3231() || dump.len != freeink::probe::DS3231_REGISTER_COUNT) return 0;
+    return freeink::probe::ds3231Mismatch(dump.raw);
+  }
+
   // The time in the registers, whatever the valid flag says.
   bool registerTime(Rtc::DateTime& utc) const {
     if (!dump.ok) return false;
@@ -298,6 +308,13 @@ class RtcTest final : public TestScreen {
     if (!ackPrimary && !ackFallback) addFailure(fails, sizeof(fails), "no_ack");
     if (!rtc::present()) addFailure(fails, sizeof(fails), "not_begun");
     if (!dump.ok) addFailure(fails, sizeof(fails), "read");
+    // With J6 empty only U13 answers at 0x68, so a refusal at boot or a dump off
+    // the pattern is the part, or the check, failing.
+    if (rtcRejectedAddress() != 0) addFailure(fails, sizeof(fails), "id_rejected");
+    const uint16_t mismatch = patternMismatch();
+    if (mismatch != 0) addFailure(fails, sizeof(fails), "pattern");
+    char rtcId[24];
+    formatRtcIdToken(rtcId, sizeof(rtcId));
     char bits[96] = "";
     if (dump.ok && isDs3231()) {
       const uint8_t control = dump.raw[DS_CONTROL];
@@ -331,11 +348,11 @@ class RtcTest final : public TestScreen {
     }
     const auto& s = BoardConfig::ACTIVE.sensors;
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "action=registers rtc=%s@0x%02x ack_0x%02x=%d ack_0x%02x=%d %s time=%s valid=%d reads=%d errors=%d "
-           "latency=%luus set_here=%d fails=%s",
+           "action=registers rtc=%s@0x%02x ack_0x%02x=%d ack_0x%02x=%d %s time=%s valid=%d rtc_id=%s pattern=0x%03x "
+           "reads=%d errors=%d latency=%luus set_here=%d fails=%s",
            rtcTypeName(dump.type), dump.addr, s.rtcAddr, ackPrimary ? 1 : 0, s.rtcFallbackAddr, ackFallback ? 1 : 0,
-           bits, when, validTime ? 1 : 0, reads, errors, dump.latencyUs, setDone ? 1 : 0,
-           fails[0] == '\0' ? "none" : fails);
+           bits, when, validTime ? 1 : 0, rtcId, static_cast<unsigned>(mismatch), reads, errors, dump.latencyUs,
+           setDone ? 1 : 0, fails[0] == '\0' ? "none" : fails);
   }
 
   // --- set by hand -----------------------------------------------------------
@@ -515,6 +532,17 @@ class RtcTest final : public TestScreen {
     }
     page.rowf("RTC", "%s at 0x%02x%s", isDs3231() ? "DS3231MZ (U13)" : "RV-8263 (U14)", dump.addr,
               rtc::present() ? "" : " (not begun at boot)");
+    char rtcId[24];
+    formatRtcIdToken(rtcId, sizeof(rtcId));
+    if (isDs3231()) {
+      const uint16_t mismatch = patternMismatch();
+      page.rowf("Identity at boot / pattern now", "%s / %s", rtcId,
+                !dump.ok        ? "n/a"
+                : mismatch == 0 ? "matches"
+                                : "OFF");
+    } else {
+      page.rowf("Identity at boot", "%s", rtcId);
+    }
     Rtc::DateTime utc{};
     if (registerTime(utc)) {
       page.rowf("Registers' time (UTC)", "%04u-%02u-%02u %02u:%02u:%02u", utc.year, utc.month, utc.day, utc.hour,

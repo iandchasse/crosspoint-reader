@@ -9,7 +9,8 @@
 // Three modes: Keys (every switch, its levels and press count, the power
 // button's clicks and presses caught by the loop's idle slices), Chords
 // (each two-key chord of §9.1, judged from the level the ladder held), and
-// Hands off (any key event is a phantom), each with the radio on or off.
+// Hands off (any key event is a phantom), each with the radio on or off. A
+// ladder the boot test found with no pull-up is off: its keys are not expected.
 #include <AdcLadderDecode.h>
 #include <Arduino.h>
 #include <BatteryMonitor.h>
@@ -25,6 +26,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "BootProbes.h"
 #include "CrossPointSettings.h"
 #include "Supply.h"
 #include "TestFactories.h"
@@ -456,6 +458,7 @@ class KeysTest final : public TestScreen {
             r.outcome >= 0 ? BUTTON_NAMES[r.outcome] : "no key", r.mv, r.steadyMs, r.pass ? "ok" : "wrong",
             reported[0] != '\0' ? reported : "none");
     ++chordIndex;
+    skipOffLadderChords();
     drawnAt = millis();
     requestUpdate();
   }
@@ -491,6 +494,20 @@ class KeysTest final : public TestScreen {
     contact = {};
     skipContact = true;
     releasedSince = 0;
+    skipOffLadderChords();
+  }
+
+  // A chord on a ladder the boot test switched off (no pull-up) cannot be made.
+  void skipOffLadderChords() {
+    while (chordIndex < CHORD_COUNT && ladderOff(CHORDS[chordIndex].ladder)) ++chordIndex;
+  }
+
+  static int chordsExpected() {
+    int expected = 0;
+    for (const Chord& c : CHORDS) {
+      if (!ladderOff(c.ladder)) ++expected;
+    }
+    return expected;
   }
 
   void resetWatch(const unsigned long now) {
@@ -554,6 +571,7 @@ class KeysTest final : public TestScreen {
     bool countsDiffer = false;
     int firstCount = -1;
     for (int l = 0; l < LADDERS; ++l) {
+      if (ladderOff(l)) continue;
       for (int w = 0; w < cfg.ladders[l].count && w < WINDOWS; ++w) {
         const KeyStats& k = stats[l][w];
         appendf(counts, sizeof(counts), "%s%s=%u", counts[0] == '\0' ? "" : ",", keyCode(l, w), k.presses);
@@ -580,11 +598,16 @@ class KeysTest final : public TestScreen {
     if (countsDiffer) fail("counts_differ");
     if (unattributed > 0) fail("unattributed");
     if (powerPressEdges != powerReleaseEdges) fail("power_edges");
+    if (powerIdleFault()) fail("power_idle");
+    char ladders[40];
+    char powerIdle[24];
+    formatLadderToken(ladders, sizeof(ladders));
+    formatPowerIdleToken(powerIdle, sizeof(powerIdle));
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "mode=keys radio=%d host=%d usbstat=%s counts=%s worst=%d(%s) marginal=%s missing=%s released=%d,%d "
-           "idle=%u lowclk=%u shortest=%lums noread=%u pwr_edges=%u/%u fails=%s",
-           radioOn ? 1 : 0, usbHost ? 1 : 0, chargeStateName(BatteryMonitor::chargeStatus()), counts,
-           worst == INT_MAX ? 0 : worst, worstCode, marginal[0] != '\0' ? marginal : "none",
+           "mode=keys radio=%d host=%d usbstat=%s ladders=%s pwr_idle=%s counts=%s worst=%d(%s) marginal=%s missing=%s "
+           "released=%d,%d idle=%u lowclk=%u shortest=%lums noread=%u pwr_edges=%u/%u fails=%s",
+           radioOn ? 1 : 0, usbHost ? 1 : 0, chargeStateName(BatteryMonitor::chargeStatus()), ladders, powerIdle,
+           counts, worst == INT_MAX ? 0 : worst, worstCode, marginal[0] != '\0' ? marginal : "none",
            missing[0] != '\0' ? missing : "none", releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0],
            releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1], idlePresses, idleLowClock,
            shortestIdleMs == ULONG_MAX ? 0UL : shortestIdleMs, unattributed, powerPressEdges, powerReleaseEdges,
@@ -603,12 +626,13 @@ class KeysTest final : public TestScreen {
       appendf(results, sizeof(results), "%s%s=%s@%d:%s", results[0] == '\0' ? "" : ",", CHORDS[i].code,
               r.outcome >= 0 ? BUTTON_NAMES[r.outcome] : "none", r.mv, r.pass ? "ok" : "wrong");
     }
-    const Verdict verdict = anyWrong ? Verdict::Fail : done == CHORD_COUNT ? Verdict::Pass : Verdict::Info;
-    record(verdict, "mode=chords radio=%d done=%d/%d results=%s fails=%s", radioOn ? 1 : 0, done, CHORD_COUNT,
+    const int expected = chordsExpected();
+    const Verdict verdict = anyWrong ? Verdict::Fail : done == expected ? Verdict::Pass : Verdict::Info;
+    record(verdict, "mode=chords radio=%d done=%d/%d results=%s fails=%s", radioOn ? 1 : 0, done, expected,
            results[0] != '\0' ? results : "none",
-           anyWrong              ? "wrong_decode"
-           : done == CHORD_COUNT ? "none"
-                                 : "incomplete");
+           anyWrong           ? "wrong_decode"
+           : done == expected ? "none"
+                              : "incomplete");
   }
 
   void recordWatch(const unsigned long now) {
@@ -637,11 +661,13 @@ class KeysTest final : public TestScreen {
     const Verdict verdict = fails[0] != '\0'             ? Verdict::Fail
                             : watched < HANDS_OFF_MIN_MS ? Verdict::Info
                                                          : Verdict::Pass;
+    char ladders[40];
+    formatLadderToken(ladders, sizeof(ladders));
     record(verdict,
-           "mode=hands_off radio=%d host=%d watch_s=%lu phantoms=%u keys=%s unclean=%u released_floor=%u "
+           "mode=hands_off radio=%d host=%d ladders=%s watch_s=%lu phantoms=%u keys=%s unclean=%u released_floor=%u "
            "released=%s fails=%s",
-           radioOn ? 1 : 0, usbHost ? 1 : 0, watched / 1000UL, phantoms, keys[0] != '\0' ? keys : "none", uncleanIdle,
-           cfg.releasedMinMv, released[0] != '\0' ? released : "none",
+           radioOn ? 1 : 0, usbHost ? 1 : 0, ladders, watched / 1000UL, phantoms, keys[0] != '\0' ? keys : "none",
+           uncleanIdle, cfg.releasedMinMv, released[0] != '\0' ? released : "none",
            fails[0] != '\0'             ? fails
            : watched < HANDS_OFF_MIN_MS ? "too_short"
                                         : "none");
@@ -663,7 +689,16 @@ class KeysTest final : public TestScreen {
     const auto& cfg = BoardConfig::ACTIVE.adcLadders;
     page.paragraph(KEYS_INTRO, 3);
     page.setCompact(true);
+    char ladders[40];
+    char powerIdle[24];
+    formatLadderToken(ladders, sizeof(ladders));
+    formatPowerIdleToken(powerIdle, sizeof(powerIdle));
+    page.rowf("Boot checks", "%s, power %s", ladders, powerIdle);
     for (int l = 0; l < LADDERS; ++l) {
+      if (ladderOff(l)) {
+        page.row(l == 0 ? "Bottom ladder" : "Side ladder", "off: no pull-up fitted (boot test)");
+        continue;
+      }
       for (int w = 0; w < cfg.ladders[l].count && w < WINDOWS; ++w) {
         const KeyStats& k = stats[l][w];
         if (k.presses == 0) {
@@ -698,7 +733,9 @@ class KeysTest final : public TestScreen {
       const ChordResult& r = chords[i];
       char label[32];
       snprintf(label, sizeof(label), "%s%s", i == chordIndex ? "> " : "", CHORDS[i].keys);
-      if (!r.done) {
+      if (ladderOff(CHORDS[i].ladder)) {
+        page.row(label, "ladder off");
+      } else if (!r.done) {
         page.rowf(label, "%s%s", i == chordIndex ? "now, expect " : "expect ", CHORDS[i].expect);
       } else {
         page.rowf(label, "%s at %d mV: %s", r.outcome >= 0 ? BUTTON_NAMES[r.outcome] : "none", r.mv,

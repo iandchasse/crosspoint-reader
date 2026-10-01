@@ -370,6 +370,72 @@ void enterDeepSleep(bool fromTimeout = false) {
 
 static void resolvePanelController();
 
+#if FREEINK_CAP_POWER_POLICY
+// PowerConfig::powerPinIdleCheck: what the power button's input read at this
+// boot, before anything can arm its wake. Between the logic levels (R36 and R72
+// both fitted, HARDWARE.md 9.2) the SDK has taken the pin out of service, so
+// every sleep from here on has no wake source.
+static void checkPowerButtonIdle() {
+  const auto check = freeink::PowerManager::checkPowerPinIdle();
+  switch (check.idle) {
+    case freeink::PowerManager::PowerPinIdle::Undefined:
+      LOG_ERR("PWR", "Power button IO%d idles at %u mV, between the logic levels (R36 and R72 both fitted?)", check.pin,
+              check.mv);
+      LOG_ERR("PWR", "Power button off for this session; sleep has no wake source, the reset button starts the board");
+      break;
+    case freeink::PowerManager::PowerPinIdle::High:
+      LOG_INF("PWR", "Power button IO%d held at boot (%u mV)", check.pin, check.mv);
+      break;
+    case freeink::PowerManager::PowerPinIdle::Low:
+      LOG_DBG("PWR", "Power button IO%d idles at %u mV", check.pin, check.mv);
+      break;
+    case freeink::PowerManager::PowerPinIdle::NotChecked:
+      break;
+  }
+}
+#endif
+
+#if FREEINK_CAP_POWER_POLICY && !CROSSPOINT_TEST_SUITE
+void setupDisplayAndFonts(bool seamless);
+
+// PowerConfig::powerPinIdleCheck: the power button cannot wake the board, so the
+// reader stops on a message saying why. While USB_STAT shows external power it
+// stays there, so the board can still be flashed; on the cell (or once USB is
+// unplugged) it sleeps. That sleep has no wake source, and the reset button
+// starts the board again. Does nothing unless the check found the fault; call
+// it before the display is set up.
+static void haltOnPowerButtonFault() {
+  if (!BoardConfig::powerPolicy().powerPinIdleCheck) return;
+  const auto check = freeink::PowerManager::powerPinCheck();
+  if (check.idle != freeink::PowerManager::PowerPinIdle::Undefined) return;
+  setupDisplayAndFonts(/*seamless=*/false);
+  {
+    RenderLock lock;
+    char message[224];
+    snprintf(message, sizeof(message), tr(STR_POWER_BUTTON_FAULT), static_cast<unsigned>(check.mv / 1000U),
+             static_cast<unsigned>(check.mv % 1000U / 100U));
+    renderer.clearScreen();
+    GUI.drawWrappedPopup(renderer, message, 6);
+  }
+  // USB_STAT decodes about 1.5 s after boot, or up to about 9.5 s when the cell
+  // is already charged; until then the supply is unknown.
+  constexpr unsigned long USB_DECODE_WAIT_MS = 12000;
+  const BatteryMonitor battery;
+  const unsigned long since = millis();
+  for (;;) {
+    BatteryMonitor::pollChargeStatus();
+    bool known = false;
+    const bool external = battery.isExternalPowerPresent(&known);
+    if (known ? !external : millis() - since >= USB_DECODE_WAIT_MS) break;
+    delay(100);
+  }
+  LOG_ERR("PWR", "Power button fault: sleeping with no wake source");
+  display.deepSleep();
+  Storage.prepareForDeepSleep();
+  powerManager.startDeepSleep(gpio);
+}
+#endif
+
 // PowerConfig::abnormalResetLimit (0 on boards without one): after that many
 // panics, watchdog resets, brown-outs or aborted sleep entries in a row, go back
 // to deep sleep at once, before SD, touch, the panel or the radio start and
@@ -553,6 +619,9 @@ void setup() {
     LOG_DBG("MAIN", "Woke on the power button's release; sleeping again");
     powerManager.startDeepSleepMinimal(gpio);
   }
+#if FREEINK_CAP_POWER_POLICY
+  if (BoardConfig::powerPolicy().powerPinIdleCheck) checkPowerButtonIdle();
+#endif
 
   HalSystem::begin();
   // checkPanic() clears the watchdog capture marker after a successful SD
@@ -628,6 +697,9 @@ void setup() {
       powerManager.startDeepSleep(gpio);
     }
 #if !CROSSPOINT_TEST_SUITE  // the test menu opens without a card and says so
+#if FREEINK_CAP_POWER_POLICY
+    haltOnPowerButtonFault();
+#endif
     setupDisplayAndFonts(isSilentReboot);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
     storageErrorScreen = true;
@@ -669,6 +741,9 @@ void setup() {
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
   ButtonNavigator::setMappedInputManager(mappedInputManager);
+#if FREEINK_CAP_POWER_POLICY && !CROSSPOINT_TEST_SUITE
+  haltOnPowerButtonFault();  // in the saved language, before the light or the panel start
+#endif
 
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:

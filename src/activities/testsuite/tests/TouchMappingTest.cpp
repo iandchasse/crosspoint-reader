@@ -7,7 +7,9 @@
 // to check them; the result goes to results.csv for the SDK profile. Up/Down
 // try the eight swap/flip combinations by hand. While targets or gestures are
 // on, every contact is the test's: the touch buttons do nothing and only the
-// keys drive the screen (the mapping may still be wrong).
+// keys drive the screen (the mapping may still be wrong). The probe's chip-id
+// check (TouchConfig::requireFocalTechId) and whether the build has the GT911
+// fallback (alternate jumpers) are shown and logged.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <GfxRenderer.h>
@@ -23,6 +25,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "BootProbes.h"
 #include "MappedInputManager.h"
 #include "TestFactories.h"
 #include "TestNames.h"
@@ -70,8 +73,9 @@ constexpr char GESTURE_HINT[] =
     "Tap, long-press, drag slowly, and swipe left, right, up and down. The touch buttons are off: Confirm records, "
     "Left clears, Back stops.";
 constexpr char NO_TOUCH[] =
-    "No touch controller answered the probe this boot (FT6336U at 0x38, then GT911). Record says whether a tail is "
-    "fitted: none is a pass (the board runs touchless), a fitted one a failure.";
+    "No touch controller answered the probe this boot (FT6336U at 0x38, and a GT911 only in an alternate-jumper "
+    "build). Record says whether a tail is fitted: none is a pass (the board runs touchless), a fitted one a "
+    "failure.";
 
 enum class Mode : uint8_t { Idle, Calibrate, Verify, Gestures };
 // Where the mapping in force came from, when it is not the profile's.
@@ -296,9 +300,13 @@ class TouchMappingTest final : public TestScreen {
   void onAnswer(const int question, const int answer) override {
     if (question != QUESTION_TAIL || answer < 0) return;
     const bool fitted = answer == 1;
-    record(fitted ? Verdict::Fail : Verdict::Pass, "touch=absent tail=%s probe_ran=%d cached=%d resets=%u fails=%s",
+    char touchId[24];
+    formatTouchIdToken(touchId, sizeof(touchId));
+    record(fitted ? Verdict::Fail : Verdict::Pass,
+           "touch=absent tail=%s probe_ran=%d cached=%d resets=%u touch_id=%s gt911_fallback=%d fails=%s",
            fitted ? "fitted" : "none", diag.probeRan ? 1 : 0, diag.probeCached ? 1 : 0,
-           static_cast<unsigned>(diag.resetPulses), fitted ? "tail_not_found" : "none");
+           static_cast<unsigned>(diag.resetPulses), touchId, gt911Fallback() ? 1 : 0,
+           fitted ? "tail_not_found" : "none");
   }
 
   void setMode(const Mode next) {
@@ -502,11 +510,33 @@ class TouchMappingTest final : public TestScreen {
     if (diag.probeRan && !diag.probeFound) addFailure(fails, sizeof(fails), "probe");
     record(fails[0] != '\0' ? Verdict::Fail : Verdict::Pass,
            "swap=%d flipx=%d flipy=%d rawx=%u-%u rawy=%u-%u mapping=%s maxerr=%dpx err=%s ctrl=%s@0x%02x id=%s "
-           "fails=%s",
+           "gt911_fallback=%d fails=%s",
            m.swapXY ? 1 : 0, m.flipX ? 1 : 0, m.flipY ? 1 : 0, m.rawMinX, m.rawMaxX, m.rawMinY, m.rawMaxY,
            mappingName(m), worst, errors, touchControllerName(BoardConfig::ACTIVE.touch.controller), diag.address,
-           idText(), fails[0] != '\0' ? fails : "none");
+           idText(), gt911Fallback() ? 1 : 0, fails[0] != '\0' ? fails : "none");
     setMode(Mode::Idle);
+  }
+
+  // The profile's GT911 fallback (SILKSCREEN_TOUCH_ALT_JUMPERS on Silkscreen).
+  static bool gt911Fallback() {
+    return BoardConfig::ACTIVE.touch.fallbackController == BoardConfig::TouchController::Gt911;
+  }
+
+  // The probe's chip-id check and the GT911 fallback.
+  void drawIdentityRows(TestPage& page) const {
+    if (!BoardConfig::touchIdentityCheck()) {
+      page.row("FocalTech chip-id check", "off");
+    } else if (diag.idRejected && diag.idRead) {
+      page.rowf("FocalTech chip-id check", "0x%02x at 0x%02x: not FocalTech, left alone", diag.id[0],
+                BoardConfig::ACTIVE.touch.i2cAddress);
+    } else if (diag.idRejected) {
+      page.row("FocalTech chip-id check", "refused before the sleep, left alone");
+    } else if (diag.idRead) {
+      page.rowf("FocalTech chip-id check", "0x%02x accepted", diag.id[0]);
+    } else {
+      page.row("FocalTech chip-id check", diag.active ? "n/a (no id read)" : "nothing answered");
+    }
+    page.row("GT911 fallback", gt911Fallback() ? "on (alternate jumpers)" : "off (default jumpers)");
   }
 
   // "chip/fw/panel" from the probe's 0xA3/0xA6/0xA8, or "n/a".
@@ -670,11 +700,12 @@ class TouchMappingTest final : public TestScreen {
 
   void drawBody(TestPage& page) const override {
     if (!active) {
-      page.paragraph(NO_TOUCH, 4);
+      page.paragraph(NO_TOUCH, 5);
       page.gap(4);
       page.setCompact(true);
       page.rowf("Probe ran / cached", "%s / %s", diag.probeRan ? "yes" : "no", diag.probeCached ? "yes" : "no");
       page.rowf("Reset pulses", "%u", static_cast<unsigned>(diag.resetPulses));
+      drawIdentityRows(page);
       return;
     }
     layoutTargets(page);
@@ -710,6 +741,7 @@ class TouchMappingTest final : public TestScreen {
       page.row("Chip / firmware / panel id", "n/a (FocalTech probe only)");
     }
     page.rowf("Reset pulses this boot", "%u", static_cast<unsigned>(diag.resetPulses));
+    drawIdentityRows(page);
     drawMappingRows(page);
     if (diag.rawValid) {
       page.rowf("Last contact, raw", "%u, %u (%u frames)", diag.rawX, diag.rawY, static_cast<unsigned>(diag.rawFrames));

@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "BootProbes.h"
 #include "PanelProbe.h"
 #include "TestFactories.h"
 #include "TestNames.h"
@@ -181,8 +182,18 @@ class SystemInfoTest final : public TestScreen {
     }
     char panelFails[24];
     if (panelProbeVerdict(panelFails, sizeof(panelFails)) == Verdict::Fail) fail("panel");
+    // The power button's input between the logic levels: no wake can be armed.
+    if (powerIdleFault()) fail("power_idle");
     char panel[40];
     formatPanelToken(panel, sizeof(panel));
+    char ladders[40];
+    char powerIdle[24];
+    char touchId[24];
+    char rtcId[24];
+    formatLadderToken(ladders, sizeof(ladders));
+    formatPowerIdleToken(powerIdle, sizeof(powerIdle));
+    formatTouchIdToken(touchId, sizeof(touchId));
+    formatRtcIdToken(rtcId, sizeof(rtcId));
     // Read here, on the loop task: the render task keeps off the RTC's bus.
     rtcValid = halClock.isAvailable() && halClock.hasValidTime();
 
@@ -192,14 +203,15 @@ class SystemInfoTest final : public TestScreen {
     record(
         failed[0] == '\0' ? Verdict::Pass : Verdict::Fail,
         "action=boot board=%s tag=%.*s flash=%luMB psram=%luKB reset=%s wake=%s ext1=%s abnormal=%u now=%u aborted=%d "
-        "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d panel=%s idle_clock=%s fails=%s",
+        "pin_power_sel=%d sd=%d rtc=%d rtc_valid=%d touch=%s@0x%02x light=%d panel=%s ladders=%s pwr_idle=%s "
+        "touch_id=%s rtc_id=%s idle_clock=%s fails=%s",
         BoardConfig::ACTIVE.name, static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(),
         static_cast<unsigned long>(snap.flashBytes >> 20), static_cast<unsigned long>(snap.psramBytes >> 10),
         resetReasonName(snap.reset), wakeCauseName(snap.wake), mask, snap.bootRecord.abnormalResets, snap.abnormalNow,
         snap.bootRecord.abortedSleep.aborted ? 1 : 0, snap.pinPowerSelection ? 1 : 0, Storage.ready() ? 1 : 0,
         halClock.isAvailable() ? 1 : 0, rtcValid ? 1 : 0,
         gpio.hasTouch() ? touchControllerName(touch.controller) : "none", snap.touchAddr, Frontlight.present() ? 1 : 0,
-        panel, idleClockName(), failed[0] == '\0' ? "none" : failed);
+        panel, ladders, powerIdle, touchId, rtcId, idleClockName(), failed[0] == '\0' ? "none" : failed);
   }
 
   const char* idleClockName() const {
@@ -274,6 +286,7 @@ class SystemInfoTest final : public TestScreen {
       snprintf(touchText, sizeof(touchText), "not found");
     }
     page.rowf("Touch / front light", "%s / %s", touchText, Frontlight.present() ? "in this build" : "not built");
+    drawBootProbes(page);
     page.rowf("USB_STAT / USB host", "%s / %s", chargeStateName(BatteryMonitor::chargeStatus()),
               hostAttached ? "attached" : "none");
     page.setCompact(false);

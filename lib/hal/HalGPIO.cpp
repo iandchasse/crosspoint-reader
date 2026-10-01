@@ -111,6 +111,28 @@ HalGPIO::DeviceType detectDeviceTypeWithFingerprint() {
   return HalGPIO::DeviceType::X4;
 }
 
+#if FREEINK_CAP_ADC_LADDERS
+// PowerConfig::ladderPresenceProbe: a key ladder built without its pull-up floats,
+// and InputManager has switched it off.
+void logLadderPresence() {
+  if (!BoardConfig::powerPolicy().ladderPresenceProbe) return;
+  const InputManager::LadderPresence p = InputManager::ladderPresence();
+  for (uint8_t i = 0; i < 2; ++i) {
+    if (p.pin[i] < 0) continue;
+    const bool absent = (p.absentMask & (1u << i)) != 0;
+    if (p.probed && absent) {
+      LOG_INF("HW", "Key ladder IO%d has no pull-up (%u mV pulled down, %u mV pulled up): its keys are off", p.pin[i],
+              p.pullDownMv[i], p.pullUpMv[i]);
+    } else if (p.probed) {
+      LOG_DBG("HW", "Key ladder IO%d fitted (%u mV pulled down, %u mV pulled up)", p.pin[i], p.pullDownMv[i],
+              p.pullUpMv[i]);
+    } else if (absent) {
+      LOG_DBG("HW", "Key ladder IO%d off: no pull-up, found before the sleep", p.pin[i]);
+    }
+  }
+}
+#endif
+
 }  // namespace
 
 void HalGPIO::begin(const bool deferTouch) {
@@ -137,6 +159,9 @@ void HalGPIO::begin(const bool deferTouch) {
   _deviceType = DeviceType::X4;
 #endif
   inputMgr.begin(/*startTouch=*/!deferTouch);
+#if FREEINK_CAP_ADC_LADDERS
+  logLadderPresence();
+#endif
 }
 
 void HalGPIO::startTouch() { inputMgr.startTouch(); }

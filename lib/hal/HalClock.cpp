@@ -11,6 +11,11 @@ HalClock halClock;  // Singleton instance
 void HalClock::begin() {
   _available = _sdkRtc.begin();
   LOG_INF("CLK", _available ? "SDK RTC found" : "RTC not found");
+  // SensorsConfig::rtcIdentityCheck (0 on boards without it).
+  if (_sdkRtc.rejectedAddress() != 0) {
+    LOG_ERR("CLK", "Device at 0x%02X is not the RTC (no DS3231 register pattern); nothing was written to it",
+            _sdkRtc.rejectedAddress());
+  }
   // Boards whose RTC has no backup supply lose the time routinely; say so, since
   // the clock stays hidden until NTP or a manual set restores it.
   if (_available && BoardConfig::ACTIVE.sensors.rtcResyncWhenInvalid && !hasValidTime()) {
