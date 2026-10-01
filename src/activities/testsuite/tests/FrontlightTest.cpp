@@ -20,6 +20,7 @@
 #include "LightCheck.h"
 #include "TestFactories.h"
 #include "TextBuffer.h"
+#include "activities/testsuite/BoardOptions.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 
@@ -421,7 +422,7 @@ class FrontlightTest final : public TestScreen {
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : answer == 0 ? Verdict::Pass : Verdict::Info;
     record(verdict,
            "load=%s probe=%s cool=%s warm=%s probe_trips=%u probe_peak=%u dark_pin=%u cool_pin=%s warm_pin=%s "
-           "max_led=%u after_off_pin=%u trips=%u skipped=%u seen=%s fails=%s",
+           "max_led=%u after_off_pin=%u trips=%u skipped=%u seen=%s j6=%s fails=%s",
            !loadKnown                   ? "none"
            : load == LightLoad::J3Panel ? "J3"
                                         : "J6",
@@ -430,7 +431,7 @@ class FrontlightTest final : public TestScreen {
            static_cast<unsigned>(probe.lastPeakLedMv), static_cast<unsigned>(dark.pinMv), cool, warmSteps,
            static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
            static_cast<unsigned>(monitor.skippedSamples), answer >= 0 ? SEEN_CODES[answer] : "not_lit",
-           fails[0] != '\0' ? fails : "none");
+           options::cutDown() ? "n/a" : "ok", fails[0] != '\0' ? fails : "none");
   }
 
   static const char* padText(const light::PadState& pad, const bool isAdim) {
@@ -449,6 +450,7 @@ class FrontlightTest final : public TestScreen {
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     page.row("Load", !loadKnown ? "not named yet" : load == LightLoad::J3Panel ? "J3 panel light" : "J6 LED strip");
+    if (options::cutDown()) page.row("J6 LED strip", "N/A: cut-down board (OPT)");
     page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off",
               lit ? (light::selectsWarm() ? "warm" : "cool") : (warm ? "warm" : "cool"),
               static_cast<unsigned>(STEPS[step]), static_cast<unsigned>(STEPS[step]) * 255U / 100U);

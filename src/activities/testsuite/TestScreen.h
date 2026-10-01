@@ -135,9 +135,9 @@ class TestScreen : public Activity, protected UiAppHost {
   // The record as logged, and as drawn: the failed checks (the "fails=" value)
   // on a line of their own, the rest of the details without them. Members of
   // the heap-allocated screen, not locals.
-  char details[320] = "";
+  char details[384] = "";
   char failedChecks[72] = "";
-  char shownDetails[320] = "";
+  char shownDetails[384] = "";
   bool hasResult = false;
   Verdict verdict = Verdict::Info;
   LogOutcome outcome = LogOutcome::SerialOnly;

@@ -25,6 +25,7 @@ inline constexpr char HOLD_BACK_TO_EXIT[] =
 
 inline constexpr char RESULT[] = "Result";
 inline constexpr char FAILED_CHECKS[] = "Failed:";
+inline constexpr char WARNINGS[] = "Warnings:";
 inline constexpr char SAVED[] = "Saved to /.silkscreen-test/results.csv and the serial log";
 inline constexpr char SERIAL_ONLY[] = "SD not mounted: in the serial log only";
 inline constexpr char WRITE_FAILED[] = "Could not write results.csv: in the serial log only";
@@ -33,6 +34,9 @@ inline constexpr char LIGHT_LOAD_TITLE[] = "LED load connected?";
 inline constexpr char LIGHT_LOAD_BODY[] =
     "This test drives the front-light boost. Pick the load that is connected. With no load the boost output rises "
     "to its over-voltage limit, so pick No load if none is.";
+inline constexpr char LIGHT_LOAD_BODY_CUT[] =
+    "This test drives the front-light boost. Pick the load that is connected. With no load the boost output rises "
+    "to its over-voltage limit, so pick No load if none is. Cut-down board: J6 is gone, so J3 only.";
 inline constexpr char LIGHT_LOAD_NONE[] = "No load: cancel";
 inline constexpr char LIGHT_LOAD_J3[] = "J3 panel light";
 inline constexpr char LIGHT_LOAD_J6[] = "J6 LED strip";
@@ -58,6 +62,14 @@ inline constexpr const char* SLEEP_PIN_LINES[] = {
     "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",    "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
     "IO48: 3.3 V (SSD1677), note it (UC8279)", "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",
     "Unheld, probe and note: IO1-4 IO8 IO9",   "IO41: unheld (FT6336U), 0 V (GT911)",
+};
+// The back-feed probes of BRING_UP section 4 (HW-01), left on the sleep screen
+// beside the pins; P5 shows them in full.
+inline constexpr char SLEEP_PROBES_HEADING[] = "Back-feed probes in sleep (HW-01)";
+inline constexpr const char* SLEEP_PROBE_LINES[] = {
+    "Across R5 (3V3-EPD_RST): < 20 mV, 0.1 V = 10 uA",
+    "Across R34 (33 ohm, BUSY): ~0 mV, 1 mV = 30 uA",
+    "J2 flex in vs out: a few uA apart (P5)",
 };
 }  // namespace testsuite::text
 #endif

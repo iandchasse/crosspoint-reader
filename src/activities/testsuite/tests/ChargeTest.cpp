@@ -1,14 +1,20 @@
 #if CROSSPOINT_TEST_SUITE
 // T2: charge-status ladder (USB_STAT) and USB presence (bring-up B6). The ladder
-// is sampled by the SDK alone (at most once per ChargeStatusLadder::minIntervalMs,
+// is sampled by the SDK (at most once per ChargeStatusLadder::minIntervalMs,
 // usbstat-slow-sampling): this screen reads its record
-// (BatteryMonitor::chargeLadderDiagnostics()) and never touches the pin.
+// (BatteryMonitor::chargeLadderDiagnostics()). The one exception is stage 5's
+// blink capture, a bounded 12 s run that reads the pin at 20 Hz through
+// freeink::adc (no mode or pull is set) to time the charger's no-battery blink.
 #include <Arduino.h>
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <ChargeLadderDecoder.h>
 #include <HalGPIO.h>
+#include <HalPowerManager.h>
+#include <I18n.h>
+#include <Logging.h>
 #include <Memory.h>
+#include <SharedAdc.h>
 
 #include <cstdio>
 #include <cstring>
@@ -29,16 +35,47 @@ constexpr unsigned long REDRAW_MS = 5000;
 constexpr int QUESTION_D2 = 1;
 constexpr uint8_t HISTORY = 4;
 
+// Stage 1 (HW-08, BRING_UP §4): on the cell the ladder sits at 2.20 V. A sample
+// outside 2100-2300 mV hints at a partial clamp by the unpowered charger (WARN);
+// one in the charging band means its status pins clamp the node, so firmware
+// cannot tell the cell from USB (FAIL). Judged over the last RECENT samples
+// since the stage was picked or the published state last changed, so the
+// set-up's own transition is not counted.
+constexpr uint16_t ON_BATTERY_NOMINAL_MIN_MV = 2100;
+constexpr uint16_t ON_BATTERY_NOMINAL_MAX_MV = 2300;
+constexpr uint16_t CLAMP_MIN_MV = 700;
+constexpr uint16_t CLAMP_MAX_MV = 1350;
+constexpr uint8_t RECENT = 10;
+
+// Stage 5's capture: 20 Hz for 12 s, so the datasheet's slowest blink (4 s)
+// still shows two whole periods. The node settles in about 13 ms between the
+// blink's two levels (1 M || 510 k || 200 k with C23), so 50 ms resolves them.
+constexpr unsigned long CAPTURE_PERIOD_MS = 50;
+constexpr unsigned long CAPTURE_MS = 12000;
+constexpr int CAPTURE_SAMPLES = static_cast<int>(CAPTURE_MS / CAPTURE_PERIOD_MS) + 8;
+constexpr uint8_t CAPTURE_OVERSAMPLE = 4;
+constexpr int MAX_EDGES = 48;
+
+constexpr char HW08_NOTE[] =
+    "HW-08: USB_STAT reads in the charging band on the cell. The unpowered TP4056 clamps CHRG/STDBY (CE back-feed), "
+    "so firmware cannot tell the cell from USB. BRING_UP section 4.";
+constexpr char PARTIAL_NOTE[] =
+    "USB_STAT outside 2100-2300 mV on the cell: a partial clamp by the unpowered charger? Check USB_VBUS and D2.";
+
 // One bench state to set up and check. D2 lights whenever USB power is present,
 // whatever the charger does (HARDWARE.md §3).
 struct Stage {
   const char* title;
   const char* setup;
   State expect;
+  State alt;             // also accepted (Unknown: none)
   bool usbConnected;     // HalGPIO::isUsbConnected()
   bool d2Lit;            // the operator's answer
-  uint16_t maxSettleMs;  // first sample in the new window -> published state
+  uint16_t maxSettleMs;  // first sample in the new window -> published state (expect)
+  uint16_t altSettleMs;  // the same for alt
   bool neverComplete;    // Complete must not be reported during the stage
+  bool clampCheck;       // stage 1's HW-08 levels
+  bool capture;          // Record first captures USB_STAT at 20 Hz
 };
 
 // Settle limits from the ladder's rules (BoardConfig ChargeStatusLadder): a
@@ -46,19 +83,21 @@ struct Stage {
 // samples; the no-battery blink needs 3 in-window samples that swing 70 mV,
 // then the debounce.
 constexpr Stage STAGES[] = {
-    {"1 Battery only", "Unplug USB. On a meter USB_VBUS reads about 0 V (HW-08).", State::OnBattery, false, false, 3000,
-     false},
-    {"2 Charging", "Plug a USB charger with a partly discharged cell (about 1.11 V).", State::Charging, true, true,
-     3000, false},
-    {"3 Weak USB (optional)", "A weak USB source or a long thin cable (about 0.95 V).", State::Charging, true, true,
-     3000, false},
+    {"1 Battery only",
+     "Unplug USB. On a meter USB_VBUS reads about 0 V and D2 is dark (HW-08). Wait 10 s, then Record.",
+     State::OnBattery, State::Unknown, false, false, 3000, 0, false, true, false},
+    {"2 Charging", "Plug a USB charger with a partly discharged cell (about 1.11 V).", State::Charging, State::Unknown,
+     true, true, 3000, 0, false, false, false},
+    {"3 Weak USB (optional)", "A weak USB source or a long thin cable (about 0.95 V).", State::Charging, State::Unknown,
+     true, true, 3000, 0, false, false, false},
     {"4 Complete (optional, long)", "A nearly full cell on USB until the charger stops (about 0.55 V).",
-     State::Complete, true, true, 10000, false},
+     State::Complete, State::Unknown, true, true, 10000, 0, false, false, false},
     {"5 Cell pulled on USB (optional)",
-     "Protected cell and insulated tools only: pull the cell with USB in. 0.55/0.41 V blink.", State::NoBattery, true,
-     true, 8000, true},
-    {"6 USB, no cell", "Cold boot from USB with no cell fitted (about 3.3 V).", State::ExternalIdle, true, true, 3000,
-     false},
+     "Protected cell and insulated tools only: pull the cell with USB in. The 0.55/0.41 V blink, or a steady 3.3 V "
+     "(charger switched off, also safe). Record times USB_STAT at 20 Hz for 12 s.",
+     State::NoBattery, State::ExternalIdle, true, true, 8000, 3000, true, false, true},
+    {"6 USB, no cell", "Cold boot from USB with no cell fitted (about 3.3 V).", State::ExternalIdle, State::Unknown,
+     true, true, 3000, 0, false, false, false},
 };
 constexpr int STAGE_COUNT = static_cast<int>(sizeof(STAGES) / sizeof(STAGES[0]));
 
@@ -89,6 +128,28 @@ bool windowFor(State state, uint16_t& lo, uint16_t& hi) {
   return false;
 }
 
+bool accepts(const Stage& s, const State state) {
+  return state == s.expect || (s.alt != State::Unknown && state == s.alt);
+}
+
+// What the capture saw: the blink's period and duty, or a steady level.
+struct Blink {
+  bool done = false;
+  bool blinking = false;  // a swing of at least the ladder's blinkDeltaMv
+  uint16_t samples = 0;
+  uint16_t loMv = 0;
+  uint16_t hiMv = 0;
+  uint16_t meanMv = 0;
+  uint8_t edges = 0;
+  uint16_t periodMs = 0;  // mean of the whole periods; 0 when none was whole
+  uint16_t periodMinMs = 0;
+  uint16_t periodMaxMs = 0;
+  bool dutyKnown = false;
+  uint8_t lowDutyPct = 0;  // time at the low level (CHRG and STDBY both on) per period
+  uint16_t highLevelMv = 0;
+  uint16_t lowLevelMv = 0;
+};
+
 class ChargeTest final : public TestScreen {
  public:
   ChargeTest(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -104,6 +165,14 @@ class ChargeTest final : public TestScreen {
     uint16_t settleMs;
   };
 
+  struct CaptureSample {
+    uint16_t atMs;  // from the start of the capture
+    uint16_t mv;
+  };
+
+  // The capture runs the loop at its full pace for a bounded 12 s.
+  bool preventAutoSleep() override { return capturing; }
+
   void onStart() override {
     openedAt = millis();
     drawnAt = openedAt;
@@ -113,6 +182,7 @@ class ChargeTest final : public TestScreen {
     runWindow = Decoder::classify(ladderParams(), static_cast<int32_t>(diag.lastMv));
     runStartMs = diag.lastSampleMs;
     usbConnected = gpio.isUsbConnected();
+    noCellNotice = powerManager.noChargeableCell();
     startStage();
   }
 
@@ -123,6 +193,7 @@ class ChargeTest final : public TestScreen {
     if (diag.samples != seenSamples) {
       seenSamples = diag.samples;
       dirty = true;
+      noteSample(static_cast<uint16_t>(diag.lastMv));
       // The run of samples in one window starts at its first sample.
       const State window = Decoder::classify(ladderParams(), static_cast<int32_t>(diag.lastMv));
       if (window != runWindow) {
@@ -139,11 +210,56 @@ class ChargeTest final : public TestScreen {
       changed = true;
     }
     usbConnected = gpio.isUsbConnected();
+    const bool noCell = powerManager.noChargeableCell();
+    if (noCell != noCellNotice) {
+      noCellNotice = noCell;
+      changed = true;
+    }
+    if (capturing) {
+      captureTick(now);
+      return;  // no repaint mid-capture
+    }
     if (changed || (dirty && now - drawnAt >= REDRAW_MS)) {
       dirty = false;
       drawnAt = now;
       requestUpdate();
     }
+  }
+
+  // Stage 1's recent samples, since the stage was picked or the state last changed.
+  void noteSample(const uint16_t mv) {
+    recent[recentHead] = mv;
+    recentHead = static_cast<uint8_t>((recentHead + 1) % RECENT);
+    if (recentCount < RECENT) ++recentCount;
+  }
+
+  void clearRecent() {
+    recentHead = 0;
+    recentCount = 0;
+  }
+
+  struct RecentLevels {
+    uint16_t lo = 0;
+    uint16_t hi = 0;
+    uint8_t clamped = 0;     // in the charging band
+    uint8_t offNominal = 0;  // outside 2100-2300 mV
+  };
+
+  RecentLevels recentLevels() const {
+    RecentLevels r;
+    r.lo = UINT16_MAX;
+    for (uint8_t i = 0; i < recentCount; ++i) {
+      const uint16_t mv = recent[i];
+      if (mv < r.lo) r.lo = mv;
+      if (mv > r.hi) r.hi = mv;
+      if (mv >= CLAMP_MIN_MV && mv <= CLAMP_MAX_MV) {
+        ++r.clamped;
+      } else if (mv < ON_BATTERY_NOMINAL_MIN_MV || mv > ON_BATTERY_NOMINAL_MAX_MV) {
+        ++r.offNominal;
+      }
+    }
+    if (recentCount == 0) r.lo = 0;
+    return r;
   }
 
   void noteChange(const unsigned long now) {
@@ -161,7 +277,8 @@ class ChargeTest final : public TestScreen {
     c.settleMs = c.settleKnown ? static_cast<uint16_t>(diag.lastSampleMs - runStartMs) : 0;
     published = diag.published;
     stageSeen |= stateBit(published);
-    if (published == STAGES[stage].expect) {
+    clearRecent();
+    if (accepts(STAGES[stage], published)) {
       stageReached = true;
       stageSettle = c;
     }
@@ -175,9 +292,12 @@ class ChargeTest final : public TestScreen {
     stageSeen = static_cast<uint8_t>(stateBit(published) & ~notOwn);
     stageReached = false;
     stageStartMs = millis();
+    clearRecent();
+    blink = Blink{};
   }
 
   const char* slotLabel(const Slot slot) const override {
+    if (capturing) return nullptr;
     switch (slot) {
       case Slot::Confirm:
         return "Record";
@@ -191,8 +311,13 @@ class ChargeTest final : public TestScreen {
   }
 
   void onSlot(const Slot slot) override {
+    if (capturing) return;
     if (slot == Slot::Confirm) {
-      ask(QUESTION_D2, D2_HEADING, D2_BODY, D2_ANSWERS, 2);
+      if (STAGES[stage].capture) {
+        startCapture();
+      } else {
+        ask(QUESTION_D2, D2_HEADING, D2_BODY, D2_ANSWERS, 2);
+      }
       return;
     }
     const int step = slot == Slot::Left ? -1 : +1;
@@ -202,6 +327,166 @@ class ChargeTest final : public TestScreen {
     requestUpdate();
   }
 
+  // Back stops a capture: nothing is recorded.
+  bool onBack() override {
+    if (!capturing) return false;
+    capturing = false;
+    LOG_INF("TEST", "T2: USB_STAT capture stopped after %d samples", captureCount);
+    requestUpdate();
+    return true;
+  }
+
+  // --- stage 5's capture -------------------------------------------------------
+
+  void startCapture() {
+    capturing = true;
+    captureCount = 0;
+    captureStartMs = millis();
+    captureLastMs = 0;
+    blink = Blink{};
+    LOG_INF("TEST", "T2: capturing USB_STAT at %lu Hz for %lu s", 1000UL / CAPTURE_PERIOD_MS, CAPTURE_MS / 1000UL);
+    requestUpdate();
+  }
+
+  void captureTick(const unsigned long now) {
+    if (captureCount > 0 && now - captureLastMs < CAPTURE_PERIOD_MS) return;
+    const int8_t pin = BoardConfig::ACTIVE.chargeLadder.pin;
+    if (pin >= 0 && captureCount < CAPTURE_SAMPLES) {
+      uint32_t sum = 0;
+      {
+        const freeink::adc::Lock lock;
+        for (uint8_t i = 0; i < CAPTURE_OVERSAMPLE; ++i) sum += analogReadMilliVolts(static_cast<uint8_t>(pin));
+      }
+      captureLastMs = now;
+      capture[captureCount++] = {static_cast<uint16_t>(now - captureStartMs),
+                                 static_cast<uint16_t>(sum / CAPTURE_OVERSAMPLE)};
+    }
+    if (pin < 0 || now - captureStartMs >= CAPTURE_MS || captureCount >= CAPTURE_SAMPLES) finishCapture();
+  }
+
+  void finishCapture() {
+    capturing = false;
+    analyseCapture();
+    LOG_INF("TEST", "T2: capture %u samples, %u-%u mV, %s, %u edges, period %u ms, low %u %%", blink.samples,
+            blink.loMv, blink.hiMv, blink.blinking ? "blink" : "steady", blink.edges, blink.periodMs, blink.lowDutyPct);
+    drawnAt = millis();
+    requestUpdate();
+    ask(QUESTION_D2, D2_HEADING, D2_BODY, D2_ANSWERS, 2);
+  }
+
+  // Edges cross the midpoint of the levels seen, with a quarter of the swing as
+  // hysteresis; edges alternate, so edge j and j-2 bound one whole period.
+  void analyseCapture() {
+    Blink b;
+    b.done = true;
+    b.samples = static_cast<uint16_t>(captureCount);
+    if (captureCount == 0) {
+      blink = b;
+      return;
+    }
+    uint32_t sum = 0;
+    b.loMv = UINT16_MAX;
+    for (int i = 0; i < captureCount; ++i) {
+      const uint16_t mv = capture[i].mv;
+      if (mv < b.loMv) b.loMv = mv;
+      if (mv > b.hiMv) b.hiMv = mv;
+      sum += mv;
+    }
+    b.meanMv = static_cast<uint16_t>(sum / static_cast<uint32_t>(captureCount));
+    b.blinking = b.hiMv - b.loMv >= BoardConfig::ACTIVE.chargeLadder.blinkDeltaMv;
+    if (!b.blinking) {
+      blink = b;
+      return;
+    }
+    const int mid = (b.loMv + b.hiMv) / 2;
+    const int hysteresis = (b.hiMv - b.loMv) / 4;
+    uint16_t edgeAt[MAX_EDGES];
+    bool edgeRise[MAX_EDGES];
+    int edges = 0;
+    bool high = capture[0].mv >= mid;
+    uint32_t highSum = 0;
+    uint32_t lowSum = 0;
+    uint16_t highN = 0;
+    uint16_t lowN = 0;
+    for (int i = 0; i < captureCount; ++i) {
+      const int mv = capture[i].mv;
+      if (mv >= mid + hysteresis) {
+        highSum += static_cast<uint32_t>(mv);
+        ++highN;
+      } else if (mv <= mid - hysteresis) {
+        lowSum += static_cast<uint32_t>(mv);
+        ++lowN;
+      }
+      const bool crossed = high ? mv < mid - hysteresis : mv > mid + hysteresis;
+      if (!crossed) continue;
+      high = !high;
+      if (edges < MAX_EDGES) {
+        edgeAt[edges] = capture[i].atMs;
+        edgeRise[edges] = high;
+        ++edges;
+      }
+    }
+    b.edges = static_cast<uint8_t>(edges);
+    if (highN > 0) b.highLevelMv = static_cast<uint16_t>(highSum / highN);
+    if (lowN > 0) b.lowLevelMv = static_cast<uint16_t>(lowSum / lowN);
+    uint32_t periodSum = 0;
+    int periods = 0;
+    for (int j = 2; j < edges; ++j) {
+      const uint16_t period = static_cast<uint16_t>(edgeAt[j] - edgeAt[j - 2]);
+      if (periods == 0 || period < b.periodMinMs) b.periodMinMs = period;
+      if (period > b.periodMaxMs) b.periodMaxMs = period;
+      periodSum += period;
+      ++periods;
+    }
+    if (periods > 0) b.periodMs = static_cast<uint16_t>(periodSum / static_cast<uint32_t>(periods));
+    // Low time over the whole periods from the first falling edge to the last.
+    int firstFall = -1;
+    int lastFall = -1;
+    for (int j = 0; j < edges; ++j) {
+      if (edgeRise[j]) continue;
+      if (firstFall < 0) firstFall = j;
+      lastFall = j;
+    }
+    if (firstFall >= 0 && lastFall > firstFall) {
+      uint32_t lowMs = 0;
+      for (int j = firstFall; j < lastFall; j += 2) lowMs += static_cast<uint32_t>(edgeAt[j + 1] - edgeAt[j]);
+      const uint32_t spanMs = static_cast<uint32_t>(edgeAt[lastFall] - edgeAt[firstFall]);
+      if (spanMs > 0) {
+        b.dutyKnown = true;
+        b.lowDutyPct = static_cast<uint8_t>((lowMs * 100U + spanMs / 2U) / spanMs);
+      }
+    }
+    blink = b;
+  }
+
+  // "cap=blink edges=8 period_ms=2000(1950-2050) low_duty=50 levels=550/410",
+  // "cap=steady cap_mv=3290-3302", or "cap=none".
+  void formatCapture(char* out, const size_t size) const {
+    out[0] = '\0';
+    if (!blink.done || blink.samples == 0) {
+      snprintf(out, size, "cap=none");
+      return;
+    }
+    if (!blink.blinking) {
+      snprintf(out, size, "cap=steady cap_mv=%u-%u", blink.loMv, blink.hiMv);
+      return;
+    }
+    snprintf(out, size, "cap=blink edges=%u", blink.edges);
+    if (blink.periodMs != 0) {
+      appendf(out, size, " period_ms=%u(%u-%u)", blink.periodMs, blink.periodMinMs, blink.periodMaxMs);
+    } else {
+      appendf(out, size, " period_ms=n/a");
+    }
+    if (blink.dutyKnown) {
+      appendf(out, size, " low_duty=%u", blink.lowDutyPct);
+    } else {
+      appendf(out, size, " low_duty=n/a");
+    }
+    appendf(out, size, " levels=%u/%u", blink.highLevelMv, blink.lowLevelMv);
+  }
+
+  // --- the record --------------------------------------------------------------
+
   void onAnswer(const int question, const int answer) override {
     if (question != QUESTION_D2 || answer < 0) return;
     // The ladder kept going while the question was open: judge it as it is now.
@@ -209,41 +494,102 @@ class ChargeTest final : public TestScreen {
     const Stage& s = STAGES[stage];
     const bool d2Lit = answer == 1;
     char fails[64] = "";
+    char warns[32] = "";
     const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
-    if (published != s.expect) fail("state");
+    if (!accepts(s, published)) fail("state");
+    // The window of the state the stage reached, or of the one it expects.
+    const State judged = accepts(s, published) ? published : s.expect;
     uint16_t lo = 0;
     uint16_t hi = 0;
-    if (!diag.sampled || !windowFor(s.expect, lo, hi) || diag.lastMv < lo || diag.lastMv > hi) fail("window");
+    if (!diag.sampled || !windowFor(judged, lo, hi) || diag.lastMv < lo || diag.lastMv > hi) fail("window");
     if (usbConnected != s.usbConnected) fail("usb");
     if (d2Lit != s.d2Lit) fail("d2");
-    if (stageReached && stageSettle.settleKnown && stageSettle.settleMs > s.maxSettleMs) fail("slow");
+    const uint16_t settleLimit = s.alt != State::Unknown && stageSettle.to == s.alt ? s.altSettleMs : s.maxSettleMs;
+    if (stageReached && stageSettle.settleKnown && stageSettle.settleMs > settleLimit) fail("slow");
     if (s.neverComplete && (stageSeen & stateBit(State::Complete)) != 0) fail("reported_complete");
+    const RecentLevels recentNow = recentLevels();
+    if (s.clampCheck) {
+      if (recentNow.clamped > 0) fail("hw08_clamp");
+      if (recentNow.offNominal > 0) addFailure(warns, sizeof(warns), "partial_clamp");
+    }
     char settle[16];
     if (stageReached && stageSettle.settleKnown) {
       snprintf(settle, sizeof(settle), "%ums", stageSettle.settleMs);
     } else {
       snprintf(settle, sizeof(settle), "n/a");
     }
-    record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+    char extra[128] = "";
+    if (s.clampCheck) {
+      snprintf(extra, sizeof(extra), " recent=%u-%u/%u clamped=%u off_nominal=%u", recentNow.lo, recentNow.hi,
+               recentCount, recentNow.clamped, recentNow.offNominal);
+    } else if (s.capture) {
+      const int n = snprintf(extra, sizeof(extra), " outcome=%s ",
+                             published == State::NoBattery      ? "blink"
+                             : published == State::ExternalIdle ? "steady"
+                                                                : "other");
+      if (n > 0 && static_cast<size_t>(n) < sizeof(extra)) formatCapture(extra + n, sizeof(extra) - n);
+    }
+    const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : warns[0] != '\0' ? Verdict::Warn : Verdict::Pass;
+    record(verdict,
            "stage=%d stage_s=%lu state=%s decoded=%s mv=%lu usb=%d d2=%s settle=%s lost=%d disproved=%d "
-           "samples=%lu complete_seen=%d fails=%s",
+           "samples=%lu complete_seen=%d no_cell=%d%s warns=%s fails=%s",
            stage + 1, (millis() - stageStartMs) / 1000UL, chargeStateName(published), chargeStateName(diag.decoded),
            static_cast<unsigned long>(diag.lastMv), usbConnected ? 1 : 0, d2Lit ? "lit" : "dark", settle,
            diag.lost ? 1 : 0, diag.disproved ? 1 : 0, static_cast<unsigned long>(diag.samples),
-           (stageSeen & stateBit(State::Complete)) != 0 ? 1 : 0, fails[0] == '\0' ? "none" : fails);
+           (stageSeen & stateBit(State::Complete)) != 0 ? 1 : 0, noCellNotice ? 1 : 0, extra,
+           warns[0] == '\0' ? "none" : warns, fails[0] == '\0' ? "none" : fails);
+  }
+
+  // --- the screen --------------------------------------------------------------
+
+  void drawCapture(TestPage& page) const {
+    if (capturing) {
+      const unsigned long elapsed = millis() - captureStartMs;
+      page.heading("Capturing USB_STAT at 20 Hz");
+      page.rowf("Time", "%lu of %lu s; Back stops", elapsed / 1000UL, CAPTURE_MS / 1000UL);
+      return;
+    }
+    if (!blink.done) return;
+    if (blink.samples == 0) {
+      page.row("Capture", "no samples");
+    } else if (!blink.blinking) {
+      page.rowf("Capture: steady", "%u-%u mV over %u samples", blink.loMv, blink.hiMv, blink.samples);
+    } else {
+      if (blink.periodMs != 0) {
+        page.rowf("Capture: blink period", "%.2f s (%.2f-%.2f), %u edges", static_cast<double>(blink.periodMs) / 1000.0,
+                  static_cast<double>(blink.periodMinMs) / 1000.0, static_cast<double>(blink.periodMaxMs) / 1000.0,
+                  blink.edges);
+      } else {
+        page.rowf("Capture: blink period", "longer than the capture (%u edges)", blink.edges);
+      }
+      if (blink.dutyKnown) {
+        page.rowf("High / low level, time low", "%u / %u mV, %u %%", blink.highLevelMv, blink.lowLevelMv,
+                  blink.lowDutyPct);
+      } else {
+        page.rowf("High / low level", "%u / %u mV", blink.highLevelMv, blink.lowLevelMv);
+      }
+    }
   }
 
   void drawBody(TestPage& page) const override {
     const Stage& s = STAGES[stage];
     const auto& ladder = BoardConfig::ACTIVE.chargeLadder;
     page.heading(s.title);
-    page.paragraph(s.setup, 2);
+    page.paragraph(s.setup, 3);
     uint16_t lo = 0;
     uint16_t hi = 0;
     windowFor(s.expect, lo, hi);
     page.setCompact(true);
-    page.rowf("Expect", "%s, %u-%u mV, USB %s, D2 %s", chargeStateName(s.expect), lo, hi, s.usbConnected ? "yes" : "no",
-              s.d2Lit ? "lit" : "dark");
+    if (s.alt != State::Unknown) {
+      uint16_t altLo = 0;
+      uint16_t altHi = 0;
+      windowFor(s.alt, altLo, altHi);
+      page.rowf("Expect", "%s %u-%u or %s >%u mV, D2 %s", chargeStateName(s.expect), lo, hi, chargeStateName(s.alt),
+                altLo - 1U, s.d2Lit ? "lit" : "dark");
+    } else {
+      page.rowf("Expect", "%s, %u-%u mV, USB %s, D2 %s", chargeStateName(s.expect), lo, hi,
+                s.usbConnected ? "yes" : "no", s.d2Lit ? "lit" : "dark");
+    }
     page.gap(4);
     if (!diag.sampled) {
       page.row("USB_STAT", "not sampled yet");
@@ -257,6 +603,8 @@ class ChargeTest final : public TestScreen {
               diag.candidateRun, ladder.debounceSamples, diag.completeRun, ladder.completeStableSamples,
               diag.unknownRun, ladder.unknownHoldSamples);
     page.rowf("isUsbConnected / changes", "%s / %u", usbConnected ? "yes" : "no", usbEdges);
+    // The reader's header and status bar on external power with no chargeable cell.
+    page.row("Reader's battery label", noCellNotice ? tr(STR_NO_CHARGEABLE_CELL) : "the percentage");
     char trend[32];
     if (diag.trendSamples > 0) {
       snprintf(trend, sizeof(trend), "%u of 5 from %u mV", diag.trendSamples, diag.trendStartMv);
@@ -270,7 +618,27 @@ class ChargeTest final : public TestScreen {
     if (s.neverComplete) {
       page.row("Complete reported this stage", (stageSeen & stateBit(State::Complete)) != 0 ? "YES (fail)" : "no");
     }
+    RecentLevels recentNow{};
+    if (s.clampCheck) {
+      recentNow = recentLevels();
+      if (recentCount == 0) {
+        page.row("Recent samples (2100-2300 mV)", "none since the change");
+      } else {
+        page.rowf("Recent samples (2100-2300 mV)", "%u: %u-%u mV, %u off, %u clamped", recentCount, recentNow.lo,
+                  recentNow.hi, recentNow.offNominal, recentNow.clamped);
+      }
+    }
+    if (s.capture) drawCapture(page);
+    page.setCompact(false);
+    if (s.clampCheck && recentNow.clamped > 0) {
+      page.gap(4);
+      page.paragraph(HW08_NOTE, 4);
+    } else if (s.clampCheck && recentNow.offNominal > 0) {
+      page.gap(4);
+      page.paragraph(PARTIAL_NOTE, 3);
+    }
     page.gap(4);
+    page.setCompact(true);
     page.heading("Changes (time on this screen)");
     if (historyCount == 0) page.row("none yet", "");
     for (uint8_t i = 0; i < historyCount; ++i) {
@@ -298,6 +666,7 @@ class ChargeTest final : public TestScreen {
   uint32_t runStartMs = 0;
   bool dirty = false;
   bool usbConnected = false;
+  bool noCellNotice = false;  // HalPowerManager::noChargeableCell()
   unsigned usbEdges = 0;
   int stage = 0;
   unsigned long stageStartMs = 0;
@@ -307,6 +676,16 @@ class ChargeTest final : public TestScreen {
   Change history[HISTORY] = {};
   uint8_t historyHead = 0;
   uint8_t historyCount = 0;
+  uint16_t recent[RECENT] = {};
+  uint8_t recentHead = 0;
+  uint8_t recentCount = 0;
+  // Stage 5's capture, in the heap-allocated screen (about 1 KB).
+  bool capturing = false;
+  unsigned long captureStartMs = 0;
+  unsigned long captureLastMs = 0;
+  int captureCount = 0;
+  CaptureSample capture[CAPTURE_SAMPLES] = {};
+  Blink blink;
 };
 
 }  // namespace

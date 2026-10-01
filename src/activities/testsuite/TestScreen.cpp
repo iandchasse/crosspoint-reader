@@ -15,6 +15,7 @@
 #include <utility>
 #include <variant>
 
+#include "BoardOptions.h"
 #include "MappedInputManager.h"
 #include "TestCatalog.h"
 #include "TestChoiceActivity.h"
@@ -217,7 +218,7 @@ void TestScreen::drawResult(TestPage& page) const {
   snprintf(line, sizeof(line), "%s: %s", text::RESULT, verdictName(verdict));
   page.heading(line);
   if (failedChecks[0] != '\0') page.paragraph(failedChecks, 2);
-  page.paragraph(shownDetails, verdict == Verdict::Fail ? 6 : 4);
+  page.paragraph(shownDetails, verdict == Verdict::Fail || verdict == Verdict::Warn ? 6 : 4);
   switch (outcome) {
     case LogOutcome::Saved:
       page.paragraph(text::SAVED, 2);
@@ -245,25 +246,26 @@ void TestScreen::record(const Verdict v, const char* detailsFmt, ...) {
 }
 
 // A record that judges checks carries "fails=<check>+<check>" (or "fails=none"),
-// mostly last, where the wrapped details would cut it off. A FAIL shows the list
-// on its own line; any other verdict keeps "fails=" (an INFO's "too_short" and
-// the like) in its details.
+// mostly last, where the wrapped details would cut it off, and a WARN carries
+// "warns=" the same way. A FAIL or a WARN shows its list on its own line; any
+// other verdict keeps "fails=" (an INFO's "too_short" and the like) in its details.
 void TestScreen::splitFailedChecks(const Verdict v) {
   failedChecks[0] = '\0';
   snprintf(shownDetails, sizeof(shownDetails), "%s", details);
-  if (v != Verdict::Fail) return;
-  constexpr char KEY[] = "fails=";
-  constexpr size_t KEY_LEN = sizeof(KEY) - 1;
+  if (v != Verdict::Fail && v != Verdict::Warn) return;
+  const char* key = v == Verdict::Fail ? "fails=" : "warns=";
+  const size_t keyLen = strlen(key);
   char* at = shownDetails;
-  while ((at = strstr(at, KEY)) != nullptr && at != shownDetails && at[-1] != ' ') at += KEY_LEN;
+  while ((at = strstr(at, key)) != nullptr && at != shownDetails && at[-1] != ' ') at += keyLen;
   if (at == nullptr) return;
-  const char* value = at + KEY_LEN;
+  const char* value = at + keyLen;
   const size_t valueLen = strcspn(value, " ");
   if (valueLen != 0 && !(valueLen == 4 && strncmp(value, "none", 4) == 0)) {
-    snprintf(failedChecks, sizeof(failedChecks), "%s %.*s", text::FAILED_CHECKS, static_cast<int>(valueLen), value);
+    snprintf(failedChecks, sizeof(failedChecks), "%s %.*s", v == Verdict::Fail ? text::FAILED_CHECKS : text::WARNINGS,
+             static_cast<int>(valueLen), value);
   }
-  // Drop "fails=<value>" and one space next to it from the drawn details.
-  char* end = at + KEY_LEN + valueLen;
+  // Drop "<key><value>" and one space next to it from the drawn details.
+  char* end = at + keyLen + valueLen;
   if (*end == ' ') {
     ++end;
   } else if (at != shownDetails) {
@@ -277,10 +279,12 @@ bool TestScreen::confirmLightLoad() {
     LOG_INF("TEST", "%s: no front light in this build or on this board", info.id);
     return false;
   }
-  // "No load" first: it is the preselected answer.
+  // "No load" first: it is the preselected answer. A cut-down board has no J6.
   static constexpr const char* LOADS[] = {text::LIGHT_LOAD_NONE, text::LIGHT_LOAD_J3, text::LIGHT_LOAD_J6};
+  const bool cutDown = options::cutDown();
   auto prompt = makeUniqueNoThrow<TestChoiceActivity>(renderer, mappedInput, text::LIGHT_LOAD_TITLE,
-                                                      text::LIGHT_LOAD_BODY, LOADS, 3);
+                                                      cutDown ? text::LIGHT_LOAD_BODY_CUT : text::LIGHT_LOAD_BODY,
+                                                      LOADS, cutDown ? 2 : 3);
   if (!prompt) {
     LOG_ERR("TEST", "OOM: LED load prompt");
     return false;

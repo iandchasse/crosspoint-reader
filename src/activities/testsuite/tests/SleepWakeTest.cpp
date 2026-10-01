@@ -4,9 +4,10 @@
 // timeout, the awake ceiling or the input cap lowered to 1 min in RAM, or
 // nothing for the paths the operator triggers) and never sleeps by itself, so
 // every entry goes through main.cpp's loop and enterDeepSleep(). The sleep
-// screen leaves the current targets and the pins to probe on the glass. After
-// the wake this screen shows what slept (SleepRecord), the wake and the time
-// asleep, and takes the current the meter showed.
+// screen leaves the current targets, the pins and the back-feed probes on the
+// glass. After the wake this screen shows what slept (SleepRecord), the wake and
+// the time asleep, and takes what the meter showed: the current, with the J2 flex
+// in or out, and the voltage across R5 and across R34 (BRING_UP section 4).
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalGPIO.h>
@@ -47,6 +48,18 @@ constexpr uint16_t TOUCH_LIMIT_UA = 165;
 // "All paths agree within about 2 uA", plus the meter's last digit.
 constexpr int AGREE_UA = 3;
 constexpr uint16_t MAX_UA = 9999;
+// GPIO47/48 back-feed (HW-01, BRING_UP section 4). Across R5 (the 10 k EPD_RST
+// pull-up) each 0.1 V is 10 uA into IO47: under 20 mV (2 uA) passes. Across R34
+// (33 ohm in BUSY) each 1 mV is 30 uA into IO48: under 0.2 mV (about 6 uA; the
+// 200 mV range's last digit is 3 uA) passes (proposal).
+constexpr uint16_t R5_MAX_MV = 20;
+constexpr uint16_t R5_ENTRY_MAX_MV = 3300;
+constexpr uint16_t R34_MAX_TENTHS = 2;  // 0.1 mV units
+constexpr uint16_t R34_ENTRY_MAX_TENTHS = 9999;
+// J2 flex in vs out (same touch set-up): the GDEQ0426T82 sleeps at 2-6 uA, so a
+// gap above 8 uA (with the meter's digit) fails on an SSD1677 panel. The UC8279D
+// panel's own draw is not in hand: its gap is recorded, not judged.
+constexpr int FLEX_GAP_MAX_UA = 8;
 // A 1 min path sleeps 60 s after the arming press, give or take the loop's pace.
 constexpr unsigned long TIMED_MIN_MS = 58000;
 constexpr unsigned long TIMED_MAX_MS = 75000;
@@ -72,8 +85,21 @@ constexpr char ARM_INTRO[] =
     "MEAS-01 (TEST-SUITE.md P5): a meter in series with the cell at J5; USB, UART and light off; card in. Wait 60 s "
     "after the sleep screen, average 60 s. Left/Right: path. Confirm: arm.";
 constexpr char RESULT_INTRO[] =
-    "Enter the average the meter showed while asleep: Left/Right -/+1 uA, Up/Down -/+10 uA. Confirm records. Back "
-    "skips to arming another path.";
+    "Enter what the meter showed while asleep, one line at a time: Left/Right and Up/Down change it, Confirm moves "
+    "on (Record on the last). Back steps back; on the first line it skips. A line left alone is not measured.";
+constexpr const char* PROBE_LINES[] = {
+    "Across R5 (3V3 to EPD_RST): under 20 mV. Each 0.1 V is 10 uA into IO47.",
+    "Across R34 (33 ohm in BUSY): about 0 mV. Each 1 mV is 30 uA into IO48.",
+    "J2 flex in vs out: a few uA apart (panel 2-6 uA). 100-300 uA: back-feed. 40-70 uA: the panel never slept.",
+};
+// BRING_UP section 6: what a reading above the budget points at.
+constexpr char HIGH_HEADING[] = "Above the budget";
+constexpr const char* HIGH_LINES[] = {
+    "+100-300 uA: IO47/IO48 back-feed (R5, R34, J2 flex A/B)",
+    "+18 uA: R36 and R72 both fitted",
+    "Touch: +55 uA hibernated, +220 uA awake, about 1.1 mA with TP_RST low",
+    "mA: CE/D2 back-feed (HW-08) or an unparked SD bus (SD_VDD about 3.2 V)",
+};
 constexpr char STAGE_ONE_NOTE[] =
     "No input after a wake: the first sleep is done. Opening this screen was input, so the 180 s timeout will not "
     "fire this boot: arm again, sleep, wake and touch nothing.";
@@ -133,6 +159,10 @@ class SleepWakeTest final : public TestScreen {
     uint8_t awakeInputCapMin = 0;
   };
 
+  // The result view's lines, entered in this order.
+  enum class Field : uint8_t { Current, Flex, R5, R34 };
+  static constexpr Field LAST_FIELD = Field::R34;
+
   void onStart() override {
     reset = esp_reset_reason();
     wake = esp_sleep_get_wakeup_cause();
@@ -157,7 +187,11 @@ class SleepWakeTest final : public TestScreen {
 
   bool onBack() override {
     if (!resultView) return false;
-    resultView = false;  // skipped: nothing recorded, the record stays for another opening
+    if (field != Field::Current) {
+      field = static_cast<Field>(static_cast<uint8_t>(field) - 1);
+    } else {
+      resultView = false;  // skipped: nothing recorded, the record stays for another opening
+    }
     requestUpdate();
     return true;
   }
@@ -177,16 +211,20 @@ class SleepWakeTest final : public TestScreen {
 
   const char* slotLabel(const Slot slot) const override {
     if (resultView) {
-      switch (slot) {
-        case Slot::Confirm:
-          return "Record";
-        case Slot::Left:
-          return "-1 uA";
-        case Slot::Right:
-          return "+1 uA";
-        default:
-          return nullptr;
+      if (slot == Slot::Confirm) return field == LAST_FIELD ? "Record" : "Next";
+      const bool left = slot == Slot::Left;
+      if (!left && slot != Slot::Right) return nullptr;
+      switch (field) {
+        case Field::Current:
+          return left ? "-1 uA" : "+1 uA";
+        case Field::Flex:
+          return left ? "Flex in" : "Flex out";
+        case Field::R5:
+          return left ? "-1 mV" : "+1 mV";
+        case Field::R34:
+          return left ? "-0.1 mV" : "+0.1 mV";
       }
+      return nullptr;
     }
     const bool armed = armedSleepPath() != SleepPath::None;
     switch (slot) {
@@ -203,7 +241,14 @@ class SleepWakeTest final : public TestScreen {
 
   void onSlot(const Slot slot) override {
     if (resultView) {
-      if (slot == Slot::Confirm) confirmResult();
+      if (slot == Slot::Confirm) {
+        if (field == LAST_FIELD) {
+          confirmResult();
+        } else {
+          field = static_cast<Field>(static_cast<uint8_t>(field) + 1);
+          requestUpdate();
+        }
+      }
       if (slot == Slot::Left) adjust(-1);
       if (slot == Slot::Right) adjust(+1);
       return;
@@ -228,12 +273,33 @@ class SleepWakeTest final : public TestScreen {
     if (resultView) adjust(direction * 10);
   }
 
+  static uint16_t stepped(const uint16_t value, const int delta, const uint16_t max) {
+    int next = static_cast<int>(value) + delta;
+    if (next < 0) next = 0;
+    if (next > max) next = max;
+    return static_cast<uint16_t>(next);
+  }
+
+  // The current line's value: one step (Left/Right) or ten (Up/Down). The flex
+  // line is out for a positive step, in for a negative one.
   void adjust(const int delta) {
-    int value = static_cast<int>(microamps) + delta;
-    if (value < 0) value = 0;
-    if (value > MAX_UA) value = MAX_UA;
-    microamps = static_cast<uint16_t>(value);
-    entered = true;
+    switch (field) {
+      case Field::Current:
+        microamps = stepped(microamps, delta, MAX_UA);
+        entered = true;
+        break;
+      case Field::Flex:
+        flexOut = delta > 0;
+        break;
+      case Field::R5:
+        r5Mv = stepped(r5Mv, delta, R5_ENTRY_MAX_MV);
+        r5Entered = true;
+        break;
+      case Field::R34:
+        r34Tenths = stepped(r34Tenths, delta, R34_ENTRY_MAX_TENTHS);
+        r34Entered = true;
+        break;
+    }
     requestUpdate();
   }
 
@@ -335,19 +401,22 @@ class SleepWakeTest final : public TestScreen {
   // observed: the operator's answer for the ghost and release paths (0 = as
   // expected, 3 = not measured), -1 when the path asks nothing.
   void recordSleep(const int observed) {
-    char fails[96] = "";
+    char fails[112] = "";
     checkPath(fails, sizeof(fails));
     if (!powerWake) addFailure(fails, sizeof(fails), "wake");
     if (entered && microamps > limitUa()) addFailure(fails, sizeof(fails), "current");
     if (observed == 1 || observed == 2) addFailure(fails, sizeof(fails), "observed");
+    if (r5Entered && r5Mv >= R5_MAX_MV) addFailure(fails, sizeof(fails), "r5_backfeed");
+    if (r34Entered && r34Tenths >= R34_MAX_TENTHS) addFailure(fails, sizeof(fails), "r34_backfeed");
     // Agreement with the other paths measured in the same configuration.
     int spread = -1;
+    char flexGap[24] = "n/a";
     if (entered) {
       uint16_t lo = microamps;
       uint16_t hi = microamps;
       int compared = 0;
       for (int i = 0; i < readingCount; ++i) {
-        if (readings[i].touchActive != slept.touchActive) continue;
+        if (readings[i].touchActive != slept.touchActive || readings[i].flexOut != flexOut) continue;
         if (readings[i].microamps < lo) lo = readings[i].microamps;
         if (readings[i].microamps > hi) hi = readings[i].microamps;
         ++compared;
@@ -356,8 +425,15 @@ class SleepWakeTest final : public TestScreen {
         spread = hi - lo;
         if (spread > AGREE_UA) addFailure(fails, sizeof(fails), "paths_disagree");
       }
-      addCurrentReading({slept.path, slept.touchActive, microamps});
+      addCurrentReading({slept.path, slept.touchActive, microamps, flexOut});
       readingCount = currentReadings(readings, MAX_CURRENT_READINGS);
+      int gap = 0;
+      if (flexGapUa(gap)) {
+        const char* gapClass = flexGapClass(gap);
+        snprintf(flexGap, sizeof(flexGap), "%d:%s", gap, gapClass);
+        const bool ssd1677 = BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::SSD1677;
+        if (ssd1677 && gap > FLEX_GAP_MAX_UA) addFailure(fails, sizeof(fails), "flex_gap");
+      }
     }
     markSleepResultRecorded();
     slept.resultRecorded = true;
@@ -367,6 +443,10 @@ class SleepWakeTest final : public TestScreen {
     if (verdict == Verdict::Pass && (!entered || observed == 3)) verdict = Verdict::Info;
     char current[12] = "none";
     if (entered) snprintf(current, sizeof(current), "%u", microamps);
+    char r5[24] = "n/a";
+    if (r5Entered) snprintf(r5, sizeof(r5), "%u r5_ua=%u.%u", r5Mv, r5Mv / 10U, r5Mv % 10U);
+    char r34[24] = "n/a";
+    if (r34Entered) snprintf(r34, sizeof(r34), "%u.%u r34_ua=%u", r34Tenths / 10U, r34Tenths % 10U, r34Ua());
     char asleep[16] = "n/a";
     if (asleepKnown) snprintf(asleep, sizeof(asleep), "%ld", asleepS);
     char mask[24];
@@ -374,12 +454,37 @@ class SleepWakeTest final : public TestScreen {
     record(verdict,
            "path=%s stage=%u from_timeout=%d armed_ago_s=%lu uptime_s=%lu usb_at_entry=%d host_at_entry=%d touch=%d "
            "wake=%s ext1=%s power_wake=%d asleep_s=%s current_ua=%s limit_ua=%u above_ds_budget=%d spread_ua=%d "
-           "observed=%d fails=%s",
+           "observed=%d flex=%s r5_mv=%s r34_mv=%s flex_gap_ua=%s fails=%s",
            sleepPathCode(slept.path), slept.stage, slept.fromTimeout ? 1 : 0,
            static_cast<unsigned long>(slept.armedAgoMs / 1000), static_cast<unsigned long>(slept.uptimeMs / 1000),
            slept.usbConnected ? 1 : 0, slept.usbHost ? 1 : 0, slept.touchActive ? 1 : 0, wakeCauseName(wake), mask,
            powerWake ? 1 : 0, asleep, current, limitUa(), entered && microamps > budgetUa() ? 1 : 0, spread, observed,
-           fails[0] == '\0' ? "none" : fails);
+           flexOut ? "out" : "in", r5, r34, flexGap, fails[0] == '\0' ? "none" : fails);
+  }
+
+  // R34's reading as current into IO48: 1 mV across 33 ohm is about 30 uA.
+  unsigned r34Ua() const { return (static_cast<unsigned>(r34Tenths) * 1000U / 33U + 5U) / 10U; }
+
+  // The latest flex-in reading less the latest flex-out one, in this touch set-up.
+  bool flexGapUa(int& gap) const {
+    int in = -1;
+    int out = -1;
+    for (int i = 0; i < readingCount; ++i) {
+      if (readings[i].touchActive != slept.touchActive) continue;
+      (readings[i].flexOut ? out : in) = readings[i].microamps;
+    }
+    if (in < 0 || out < 0) return false;
+    gap = in - out;
+    return true;
+  }
+
+  // BRING_UP section 4: a few uA is the panel; 40-70 uA a panel that never
+  // reached deep sleep; 100-300 uA back-feed into IO47/IO48.
+  static const char* flexGapClass(const int gap) {
+    if (gap >= 0 && gap <= FLEX_GAP_MAX_UA) return "panel";
+    if (gap >= 40 && gap <= 70) return "panel_awake";
+    if (gap >= 100 && gap <= 300) return "backfeed";
+    return "unclear";
   }
 
   // --- screen ----------------------------------------------------------------
@@ -416,8 +521,37 @@ class SleepWakeTest final : public TestScreen {
               slept.touchActive ? TOUCH_TYPICAL_HIGH_UA : TYPICAL_HIGH_UA, budgetUa(), limitUa());
     page.setCompact(false);
     page.gap(8);
-    page.rowf("Sleep current", "%u uA%s", microamps, entered ? "" : " (not entered)");
+    drawEntries(page);
+    if (entered && microamps > budgetUa()) {
+      page.gap(4);
+      page.setCompact(true);
+      page.heading(HIGH_HEADING);
+      for (const char* line : HIGH_LINES) page.paragraph(line, 2);
+      page.setCompact(false);
+    }
     drawReadings(page);
+  }
+
+  // The four lines to enter, the one being changed marked.
+  void drawEntries(TestPage& page) const {
+    char label[40];
+    const auto mark = [this](const Field f) { return field == f ? "> " : "   "; };
+    snprintf(label, sizeof(label), "%sSleep current", mark(Field::Current));
+    page.rowf(label, "%u uA%s", microamps, entered ? "" : " (not entered)");
+    snprintf(label, sizeof(label), "%sJ2 flex", mark(Field::Flex));
+    page.row(label, flexOut ? "out (A/B)" : "in");
+    snprintf(label, sizeof(label), "%sAcross R5 (under 20 mV)", mark(Field::R5));
+    if (r5Entered) {
+      page.rowf(label, "%u mV = %u.%u uA into IO47", r5Mv, r5Mv / 10U, r5Mv % 10U);
+    } else {
+      page.row(label, "not measured");
+    }
+    snprintf(label, sizeof(label), "%sAcross R34 (about 0 mV)", mark(Field::R34));
+    if (r34Entered) {
+      page.rowf(label, "%u.%u mV = %u uA into IO48", r34Tenths / 10U, r34Tenths % 10U, r34Ua());
+    } else {
+      page.row(label, "not measured");
+    }
   }
 
   void drawArmView(TestPage& page) const {
@@ -441,6 +575,9 @@ class SleepWakeTest final : public TestScreen {
     page.gap(4);
     page.heading(text::SLEEP_PINS_HEADING);
     for (const char* line : text::SLEEP_PIN_LINES) page.paragraph(line, 1);
+    page.gap(4);
+    page.heading(text::SLEEP_PROBES_HEADING);
+    for (const char* line : PROBE_LINES) page.paragraph(line, 2);
     drawReadings(page);
   }
 
@@ -450,8 +587,8 @@ class SleepWakeTest final : public TestScreen {
     page.setCompact(true);
     for (int i = readingCount - 1; i >= 0; --i) {
       char label[40];
-      snprintf(label, sizeof(label), "%s%s", sleepPathTitle(readings[i].path),
-               readings[i].touchActive ? ", touch" : "");
+      snprintf(label, sizeof(label), "%s%s%s", sleepPathTitle(readings[i].path),
+               readings[i].touchActive ? ", touch" : "", readings[i].flexOut ? ", flex out" : "");
       page.rowf(label, "%u uA", readings[i].microamps);
     }
     page.setCompact(false);
@@ -463,8 +600,14 @@ class SleepWakeTest final : public TestScreen {
   bool hasRecord = false;
   bool stageOne = false;
   bool resultView = false;
+  Field field = Field::Current;
   bool entered = false;
   uint16_t microamps = 0;
+  bool flexOut = false;
+  bool r5Entered = false;
+  uint16_t r5Mv = 0;
+  bool r34Entered = false;
+  uint16_t r34Tenths = 0;  // 0.1 mV units
   bool asleepKnown = false;
   long asleepS = 0;
   bool powerWake = false;

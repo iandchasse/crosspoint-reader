@@ -12,8 +12,10 @@ namespace testsuite {
 
 struct TestInfo;
 
-enum class Verdict : uint8_t { Pass, Fail, Skip, Info };
-const char* verdictName(Verdict verdict);  // "PASS", "FAIL", "SKIP", "INFO"
+// Warn: every check passed, but a reading sits outside its nominal band and
+// needs a look; the record names it in "warns=".
+enum class Verdict : uint8_t { Pass, Fail, Skip, Info, Warn };
+const char* verdictName(Verdict verdict);  // "PASS", "FAIL", "SKIP", "INFO", "WARN"
 
 // Where a result went. The serial line is always written.
 enum class LogOutcome : uint8_t { Saved, SerialOnly, WriteFailed };

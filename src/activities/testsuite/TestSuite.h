@@ -7,8 +7,8 @@ namespace testsuite {
 
 // setup(), right after SETTINGS.loadFromFile(). Pins the values the tests rely on
 // in RAM only (the test firmware never saves: PersistableStore writes are no-ops),
-// removes scratch files an interrupted test left in /.silkscreen-test/, and logs
-// the firmware and board tag.
+// removes scratch files an interrupted test left in /.silkscreen-test/, reads the
+// board options (BoardOptions.h) and logs the firmware and board tag.
 void beginAfterSettings();
 
 // True while a USB data host is attached (USB Serial/JTAG sees its frames, with

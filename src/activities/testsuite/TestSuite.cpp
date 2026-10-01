@@ -12,6 +12,7 @@
 #include <HWCDC.h>
 #endif
 
+#include "BoardOptions.h"
 #include "CrossPointSettings.h"
 #include "SleepRecord.h"
 #include "TestResultLog.h"
@@ -71,6 +72,7 @@ void beginAfterSettings() {
           static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(), static_cast<int>(esp_reset_reason()),
           Storage.ready() ? "mounted" : "not mounted");
   removeStaleScratchFiles();
+  options::load();
 }
 
 bool usbHostAttached() {

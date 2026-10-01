@@ -13,6 +13,8 @@ namespace testsuite {
 
 struct TestInfo;
 
+std::unique_ptr<Activity> createBoardOptionsTest(const TestInfo& info, GfxRenderer& renderer,
+                                                 MappedInputManager& mappedInput);  // OPT
 std::unique_ptr<Activity> createSystemInfoTest(const TestInfo& info, GfxRenderer& renderer,
                                                MappedInputManager& mappedInput);  // P1
 std::unique_ptr<Activity> createI2cScanTest(const TestInfo& info, GfxRenderer& renderer,

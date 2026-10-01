@@ -13,7 +13,7 @@
 namespace testsuite {
 namespace {
 
-constexpr uint32_t MAGIC = 0x534C5031;  // "SLP1"
+constexpr uint32_t MAGIC = 0x534C5032;  // "SLP2"
 
 struct Stored {
   uint32_t magic;

@@ -8,6 +8,7 @@
 #include <BatteryMonitor.h>
 #include <BoardConfig.h>
 #include <HalPowerManager.h>
+#include <I18n.h>
 #include <Memory.h>
 #include <SharedAdc.h>
 #include <WiFi.h>
@@ -121,6 +122,7 @@ class BatteryTest final : public TestScreen {
     charge = BatteryMonitor::chargeStatus();
     externalPower = battery.isExternalPowerPresent(&externalKnown);
     radioOn = WiFi.getMode() != WIFI_MODE_NULL;
+    noCellNotice = powerManager.noChargeableCell();
     window[windowHead] = pinMv();
     windowHead = static_cast<uint8_t>((windowHead + 1) % WINDOW);
     if (windowCount < WINDOW) ++windowCount;
@@ -210,14 +212,15 @@ class BatteryTest final : public TestScreen {
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : meterEntered ? Verdict::Pass : Verdict::Info;
     record(verdict,
            "pplus=%u pin=%u pin_range=%s single=%u meter=%s err=%d pct=%u cell=%d usbstat=%s ext=%s radio=%d "
-           "spread=%u n=%u spread_judged=%d cutoff_margin=%s fw_write=%s onscreen=%lus fails=%s",
+           "spread=%u n=%u spread_judged=%d cutoff_margin=%s fw_write=%s no_cell_notice=%d onscreen=%lus fails=%s",
            pPlusMv, pin, range, singlePinMv, meter, meterEntered ? error : 0, percent, cellPresent() ? 1 : 0,
            chargeStateName(charge),
            !externalKnown  ? "unknown"
            : externalPower ? "yes"
                            : "no",
            radioOn ? 1 : 0, spread, windowCount, spreadJudged ? 1 : 0, marginText, writeBlocked ? "blocked" : "allowed",
-           (millis() - openedAt) / 1000UL, fails[0] == '\0' ? (meterEntered ? "none" : "no_meter_value") : fails);
+           noCellNotice ? 1 : 0, (millis() - openedAt) / 1000UL,
+           fails[0] == '\0' ? (meterEntered ? "none" : "no_meter_value") : fails);
   }
 
   void drawBody(TestPage& page) const override {
@@ -234,6 +237,8 @@ class BatteryTest final : public TestScreen {
     }
     page.rowf("Percent (10 % steps)", "%u %%", percent);
     page.row("Cell", cellPresent() ? "present (P+ >= 2500 mV)" : "none (P+ < 2500 mV)");
+    // The reader's header and status bar on external power with no chargeable cell.
+    page.row("Reader's battery label", noCellNotice ? tr(STR_NO_CHARGEABLE_CELL) : "the percentage");
     page.rowf("USB_STAT / external power", "%s / %s", chargeStateName(charge),
               !externalKnown  ? "unknown"
               : externalPower ? "yes"
@@ -271,6 +276,7 @@ class BatteryTest final : public TestScreen {
   bool externalPower = false;
   bool externalKnown = false;
   bool radioOn = false;
+  bool noCellNotice = false;  // HalPowerManager::noChargeableCell()
   int meterMv = 0;
   bool meterEntered = false;
   uint16_t window[WINDOW] = {};

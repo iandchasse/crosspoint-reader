@@ -54,6 +54,13 @@ void TestSleepActivity::onEnter() {
       renderer.drawText(UI_10_FONT_ID, MARGIN, y, entry);
       y += line10;
     }
+    y += 16;
+    renderer.drawText(UI_10_FONT_ID, MARGIN, y, text::SLEEP_PROBES_HEADING, true, EpdFontFamily::BOLD);
+    y += line10;
+    for (const char* entry : text::SLEEP_PROBE_LINES) {
+      renderer.drawText(UI_10_FONT_ID, MARGIN, y, entry);
+      y += line10;
+    }
 
     y += 24;
     snprintf(line, sizeof(line), "%s: %.*s", text::BOARD_TAG, static_cast<int>(board_tag::boardNameLen()),

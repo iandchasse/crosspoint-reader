@@ -20,6 +20,7 @@
 #include "TestFactories.h"
 #include "TestNames.h"
 #include "TextBuffer.h"
+#include "activities/testsuite/BoardOptions.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 #include "activities/testsuite/TestSuiteAccess.h"
@@ -37,6 +38,7 @@ constexpr char INTRO[] =
     "Address-only probes of 0x08-0x77 at 100 and 400 kHz. Confirm: scan with J6 empty. Right: scan with an "
     "accessory on J6. An idle FT6336U can miss a key-started scan: tap Scan instead. A device at the touch or RTC "
     "address that failed its identity check at boot was left alone.";
+constexpr char CUT_DOWN_NOTE[] = "Cut-down board (OPT): J6 is gone, so the J6 scan is N/A.";
 
 // The RTC is optional (rtc-devices): with none answering and none begun at
 // boot, the operator says whether one is fitted, as in T13.
@@ -131,7 +133,7 @@ class I2cScanTest final : public TestScreen {
       case Slot::Confirm:
         return "Scan";
       case Slot::Right:
-        return "Scan+J6";
+        return options::cutDown() ? nullptr : "Scan+J6";
       default:
         return nullptr;
     }
@@ -139,7 +141,7 @@ class I2cScanTest final : public TestScreen {
 
   void onSlot(const Slot slot) override {
     if (slot == Slot::Confirm) scan(/*j6Fitted=*/false);
-    if (slot == Slot::Right) scan(/*j6Fitted=*/true);
+    if (slot == Slot::Right && !options::cutDown()) scan(/*j6Fitted=*/true);
   }
 
   void scan(const bool j6Fitted) {
@@ -224,7 +226,10 @@ class I2cScanTest final : public TestScreen {
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
            "j6=%s owner=%s hz=%lu,%lu sda=%s scl=%s found100=%s found400=%s rtcs=%d rtc_at_boot=%d rtc_fitted=%s "
            "touch=%s touch_addr=0x%02x touch_id=%s rtc_id=%s unknown=%d fails=%s",
-           j6 ? "fitted" : "empty", standard.wasRunning ? "driver" : "none", static_cast<unsigned long>(standard.hz),
+           options::cutDown() ? "n/a"
+           : j6               ? "fitted"
+                              : "empty",
+           standard.wasRunning ? "driver" : "none", static_cast<unsigned long>(standard.hz),
            static_cast<unsigned long>(fast.hz), levelName(sda), levelName(scl), found100, found400, rtcs,
            halClock.isAvailable() ? 1 : 0, rtcFitted, touchActive ? "active" : "absent", touchAddr, touchId, rtcId,
            unknown, fails[0] == '\0' ? "none" : fails);
@@ -233,12 +238,13 @@ class I2cScanTest final : public TestScreen {
   void drawBody(TestPage& page) const override {
     const auto& s = BoardConfig::ACTIVE.sensors;
     page.paragraph(INTRO, 5);
+    if (options::cutDown()) page.paragraph(CUT_DOWN_NOTE, 2);
     page.gap(4);
     page.rowf("Bus", "SDA IO%d, SCL IO%d, %lu kHz", s.i2cSda, s.i2cScl, static_cast<unsigned long>(s.i2cHz / 1000));
     if (!scanned) return;
     page.rowf("Driver on the bus", "%s", standard.wasRunning ? "yes (RTC or touch)" : "no: started for the scan");
     page.rowf("Idle SDA / SCL", "%s / %s", levelName(sda), levelName(scl));
-    page.rowf("J6", "%s", j6 ? "accessory fitted" : "empty");
+    page.rowf("J6", "%s", options::cutDown() ? "N/A: cut-down board" : j6 ? "accessory fitted" : "empty");
     page.gap(4);
     page.setCompact(true);
     int rows = 0;

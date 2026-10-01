@@ -9,8 +9,10 @@
 // Three modes: Keys (every switch, its levels and press count, the power
 // button's clicks and presses caught by the loop's idle slices), Chords
 // (each two-key chord of §9.1, judged from the level the ladder held), and
-// Hands off (any key event is a phantom), each with the radio on or off. A
-// ladder the boot test found with no pull-up is off: its keys are not expected.
+// Hands off (any key event is a phantom, and the power button must read LOW
+// throughout), each with the radio on or off. A ladder the boot test found with
+// no pull-up is off: its keys are not expected. With UP(2) as the power button
+// (BoardOptions.h), SW7 counts as POWER and UP(2)'s window must never fire.
 #include <AdcLadderDecode.h>
 #include <Arduino.h>
 #include <BatteryMonitor.h>
@@ -32,6 +34,7 @@
 #include "TestFactories.h"
 #include "TestNames.h"
 #include "TextBuffer.h"
+#include "activities/testsuite/BoardOptions.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 #include "activities/testsuite/TestSuite.h"
@@ -59,6 +62,10 @@ constexpr unsigned long HANDS_OFF_MIN_MS = 30000;
 // AdcLadderConfig::releasedMinMv, btn-idle-topcode). One is a key's release edge.
 constexpr unsigned UNCLEAN_IDLE_ALLOWED = 1;
 constexpr unsigned long HANDS_OFF_REDRAW_MS = 10000;
+// Hands off: ladder 2's (IO4) released level against ladder 1's (IO1). Both sit at
+// 3V3 through their pull-ups, so IO4 lower by this much, or not top-coding while
+// IO1 does, means a leak on ladder 2 (R36 and R72 both fitted, HARDWARE.md §9.2).
+constexpr int RELEASED_GAP_WARN_MV = 100;
 
 constexpr uint8_t keyBit(const int b) { return static_cast<uint8_t>(1U << b); }
 
@@ -90,14 +97,15 @@ struct Chord {
   uint8_t ladder;
   uint8_t accept;
   const char* expect;
+  bool usesUp2;  // not a ladder chord when UP(2) is the power button
 };
 constexpr Chord CHORDS[] = {
-    {"LEFT + BACK", "L+BK", 0, static_cast<uint8_t>(keyBit(lb::Left) | REJECTED), "LEFT or none"},
-    {"UP(1) + UP(2)", "U1+U2", 1, static_cast<uint8_t>(keyBit(lb::Up) | REJECTED), "UP or none"},
-    {"RIGHT + OK", "R+OK", 0, keyBit(lb::Right), "RIGHT"},
-    {"DOWN(1) + UP(2)", "D1+U2", 1, keyBit(lb::Down), "DOWN"},
-    {"LEFT + OK", "L+OK", 0, REJECTED, "none"},
-    {"OK + BACK", "OK+BK", 0, REJECTED, "none"},
+    {"LEFT + BACK", "L+BK", 0, static_cast<uint8_t>(keyBit(lb::Left) | REJECTED), "LEFT or none", false},
+    {"UP(1) + UP(2)", "U1+U2", 1, static_cast<uint8_t>(keyBit(lb::Up) | REJECTED), "UP or none", true},
+    {"RIGHT + OK", "R+OK", 0, keyBit(lb::Right), "RIGHT", false},
+    {"DOWN(1) + UP(2)", "D1+U2", 1, keyBit(lb::Down), "DOWN", true},
+    {"LEFT + OK", "L+OK", 0, REJECTED, "none", false},
+    {"OK + BACK", "OK+BK", 0, REJECTED, "none", false},
 };
 constexpr int CHORD_COUNT = static_cast<int>(sizeof(CHORDS) / sizeof(CHORDS[0]));
 
@@ -108,7 +116,11 @@ constexpr char CHORDS_INTRO[] =
     "Press the two keys of the marked chord together, hold about half a second, release. Each contact is judged, "
     "then the next chord comes up.";
 constexpr char HANDS_OFF_INTRO[] =
-    "Leave every key alone for at least 30 s: any key event now is a phantom. Repeat with the radio on.";
+    "Leave every key alone for at least 30 s: any key event now is a phantom, and POWER must read LOW throughout. "
+    "Repeat with the radio on.";
+constexpr char POWER_METER_NOTE[] =
+    "Meter at R76 pad 1 (IO18): below 0.3 V released, about 3.0 V pressed. About 1.76 V idle: R36 and R72 both "
+    "fitted (HARDWARE.md section 9.2).";
 
 struct Sample {
   int mv = 0;
@@ -204,6 +216,7 @@ class KeysTest final : public TestScreen {
   void onStart() override {
     const unsigned long now = millis();
     powerHoldLimitMs = SETTINGS.getPowerButtonDuration();
+    up2Power = options::up2IsPower();
     quietSince = now;
     tickMhz = getCpuFrequencyMhz();
     usbHost = usbHostAttached();
@@ -302,6 +315,7 @@ class KeysTest final : public TestScreen {
       if ((released & keyBit(b)) != 0) redraw = endPress(b, now) || redraw;
     }
     powerLevelHigh = BoardConfig::ACTIVE.input.power >= 0 && digitalRead(BoardConfig::ACTIVE.input.power) == HIGH;
+    if (mode == Mode::HandsOff && powerLevelHigh) ++powerHighReads;
     if (mode == Mode::HandsOff && now - drawnAt >= HANDS_OFF_REDRAW_MS) redraw = true;
     if (redraw) {
       drawnAt = now;
@@ -336,6 +350,12 @@ class KeysTest final : public TestScreen {
     if (!p.active) return b == POWER;
     p.active = false;
     const unsigned long held = now - p.at;
+    // UP(2)'s window decoded a key although SW7 is the power button.
+    const bool up2Hit = up2Power && p.window != NO_WINDOW && isUp2Window(p.ladder, p.window);
+    if (up2Hit) {
+      ++up2Hits;
+      LOG_ERR("TEST", "T3 UP(2)'s window fired (%d-%d mV) with UP(2) as POWER", p.minMv, p.maxMv);
+    }
     if (mode == Mode::HandsOff) {
       ++phantoms;
       phantomMask |= keyBit(b);
@@ -345,6 +365,8 @@ class KeysTest final : public TestScreen {
     if (mode == Mode::Chords) return false;
     if (b == POWER) {
       if (lastPowerHeldMs < powerHoldLimitMs) ++powerClicks;
+    } else if (up2Hit) {
+      // Counted above; not a key of this build.
     } else if (p.window != NO_WINDOW) {
       KeyStats& k = stats[p.ladder][p.window];
       ++k.presses;
@@ -379,10 +401,19 @@ class KeysTest final : public TestScreen {
         if (s.mv < releasedMinMv[l]) releasedMinMv[l] = s.mv;
         if (s.mv > releasedMaxMv[l]) releasedMaxMv[l] = s.mv;
         topCoded[l] = s.raw >= ld::ADC_LADDER_RAW_SATURATED;
+        if (!topCoded[l]) notTopCoded[l] = true;
+        releasedSumMv[l] += s.mv;
+        ++releasedCount[l];
         continue;
       }
       if (s.window == NO_WINDOW) {
         if ((down & LADDER_BUTTONS) == 0) ++uncleanIdle;
+        continue;
+      }
+      // With UP(2) as POWER its window has no switch: hands off, a reading there
+      // is the window firing (with keys in use, only a decoded press counts).
+      if (up2Power && mode == Mode::HandsOff && (down & LADDER_BUTTONS) == 0 && isUp2Window(l, s.window)) {
+        ++up2Hits;
         continue;
       }
       const uint8_t button = ladder.keys[s.window].button;
@@ -482,8 +513,12 @@ class KeysTest final : public TestScreen {
       releasedMinMv[l] = INT_MAX;
       releasedMaxMv[l] = INT_MIN;
       topCoded[l] = false;
+      notTopCoded[l] = false;
+      releasedSumMv[l] = 0;
+      releasedCount[l] = 0;
     }
     uncleanIdle = 0;
+    up2Hits = 0;
   }
 
   // Starts the chords again. The ladder counts only once it has read released:
@@ -497,15 +532,18 @@ class KeysTest final : public TestScreen {
     skipOffLadderChords();
   }
 
-  // A chord on a ladder the boot test switched off (no pull-up) cannot be made.
+  // A chord on a ladder the boot test switched off (no pull-up) cannot be made,
+  // nor one with UP(2) when it is the power button.
+  bool chordSkipped(const Chord& c) const { return ladderOff(c.ladder) || (up2Power && c.usesUp2); }
+
   void skipOffLadderChords() {
-    while (chordIndex < CHORD_COUNT && ladderOff(CHORDS[chordIndex].ladder)) ++chordIndex;
+    while (chordIndex < CHORD_COUNT && chordSkipped(CHORDS[chordIndex])) ++chordIndex;
   }
 
-  static int chordsExpected() {
+  int chordsExpected() const {
     int expected = 0;
     for (const Chord& c : CHORDS) {
-      if (!ladderOff(c.ladder)) ++expected;
+      if (!chordSkipped(c)) ++expected;
     }
     return expected;
   }
@@ -514,6 +552,7 @@ class KeysTest final : public TestScreen {
     watchStart = now;
     phantoms = 0;
     phantomMask = 0;
+    powerHighReads = 0;
     resetLevels();
   }
 
@@ -543,6 +582,12 @@ class KeysTest final : public TestScreen {
     const KeyLabel* k = boardKey(l, w);
     return k != nullptr ? k->code : BUTTON_NAMES[BoardConfig::ACTIVE.adcLadders.ladders[l].keys[w].button];
   }
+  // UP(2)'s window: SW7 on ladder 2.
+  static bool isUp2Window(const int l, const int w) {
+    return l >= 0 && l < LADDERS && w >= 0 && boardKey(l, w) == &BOARD_KEYS[1][3];
+  }
+  // The keys this build has on its ladders: not UP(2) when it is the power button.
+  bool keyExpected(const int l, const int w) const { return !(up2Power && isUp2Window(l, w)); }
 
   void recordRun(const unsigned long now) {
     switch (mode) {
@@ -573,6 +618,7 @@ class KeysTest final : public TestScreen {
     for (int l = 0; l < LADDERS; ++l) {
       if (ladderOff(l)) continue;
       for (int w = 0; w < cfg.ladders[l].count && w < WINDOWS; ++w) {
+        if (!keyExpected(l, w)) continue;
         const KeyStats& k = stats[l][w];
         appendf(counts, sizeof(counts), "%s%s=%u", counts[0] == '\0' ? "" : ",", keyCode(l, w), k.presses);
         if (k.presses == 0) appendf(missing, sizeof(missing), "%s%s", missing[0] == '\0' ? "" : ",", keyCode(l, w));
@@ -599,19 +645,20 @@ class KeysTest final : public TestScreen {
     if (unattributed > 0) fail("unattributed");
     if (powerPressEdges != powerReleaseEdges) fail("power_edges");
     if (powerIdleFault()) fail("power_idle");
+    if (up2Hits > 0) fail("up2_window");
     char ladders[40];
     char powerIdle[24];
     formatLadderToken(ladders, sizeof(ladders));
     formatPowerIdleToken(powerIdle, sizeof(powerIdle));
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "mode=keys radio=%d host=%d usbstat=%s ladders=%s pwr_idle=%s counts=%s worst=%d(%s) marginal=%s missing=%s "
-           "released=%d,%d idle=%u lowclk=%u shortest=%lums noread=%u pwr_edges=%u/%u fails=%s",
+           "mode=keys radio=%d host=%d usbstat=%s ladders=%s pwr_idle=%s up2pwr=%d up2_hits=%u counts=%s worst=%d(%s) "
+           "marginal=%s missing=%s released=%d,%d idle=%u lowclk=%u shortest=%lums noread=%u pwr_edges=%u/%u fails=%s",
            radioOn ? 1 : 0, usbHost ? 1 : 0, chargeStateName(BatteryMonitor::chargeStatus()), ladders, powerIdle,
-           counts, worst == INT_MAX ? 0 : worst, worstCode, marginal[0] != '\0' ? marginal : "none",
-           missing[0] != '\0' ? missing : "none", releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0],
-           releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1], idlePresses, idleLowClock,
-           shortestIdleMs == ULONG_MAX ? 0UL : shortestIdleMs, unattributed, powerPressEdges, powerReleaseEdges,
-           fails[0] == '\0' ? "none" : fails);
+           up2Power ? 1 : 0, up2Hits, counts, worst == INT_MAX ? 0 : worst, worstCode,
+           marginal[0] != '\0' ? marginal : "none", missing[0] != '\0' ? missing : "none",
+           releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0], releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1],
+           idlePresses, idleLowClock, shortestIdleMs == ULONG_MAX ? 0UL : shortestIdleMs, unattributed, powerPressEdges,
+           powerReleaseEdges, fails[0] == '\0' ? "none" : fails);
   }
 
   void recordChords() {
@@ -637,16 +684,21 @@ class KeysTest final : public TestScreen {
 
   void recordWatch(const unsigned long now) {
     const unsigned long watched = now - watchStart;
-    char keys[48] = "";
+    char keys[40] = "";
     for (uint8_t b = 0; b < LOGICAL; ++b) {
       if ((phantomMask & keyBit(b)) != 0)
         appendf(keys, sizeof(keys), "%s%s", keys[0] == '\0' ? "" : ",", BUTTON_NAMES[b]);
     }
-    char fails[48] = "";
+    char fails[64] = "";
     if (phantoms > 0) addFailure(fails, sizeof(fails), "phantom");
     // The released level (btn-idle-topcode): idle readings between windows, or a
     // ladder that never read released through a full watch.
     if (uncleanIdle > UNCLEAN_IDLE_ALLOWED) addFailure(fails, sizeof(fails), "unclean_idle");
+    // POWER released reads LOW (R76 holds IO18 at 0 V); HIGH at any time while
+    // nothing is pressed, or the boot's mid-level reading, is §9.2's rework fault.
+    if (powerHighReads > 0) addFailure(fails, sizeof(fails), "power_not_low");
+    if (powerIdleFault()) addFailure(fails, sizeof(fails), "power_idle");
+    if (up2Hits > 0) addFailure(fails, sizeof(fails), "up2_window");
     const auto& cfg = BoardConfig::ACTIVE.adcLadders;
     char released[48] = "";
     for (int l = 0; l < LADDERS; ++l) {
@@ -658,19 +710,38 @@ class KeysTest final : public TestScreen {
         addFailure(fails, sizeof(fails), "never_released");
       }
     }
+    char warns[32] = "";
+    releasedWarnings(warns, sizeof(warns));
     const Verdict verdict = fails[0] != '\0'             ? Verdict::Fail
                             : watched < HANDS_OFF_MIN_MS ? Verdict::Info
+                            : warns[0] != '\0'           ? Verdict::Warn
                                                          : Verdict::Pass;
     char ladders[40];
+    char powerIdle[24];
     formatLadderToken(ladders, sizeof(ladders));
+    formatPowerIdleToken(powerIdle, sizeof(powerIdle));
     record(verdict,
            "mode=hands_off radio=%d host=%d ladders=%s watch_s=%lu phantoms=%u keys=%s unclean=%u released_floor=%u "
-           "released=%s fails=%s",
+           "released=%s mean=%d,%d pwr_idle=%s pwr_high=%u up2pwr=%d up2_hits=%u warns=%s fails=%s",
            radioOn ? 1 : 0, usbHost ? 1 : 0, ladders, watched / 1000UL, phantoms, keys[0] != '\0' ? keys : "none",
-           uncleanIdle, cfg.releasedMinMv, released[0] != '\0' ? released : "none",
+           uncleanIdle, cfg.releasedMinMv, released[0] != '\0' ? released : "none", releasedMeanMv(0),
+           releasedMeanMv(1), powerIdle, powerHighReads, up2Power ? 1 : 0, up2Hits, warns[0] != '\0' ? warns : "none",
            fails[0] != '\0'             ? fails
            : watched < HANDS_OFF_MIN_MS ? "too_short"
                                         : "none");
+  }
+
+  // The mean released reading of ladder `l` over the watch, 0 when none.
+  int releasedMeanMv(const int l) const {
+    return releasedCount[l] > 0 ? static_cast<int>(releasedSumMv[l] / static_cast<int32_t>(releasedCount[l])) : 0;
+  }
+
+  // Ladder 2 (IO4) against ladder 1 (IO1), both fitted and read released: IO4
+  // not top-coding while IO1 does, or its level RELEASED_GAP_WARN_MV or more lower.
+  void releasedWarnings(char* warns, const size_t size) const {
+    if (ladderOff(0) || ladderOff(1) || releasedCount[0] == 0 || releasedCount[1] == 0) return;
+    if (!notTopCoded[0] && notTopCoded[1]) addFailure(warns, size, "io4_not_top");
+    if (releasedMeanMv(0) - releasedMeanMv(1) >= RELEASED_GAP_WARN_MV) addFailure(warns, size, "io4_low");
   }
 
   // Both ladders now, with the lowest released reading in brackets.
@@ -694,12 +765,17 @@ class KeysTest final : public TestScreen {
     formatLadderToken(ladders, sizeof(ladders));
     formatPowerIdleToken(powerIdle, sizeof(powerIdle));
     page.rowf("Boot checks", "%s, power %s", ladders, powerIdle);
+    if (up2Power) page.row("UP(2) is POWER (OPT)", "SW7 counts as POWER");
     for (int l = 0; l < LADDERS; ++l) {
       if (ladderOff(l)) {
         page.row(l == 0 ? "Bottom ladder" : "Side ladder", "off: no pull-up fitted (boot test)");
         continue;
       }
       for (int w = 0; w < cfg.ladders[l].count && w < WINDOWS; ++w) {
+        if (!keyExpected(l, w)) {
+          page.rowf(keyName(l, w), "is POWER: window fired %u%s", up2Hits, up2Hits > 0 ? " (FAIL)" : "");
+          continue;
+        }
         const KeyStats& k = stats[l][w];
         if (k.presses == 0) {
           page.rowf(keyName(l, w), "- (%u-%u mV)", cfg.ladders[l].keys[w].minMv, cfg.ladders[l].keys[w].maxMv);
@@ -709,8 +785,9 @@ class KeysTest final : public TestScreen {
         }
       }
     }
-    char powerLabel[24];
-    snprintf(powerLabel, sizeof(powerLabel), "POWER  IO%d", BoardConfig::ACTIVE.input.power);
+    char powerLabel[32];
+    snprintf(powerLabel, sizeof(powerLabel), "POWER  IO%d%s", BoardConfig::ACTIVE.input.power,
+             up2Power ? " (SW7)" : "");
     page.rowf(powerLabel, "%u clicks, edges %u/%u, last %lu ms, %s", powerClicks, powerPressEdges, powerReleaseEdges,
               lastPowerHeldMs, powerLevelHigh ? "HIGH" : "LOW");
     drawLadders(page);
@@ -735,6 +812,8 @@ class KeysTest final : public TestScreen {
       snprintf(label, sizeof(label), "%s%s", i == chordIndex ? "> " : "", CHORDS[i].keys);
       if (ladderOff(CHORDS[i].ladder)) {
         page.row(label, "ladder off");
+      } else if (up2Power && CHORDS[i].usesUp2) {
+        page.row(label, "UP(2) is POWER");
       } else if (!r.done) {
         page.rowf(label, "%s%s", i == chordIndex ? "now, expect " : "expect ", CHORDS[i].expect);
       } else {
@@ -774,7 +853,21 @@ class KeysTest final : public TestScreen {
               releasedMinMv[l], releasedMaxMv[l], topCoded[l] ? " top" : "");
     }
     page.row(label, value[0] != '\0' ? value : "no reading yet");
+    if (releasedCount[0] > 0 && releasedCount[1] > 0) {
+      char warns[32] = "";
+      releasedWarnings(warns, sizeof(warns));
+      page.rowf("Released mean IO1 / IO4", "%d / %d mV%s", releasedMeanMv(0), releasedMeanMv(1),
+                warns[0] != '\0' ? " (WARN)" : "");
+    }
+    char powerIdle[24];
+    formatPowerIdleToken(powerIdle, sizeof(powerIdle));
+    page.rowf("POWER IO18 now, HIGH reads", "%s, %u%s", powerLevelHigh ? "HIGH" : "LOW", powerHighReads,
+              powerHighReads > 0 ? " (FAIL)" : "");
+    page.rowf("POWER idle at boot", "%s%s", powerIdle, powerIdleFault() ? " (FAIL)" : "");
+    if (up2Power) page.rowf("UP(2) window (POWER build)", "fired %u%s", up2Hits, up2Hits > 0 ? " (FAIL)" : "");
     page.setCompact(false);
+    page.gap(4);
+    page.paragraph(POWER_METER_NOTE, 3);
   }
 
   void drawBody(TestPage& page) const override {
@@ -811,8 +904,13 @@ class KeysTest final : public TestScreen {
   Sample live[LADDERS];
   int releasedMinMv[LADDERS] = {};
   int releasedMaxMv[LADDERS] = {};
-  bool topCoded[LADDERS] = {};
+  bool topCoded[LADDERS] = {};     // the last released reading top-coded
+  bool notTopCoded[LADDERS] = {};  // a released reading did not
+  int32_t releasedSumMv[LADDERS] = {};
+  uint32_t releasedCount[LADDERS] = {};
   unsigned uncleanIdle = 0;
+  bool up2Power = false;  // BoardOptions: SW7 is the power button
+  unsigned up2Hits = 0;   // UP(2)'s window decoded (a press) or read with no key down
 
   KeyStats stats[LADDERS][WINDOWS] = {};
   unsigned unattributed = 0;
@@ -834,6 +932,7 @@ class KeysTest final : public TestScreen {
   unsigned long watchStart = 0;
   unsigned phantoms = 0;
   uint8_t phantomMask = 0;
+  unsigned powerHighReads = 0;  // hands off: IO18 read HIGH
 };
 
 }  // namespace

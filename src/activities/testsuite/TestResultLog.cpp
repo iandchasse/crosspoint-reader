@@ -28,10 +28,10 @@ struct SessionVerdict {
 };
 SessionVerdict sessionVerdicts[MAX_TESTS] = {};
 
-// One CSV row: the prefix (about 90 B), up to TestScreen's 319 B of details and
+// One CSV row: the prefix (about 90 B), up to TestScreen's 383 B of details and
 // the quotes. Static rather than on the stack (it is larger than a stack frame
 // should hold); results are recorded from the loop task only.
-char rowBuffer[448];
+char rowBuffer[512];
 
 // A log line holds 256 B with its "[ms] [INF] [TEST] " prefix (Logging.cpp
 // MAX_ENTRY_LEN): longer details continue on "TEST+,<id>," lines.
@@ -116,6 +116,8 @@ const char* verdictName(const Verdict verdict) {
       return "SKIP";
     case Verdict::Info:
       return "INFO";
+    case Verdict::Warn:
+      return "WARN";
   }
   return "?";
 }

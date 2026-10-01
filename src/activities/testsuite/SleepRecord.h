@@ -66,6 +66,7 @@ struct CurrentReading {
   SleepPath path;
   bool touchActive;
   uint16_t microamps;
+  bool flexOut;  // measured with the J2 panel flex unplugged (the HW-01 A/B)
 };
 inline constexpr int MAX_CURRENT_READINGS = 8;
 int currentReadings(CurrentReading* out, int max);
