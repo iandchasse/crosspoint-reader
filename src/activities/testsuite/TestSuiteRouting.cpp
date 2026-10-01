@@ -2,8 +2,9 @@
 // ActivityManager's reader entry points in the hardware test firmware.
 // ActivityManager.cpp compiles its own definitions only without
 // CROSSPOINT_TEST_SUITE; here each one lands on the test menu, so nothing
-// reaches the reader, the library, the file browser, OPDS, Settings or the web
-// server (their sources are left out of the build or dropped by the linker).
+// reaches the reader, the library, the file browser, OPDS, the plugins,
+// Settings or the web server (their sources are left out of the build or
+// dropped by the linker).
 #include <Logging.h>
 #include <Memory.h>
 
@@ -33,6 +34,8 @@ void ActivityManager::goToFileBrowser(std::string /*path*/) { goHome(); }
 void ActivityManager::goToLibrary() { goHome(); }
 void ActivityManager::goToBrowser() { goHome(); }
 void ActivityManager::goToFileTransfer() { goHome(); }
+void ActivityManager::goToJoinNetwork() { goHome(); }
+void ActivityManager::goToPlugins(bool /*showOpds*/) { goHome(); }
 
 void ActivityManager::goToSleep(const bool fromTimeout) {
   // Before the current screen closes: P5's armed path is still set.

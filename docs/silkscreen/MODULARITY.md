@@ -189,7 +189,6 @@ The board may be shortened at its cut line (§16, cut-line row). The cut removes
   - Its wake keys: the spec makes DOWN1 and RIGHT wake keys, which needs the same ext0+ext1 decision as a cut board without the rework (the port arms `IO18` only).
 - **A board tag per panel family before any release channel exists.** Today there is one `silkscreen` tag (`src/network/FirmwareBoardTag.cpp`). Each env needs its own (`silkscreen`, `silkscreen-368`, `silkscreen-576`), so OTA and the SD update refuse a cross-panel image.
 - **OTA pointed at the fork.** `src/network/OtaUpdater.cpp` queries upstream's releases. A Silkscreen build finds no `-silkscreen` asset there and reports no update. Point it at the fork's releases, or turn OTA off for Silkscreen, before releases exist.
-- **Designated initializers for `SILKSCREEN`** before the SDK sync with upstream `2339226`. Upstream appends Metalio's `haptic` field where Silkscreen's fields were appended, which would shift the positional initializer.
 - **An identity check at 0x51**, so an accessory there is not taken for the RV-8263.
 - **Measure every threshold on hardware.** The checklist covers each one:
   - the floating ladder readings (B5);
@@ -209,5 +208,5 @@ The board may be shortened at its cut line (§16, cut-line row). The cut removes
 | UC8179 as a 4.26" controller | Not on this panel size (owner decision). The driver is not linked into the Silkscreen build. |
 | A passive `LED_MONIT` check of whether the `U10` group is fitted | Deferred: its thresholds need a bench session, and the switch-on probe already finds the load. |
 | A `J6` strip short or bridge check (`LED_MONIT` below 1.30 V at full duty, at least 50 ms after the enable) | Deferred: its threshold needs a bench session with real strips. |
-| `SILKSCREEN` moved to its own `SilkscreenBoard.h` | Deferred. Designated initializers are the part that matters for the SDK sync. |
+| `SILKSCREEN` moved to its own `SilkscreenBoard.h` | Deferred. The profile uses designated initializers, which is what keeps it intact when upstream appends a field. |
 | A "no power key" setting with a ladder wake (ext0 plus ext1) for a cut board | Not taken. A cut board needs the UP(2)-as-power rework instead, and the firmware arms only `IO18`. |
