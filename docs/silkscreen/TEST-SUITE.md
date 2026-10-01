@@ -91,7 +91,7 @@ This table lists the variants the firmware detects ([MODULARITY.md](MODULARITY.m
 | RTC: U13, U14 or none | The DS3231 pattern at 0x68, then 0x51 | P1 (`rtc_id=`), P2, T13 (`rtc_id=`, `pattern=`) | The fitted part; a `J6` device at 0x68, which must be refused |
 | Key ladders | The presence test at a reset | P1 (`ladders=`, and the readings with each pull); T3 (`ladders=`, and the keys it leaves out) | Both fitted; one built without its pull-up |
 | Power button idle level | `IO18` read on the ADC at a reset | P1 and T3 (`pwr_idle=`, fail `power_idle`) | Normal; `R72` fitted with `R36` (a rework only) |
-| Front-light load and strings | The switch-on probe | T9 (`probe=`, `cool=`, `warm=`, fail `no_light`); T10 (`probe2=`, `probe2_strings=`, `probe2_load=`, `restored_load=`) | A `J3` light; a `J6` pair; a one-colour `J6` strip. No light at all is checked on the reader image ([PORTING.md B8](PORTING.md#bring-up-checklist-real-board)). |
+| Front-light load and strings | The switch-on probe | T9 (`probe=`, `cool=`, `warm=`, fail `no_light`); T10 (`probe2=`, `probe2_dark=`, `probe2_strings=`, `probe2_load=`, `restored_load=`) | A `J3` light; a `J6` pair; a one-colour `J6` strip. No light at all is checked on the reader image ([PORTING.md B8](PORTING.md#bring-up-checklist-real-board)). |
 
 ### P1 System info and boot checks
 
@@ -360,10 +360,10 @@ This replaces the rebuild with a lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` in PORTIN
 | 1 | Cool string at 50 % with the profile's trip level (23 V), for 0.6 s | the switch-on probe finds the load; no trip; the monitor's lit reading is kept |
 | 2 | The trip level is lowered in RAM to the lit reading less 2 V or a fifth, whichever is more (12 V for a 15 V string) | an in-use trip within 300 ms, not taken for "no load"; IO42 held LOW by the GPIO register; `LED_MONIT` back below 700 mV |
 | 3 | 2 s | dark: no relight, no second trip, IO42 held LOW |
-| 4 | Switched on again, level still lowered | the switch-on probe reads above the level at once: the load is taken as absent (the other string is tried too, and trips), the light stays off, IO42 LOW, and the monitor counts no trip |
+| 4 | Switched on again, level still lowered | the switch-on probe reads above the level at once: the load is taken as absent (the other string is tried too, and trips), IO42 held LOW within 1 ms of the reading (the SDK's record), the light stays off, IO42 LOW afterwards, and the monitor counts no trip |
 | 5 | The profile's level back, switched on, for 1 s | the probe finds the load again; lit, no trip |
 
-It then asks whether the light did that. The trip time runs from the lowering to the trip in the SDK's record; the probe's time runs from the carrier start to the reading above the level. A failed step ends the run with FAIL. The record carries `probe2=` (time and reading), `probe2_strings=` (strings tried), `probe2_load=`, `restored_load=` and `probe_trips=`. On a one-colour J6 strip, step 4's second try enables the empty string once: an open-load enable, which is safe (HARDWARE.md §13.1).
+It then asks whether the light did that. The trip time runs from the lowering to the trip in the SDK's record; the probe's time runs from the carrier start to the reading above the level. A failed step ends the run with FAIL. The record carries `probe2=` (time and reading), `probe2_dark=` (the reading to IO42 held LOW; over 1 ms fails `probe_io42_slow`), `probe2_strings=` (strings tried), `probe2_load=`, `restored_load=` and `probe_trips=`. On a one-colour J6 strip, step 4's second try enables the empty string once: an open-load enable, which is safe (HARDWARE.md §13.1).
 
 The level only ever goes down, never above the profile's. It goes back at the end of every run, on Back, when the screen closes (a sleep included) and whenever the menu opens; a restart restores it anyway.
 
@@ -537,7 +537,8 @@ Left/Right pick a path and Confirm arms it; Confirm again disarms, and so does l
 
 The sleep screen leaves on the glass the path, the current targets and the pins to probe while asleep:
 
-- about 3.3 V: IO47, IO14, IO48, IO11, IO38, IO39, IO10;
+- about 3.3 V: IO47, IO14, IO11, IO38, IO39, IO10;
+- IO48: about 3.3 V with an SSD1677 panel; with the UC8279D panel, note the level (not in hand);
 - 0 V: IO12, IO13, IO21, IO40, IO5-7, IO15-17;
 - IO42 below 0.385 V; `SD_VDD` (C36) below 0.5 V;
 - the un-held RTC pads IO1-4, IO8 and IO9: probe and note them, since their sleep state is undocumented (POWER.md §7);
@@ -596,9 +597,10 @@ The pinned settings, the no-write rule and the tests left out (P6 forced panics,
 - **Resume.** Quick Resume and the splash-less wake (`sleep_frame.bin`, `APP_STATE`); the test firmware neither reads the state nor writes the frame.
 - **Front light across sleep and restarts** (B8):
   - Restore Light on Wake;
-  - with no light connected: switching it on shows "No front light detected" with the 10 s advice, and the light control stays for a retry;
-  - a restore that finds no light (the light unplugged while asleep) is silent and is not repeated at the next wake; a power cycle tries once;
-  - a single-colour J6 strip: the warmth row names the one string there is and ignores input;
+  - with no light connected: switching it on shows "No front light detected" with the 10 s advice, and the light control stays for a retry; in the light panel, dragging the slider afterwards only sets the level (no new `load probe` lines until the lamp toggle);
+  - a restore that finds no light (the light unplugged while asleep) shows the same message once the first screen is up and is not repeated at the next wake; a power cycle tries once;
+  - a light trip shows the same message;
+  - a single-colour J6 strip: the warmth row names the one string there is and ignores input, and after a power cycle the first switch-on lights that string at once (the saved warmth);
   - a ghost wake (short tap) must not light the LEDs;
   - a light trip stays off across a sleep, a wake and a Wi-Fi screen's silent restart (the saved preference);
   - IO42 and IO40 at 0 V after sleeping with the light on, warm and cool (ZD-08);

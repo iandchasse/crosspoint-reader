@@ -79,9 +79,15 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   void noteSwitchOnResult();
   bool warmthLocked() const;
+  // A brightness change switches the light on, except after a switch-on found no
+  // light: then the slider and the steps only set the level, so one drag or held
+  // key does not run the unloaded probe again on every event, and the lamp toggle
+  // is the retry.
+  bool levelSwitchesOn() const { return !noLightNote; }
 #else
   void noteSwitchOnResult() {}
   bool warmthLocked() const { return false; }
+  bool levelSwitchesOn() const { return true; }
 #endif
   void runTile(int idx);
   // Copy the panel's live brightness/warmth/lightOn into SETTINGS and save if

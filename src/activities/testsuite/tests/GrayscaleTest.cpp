@@ -152,7 +152,7 @@ class GrayscaleTest final : public PanelRunTest {
     completedSteps = step + 1;
     if (step == 0) {
       LOG_INF("TEST",
-              "T5 %s: base asked %s ran %s 0x22=0x%02X BUSY %lu ms%s; gray %s 0x22=0x%02X BUSY %lu ms; render %u, "
+              "T5 %s: base asked %s ran %s seq=0x%02X BUSY %lu ms%s; gray %s seq=0x%02X BUSY %lu ms; render %u, "
               "wait %u, write %u, cleanup %u ms%s",
               grayPathName(VARIANTS[runVariant].path), refreshModeName(pass.base.requested),
               refreshModeName(pass.base.ran), pass.base.sequence, static_cast<unsigned long>(pass.base.busyMs),
@@ -236,13 +236,13 @@ class GrayscaleTest final : public PanelRunTest {
     char heading[48];
     snprintf(heading, sizeof(heading), "Last run: %s", VARIANTS[runVariant].name);
     page.heading(heading);
-    page.rowf("Base: asked / ran", "%s / %s, 0x22 = 0x%02X, BUSY %lu ms%s", refreshModeName(pass.base.requested),
+    page.rowf("Base: asked / ran", "%s / %s, seq = 0x%02X, BUSY %lu ms%s", refreshModeName(pass.base.requested),
               refreshModeName(pass.base.ran), pass.base.sequence, static_cast<unsigned long>(pass.base.busyMs),
               pass.base.async ? (pass.base.busyAtReturn ? ", async" : ", async (not busy)") : "");
     if (pass.missingBuffer) {
       page.row("Gray pass", "skipped: a buffer was missing");
     } else if (pass.grayRan()) {
-      page.rowf("Gray waveform", "0x22 = 0x%02X, BUSY %lu ms", pass.gray.sequence,
+      page.rowf("Gray waveform", "seq = 0x%02X, BUSY %lu ms", pass.gray.sequence,
                 static_cast<unsigned long>(pass.gray.busyMs));
     } else {
       page.row("Gray waveform", "did not run");

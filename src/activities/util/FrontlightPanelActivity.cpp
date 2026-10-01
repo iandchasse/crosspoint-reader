@@ -116,7 +116,7 @@ void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, v
   if (event.dragPermille < 0) return;
   self->brightness = std::max(MIN_BRIGHTNESS, percentFromPermille(event.dragPermille));
   Frontlight.setBrightness(self->brightness);
-  if (!self->lightOn) {
+  if (!self->lightOn && self->levelSwitchesOn()) {
     self->lightOn = true;
     self->lightOnChanged = true;
     Frontlight.setOn(true);
@@ -199,7 +199,7 @@ void FrontlightPanelActivity::adjustBrightness(const int delta) {
   if (next == brightness) return;
   brightness = static_cast<uint8_t>(next);
   Frontlight.setBrightness(brightness);
-  if (!lightOn) {
+  if (!lightOn && levelSwitchesOn()) {
     lightOn = true;
     lightOnChanged = true;
     Frontlight.setOn(true);

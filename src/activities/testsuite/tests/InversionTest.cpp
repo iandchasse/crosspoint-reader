@@ -99,7 +99,7 @@ class InversionTest final : public PanelRunTest {
   void afterStep(const int step) override {
     const RefreshSample& sample = samples[step];
     completedSteps = step + 1;
-    LOG_INF("TEST", "T6 %d/%d %s: asked %s, ran %s (expect %s), 0x22=0x%02X, BUSY %lu ms%s", step + 1, STEP_COUNT,
+    LOG_INF("TEST", "T6 %d/%d %s: asked %s, ran %s (expect %s), seq=0x%02X, BUSY %lu ms%s", step + 1, STEP_COUNT,
             STEPS[step].inverted ? "inverted" : "normal", refreshModeName(sample.requested),
             refreshModeName(sample.ran), refreshModeName(STEPS[step].expect), sample.sequence,
             static_cast<unsigned long>(sample.busyMs),

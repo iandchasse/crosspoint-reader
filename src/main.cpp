@@ -184,20 +184,50 @@ static void handleFrontlightTrip() {
 }
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
+// "No front light detected. Wait about 10 s before connecting a light." The
+// boost has just run with no load, or a trip took it off near its OVP level
+// (HARDWARE.md 13.1), and plugging a light in before C9 has fallen discharges it
+// through one string.
+static void showFrontlightNotFound() {
+  RenderLock lock;
+  GUI.drawWrappedPopup(renderer, tr(STR_FRONTLIGHT_NOT_DETECTED), 3);
+}
+
 // FrontlightConfig::loadProbeMs: a switch-on the user asked for found no light
 // (HalFrontlight has already left it off). Say so, with the wait the boost's
 // charged output needs before a light is plugged in, and save the light as off,
 // as it now is. The light controls stay where they are, so switching it on again
 // is the retry. The light panel shows the message itself and takes the notice
-// first. From the loop task only.
+// first. A restore at boot that found none (Restore Light on Wake, or a silent
+// restart's replay) is said from the second loop pass, once the first pass has
+// started the first screen's render, which the popup must not go under; its
+// saved "on" stays (a cold boot clears the SDK's record, so a restore may try
+// once again). From the loop task only.
 static void handleFrontlightNotFound() {
+  static bool firstPassDone = false;
+  if (firstPassDone && Frontlight.takeRestoreNoLightNotice()) showFrontlightNotFound();
+  firstPassDone = true;
   if (!Frontlight.takeNoLightNotice()) return;
   if (SETTINGS.frontlightOn != 0) {
     SETTINGS.frontlightOn = 0;
     SETTINGS.saveToFile();
   }
-  RenderLock lock;
-  GUI.drawWrappedPopup(renderer, tr(STR_FRONTLIGHT_NOT_DETECTED), 3);
+  showFrontlightNotFound();
+}
+
+// FrontlightConfig::loadProbeMs: a single-colour light. The SDK records the
+// missing string until a cold boot; saving the warmth on the string that is
+// there keeps a cold boot (and Restore Light on Wake) from selecting the missing
+// one again. Only a warmth that selects the missing string changes, so the
+// user's own value otherwise stays. From the loop task only.
+static void keepWarmthOnPresentString() {
+  uint8_t warmth = SETTINGS.frontlightWarmth;
+  if (Frontlight.stringMissing(true) && warmth >= 50) warmth = 0;
+  if (Frontlight.stringMissing(false) && warmth < 50) warmth = 100;
+  if (warmth == SETTINGS.frontlightWarmth) return;
+  LOG_INF("LIGHT", "Warmth saved as %u%%: the %s string is missing", warmth, warmth == 0 ? "warm" : "cool");
+  SETTINGS.frontlightWarmth = warmth;
+  SETTINGS.saveToFile();
 }
 #endif
 
@@ -930,9 +960,19 @@ void loop() {
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
-  handleFrontlightTrip();
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
+  // A trip leaves the boost output near its OVP level, as an open-load switch-on
+  // does: the same message and connect advice (an over-voltage trip means no
+  // light connected, HARDWARE.md 13.1). Only this task clears the fault, so
+  // handleFrontlightTrip() sees the one checked here.
+  if (Frontlight.present() && Frontlight.fault()) {
+    handleFrontlightTrip();
+    showFrontlightNotFound();
+  }
   handleFrontlightNotFound();
+  keepWarmthOnPresentString();
+#else
+  handleFrontlightTrip();
 #endif
 
   // The ROM console does not depend on Arduino USB CDC's connection state.

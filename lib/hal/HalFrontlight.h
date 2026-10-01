@@ -36,7 +36,8 @@ class HalFrontlight {
   // not restore the light into nothing; a cold boot clears it.
   bool noLightFound() const { return manager.load() == freeink::frontlight::Load::Absent; }
   // A single-colour light: this string tripped the probe while the other one lit.
-  // Warmth then stays on the other string until a cold boot.
+  // Warmth then stays on the other string until a cold boot (a no-light result
+  // keeps the mark); the reader also saves its warmth on that string.
   bool stringMissing(const bool warm) const { return manager.stringMissing(warm); }
   // True once after a switch-on or colour change the user asked for found no
   // light, so the UI can say so.
@@ -44,6 +45,18 @@ class HalFrontlight {
 #if FREEINK_CAP_FRONTLIGHT_PROBE
     const bool notice = noLightNotice;
     noLightNotice = false;
+    return notice;
+#else
+    return false;
+#endif
+  }
+  // True once after begin() found no light: Restore Light on Wake, or the
+  // replay of a lit light after a silent restart. The boost has just run
+  // unloaded, so the UI gives the same message and connect advice.
+  bool takeRestoreNoLightNotice() {
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+    const bool notice = restoreNoLightNotice;
+    restoreNoLightNotice = false;
     return notice;
 #else
     return false;
@@ -68,8 +81,9 @@ class HalFrontlight {
   bool lit = false;
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   bool noLightNotice = false;
+  bool restoreNoLightNotice = false;
   // After a call that may have switched the light on: a probe that found no light
-  // leaves it off here too, and raises the notice when the user asked.
+  // leaves it off here too, and raises the notice (the restore one from begin()).
   void settleSwitchOn(bool userAsked);
 #endif
 

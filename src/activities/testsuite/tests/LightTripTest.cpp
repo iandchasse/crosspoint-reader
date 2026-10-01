@@ -29,6 +29,7 @@ namespace {
 constexpr uint8_t RUN_BRIGHTNESS = 50;
 constexpr unsigned long BASELINE_MS = 600;       // lit at the profile's level: several monitor ticks
 constexpr unsigned long TRIP_WITHIN_MS = 300;    // the 100 ms tick plus settling
+constexpr uint32_t PROBE_DARK_WITHIN_US = 1000;  // the probe's reading above the level to IO42 LOW: "at once"
 constexpr unsigned long TRIP_TIMEOUT_MS = 1000;  // then the trip failed
 constexpr unsigned long WATCH_MS = 2000;         // dark after a trip, no retry by itself
 constexpr unsigned long RESTORE_GAP_MS = 300;
@@ -83,11 +84,12 @@ struct Trip {
 // The switch-on probe at the lowered level (the operator's retry).
 struct ProbeTrip {
   bool seen = false;
-  uint32_t afterUs = 0;  // the carrier start to the reading above the level
-  uint32_t peakMv = 0;   // that reading
-  uint32_t strings = 0;  // strings the switch-on tried (the other one follows the first)
-  bool noLight = false;  // it ended with load absent and the light off
-  bool adimLow = false;  // IO42 held LOW afterwards
+  uint32_t afterUs = 0;      // the carrier start to the reading above the level
+  uint32_t darkAfterUs = 0;  // that reading to IO42 held LOW by the probe (the SDK's record)
+  uint32_t peakMv = 0;       // that reading
+  uint32_t strings = 0;      // strings the switch-on tried (the other one follows the first)
+  bool noLight = false;      // it ended with load absent and the light off
+  bool adimLow = false;      // IO42 held LOW afterwards (the end state, after the switch-off)
 };
 
 class LightTripTest final : public TestScreen {
@@ -207,6 +209,7 @@ class LightTripTest final : public TestScreen {
     ProbeTrip result;
     result.seen = probe.trips != before && probe.lastTripped;
     result.afterUs = probe.lastTripAfterUs;
+    result.darkAfterUs = probe.lastDarkAfterTripUs;
     result.peakMv = probe.lastPeakLedMv;
     result.strings = probe.trips - before;
     result.noLight = !Frontlight.isOn() && Frontlight.noLightFound();
@@ -306,6 +309,9 @@ class LightTripTest final : public TestScreen {
       if (!run.stayedDark) addFailure(fails, sizeof(fails), "not_dark");
       if (run.darkAfter.pinMv > light::DARK_MAX_PIN_MV) addFailure(fails, sizeof(fails), "dark_after_high");
     }
+    if (run.second.seen && run.second.darkAfterUs > PROBE_DARK_WITHIN_US) {
+      addFailure(fails, sizeof(fails), "probe_io42_slow");
+    }
     if (run.second.seen && !run.second.adimLow) addFailure(fails, sizeof(fails), "probe_io42_not_low");
     if (run.restoredOk && run.restoredLoad != freeink::frontlight::Load::Present) {
       addFailure(fails, sizeof(fails), "restored_not_present");
@@ -320,17 +326,18 @@ class LightTripTest final : public TestScreen {
     const auto probe = light::probe();
     record(verdict,
            "load=%s dark_pin=%u lit_led=%u trial=%u trip1=%ums@%u io42_low=%d dark_after_pin=%u stayed_dark=%d "
-           "probe2=%uus@%u probe2_strings=%u probe2_load=%s restored=%d restored_load=%s restored_led=%u level=%u "
+           "probe2=%uus@%u probe2_dark=%uus probe2_strings=%u probe2_load=%s restored=%d restored_load=%s "
+           "restored_led=%u level=%u "
            "trips=%u probe_trips=%u seen=%s fails=%s",
            load == LightLoad::J3Panel ? "J3" : "J6", static_cast<unsigned>(run.dark.pinMv),
            static_cast<unsigned>(run.litLedMv), static_cast<unsigned>(run.trialMv),
            static_cast<unsigned>(run.first.latencyMs), static_cast<unsigned>(run.first.ledMv),
            run.first.adimLow ? 1 : 0, static_cast<unsigned>(run.darkAfter.pinMv), run.stayedDark ? 1 : 0,
            static_cast<unsigned>(run.second.afterUs), static_cast<unsigned>(run.second.peakMv),
-           static_cast<unsigned>(run.second.strings), run.second.noLight ? "absent" : "-", run.restoredOk ? 1 : 0,
-           light::loadToken(run.restoredLoad), static_cast<unsigned>(run.restoredLedMv),
-           BoardConfig::ACTIVE.frontlight.monitorTripMv, static_cast<unsigned>(monitorNow.trips - trips0),
-           static_cast<unsigned>(probe.trips - probeTrips0),
+           static_cast<unsigned>(run.second.darkAfterUs), static_cast<unsigned>(run.second.strings),
+           run.second.noLight ? "absent" : "-", run.restoredOk ? 1 : 0, light::loadToken(run.restoredLoad),
+           static_cast<unsigned>(run.restoredLedMv), BoardConfig::ACTIVE.frontlight.monitorTripMv,
+           static_cast<unsigned>(monitorNow.trips - trips0), static_cast<unsigned>(probe.trips - probeTrips0),
            answer == 0   ? "yes"
            : answer == 1 ? "no"
                          : "none",
@@ -380,6 +387,10 @@ class LightTripTest final : public TestScreen {
       page.row("Stayed dark 2 s", run.stayedDark ? "yes" : "NO");
     }
     drawProbeTrip(page, "Switched on again: probe", run.second);
+    if (run.second.seen) {
+      page.rowf("IO42 LOW after that reading", "%u us%s", static_cast<unsigned>(run.second.darkAfterUs),
+                run.second.darkAfterUs > PROBE_DARK_WITHIN_US ? " SLOW" : "");
+    }
     if (run.restoredOk) page.rowf("Restored, lit 1 s", "%u mV LED_SW", static_cast<unsigned>(run.restoredLedMv));
     page.rowf("Monitor trips this boot", "%u", static_cast<unsigned>(monitorNow.trips));
     page.setCompact(false);

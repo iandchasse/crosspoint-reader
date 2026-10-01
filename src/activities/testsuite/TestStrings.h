@@ -52,10 +52,12 @@ inline constexpr const char* SLEEP_CURRENT_LINES[] = {
     "Wait 60 s, then average 60 s",
 };
 inline constexpr char SLEEP_PINS_HEADING[] = "Pins in sleep";
+// IO48 is the panel's BUSY: an SSD1677 holds it HIGH in deep sleep, while a
+// UC8279's BUSY_N level there is not in hand (PORTING.md B2, B3).
 inline constexpr const char* SLEEP_PIN_LINES[] = {
-    "3.3 V: IO47 IO14 IO48 IO11 IO38 IO39 IO10", "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
-    "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",      "Unheld, probe and note: IO1-4 IO8 IO9",
-    "IO41: unheld (FT6336U), 0 V (GT911)",
+    "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",    "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
+    "IO48: 3.3 V (SSD1677), note it (UC8279)", "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",
+    "Unheld, probe and note: IO1-4 IO8 IO9",   "IO41: unheld (FT6336U), 0 V (GT911)",
 };
 }  // namespace testsuite::text
 #endif

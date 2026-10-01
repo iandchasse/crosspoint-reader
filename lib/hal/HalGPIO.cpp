@@ -133,6 +133,19 @@ void logLadderPresence() {
 }
 #endif
 
+#if FREEINK_CAP_PROBE_IDENTITY
+// TouchConfig::requireFocalTechId: this boot's probe refused the device at the
+// touch address. If that is a genuine tail whose id the check does not know, it
+// is never hibernated and draws its Monitor current in every sleep, so say so.
+void logRefusedTouchId(const InputManager& input) {
+  if (!input.touchIdRefused()) return;
+  LOG_ERR("HW",
+          "Device at 0x%02X is not a FocalTech touch controller (chip id 0x%02X); nothing was written to it and it "
+          "is not put to sleep",
+          BoardConfig::ACTIVE.touch.i2cAddress, input.refusedTouchId());
+}
+#endif
+
 }  // namespace
 
 void HalGPIO::begin(const bool deferTouch) {
@@ -162,9 +175,17 @@ void HalGPIO::begin(const bool deferTouch) {
 #if FREEINK_CAP_ADC_LADDERS
   logLadderPresence();
 #endif
+#if FREEINK_CAP_PROBE_IDENTITY
+  if (!deferTouch) logRefusedTouchId(inputMgr);
+#endif
 }
 
-void HalGPIO::startTouch() { inputMgr.startTouch(); }
+void HalGPIO::startTouch() {
+  inputMgr.startTouch();
+#if FREEINK_CAP_PROBE_IDENTITY
+  logRefusedTouchId(inputMgr);
+#endif
+}
 
 void HalGPIO::update() {
   inputMgr.update();

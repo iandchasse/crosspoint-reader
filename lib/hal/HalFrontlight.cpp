@@ -75,7 +75,11 @@ void HalFrontlight::settleSwitchOn(const bool userAsked) {
   if (!lit || !manager.fault() || manager.load() != freeink::frontlight::Load::Absent) return;
   lit = false;
   manager.setBrightness(0);  // dark and re-armed; the SDK's record keeps "no light"
-  if (userAsked) noLightNotice = true;
+  if (userAsked) {
+    noLightNotice = true;
+  } else {
+    restoreNoLightNotice = true;
+  }
   LOG_ERR("LIGHT", "No front light detected%s", userAsked ? "" : " (Restore Light on Wake)");
 }
 #endif
