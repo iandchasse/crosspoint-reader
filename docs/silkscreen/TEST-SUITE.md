@@ -51,6 +51,49 @@ pio run -e silkscreen-test -t upload
 - Tests keep scratch files in `/.silkscreen-test/` with names ending `.tmp`. Any left behind by a sleep or a crash are removed at the next boot.
 - P8 also records a row at every boot with a card (`when=boot`).
 
+## Bench bring-up (BRING_UP.md)
+
+The hardware audit of 2026-09-30 (Rev 1.01) found no mismatch between the firmware and the board, and set out a bench procedure for the first boards: `de-link_pcb/docs/audit-2026-09-30/BRING_UP.md`, meter, supply and scope checks in order, with the steps that need firmware marked [FW]. This table maps each of its sections to what the test firmware runs for it; "meter only" or "scope only" means no firmware takes part. The [bring-up checklist](PORTING.md#bring-up-checklist-real-board) names the same sections on each B-step.
+
+| BRING_UP section | In the test firmware |
+|---|---|
+| §0 Tools | Meter and scope only. A 10 MΩ meter reads the 1 MΩ-class nodes (`USB_STAT`, `BAT_MONIT`, `LED_MONIT`) low, so compare T1 with P+ at `J5`, not with a meter on `IO8`. |
+| §1 Visual and orientation | Loupe only. A reversed `D2` shows later as `D2` dark on USB, which T2 and P4 ask about. |
+| §2 Unpowered resistance | Meter only. |
+| §3.1 USB input, no cell | The rails: meter only. T2 stage 6 (ExternalIdle above 2600 mV, `D2` lit); T1 on USB with no cell (P+ about 0 V, and the reader's label "No battery, or battery too flat to charge"); P4 stage 2 (USB power, no host). |
+| §3.2 USB hot-plug transient | Scope only. |
+| §3.3 Battery input | The current and the 4.20-3.30 V sweep: supply and meter. The brown-out sweep [FW]: [U1](#u1-wi-fi-tx-bursts) on a bench supply named on its screen, and P1's `reset=BROWNOUT` after a reset. The optional USB sweep with a real cell: T2 stage 3 (weak USB, about 950 mV). |
+| §4 Battery only: rails and back-feed | [T2](#t2-charge-status) stage 1 (HW-08): OnBattery, `D2` dark, and the last 10 samples (`hw08_clamp` for any in 700-1350 mV, WARN `partial_clamp` outside 2100-2300 mV). T1: P+ against the meter (`BAT_MONIT` = P+/2). T9: the dark `LED_MONIT` reading, 100-700 mV at the pin. The deep-sleep back-feed probes [FW]: [P5](#p5-sleep-wake-and-sleep-current) (across `R5`, across `R34`, the `J2` flex in and out). The other node voltages: meter only. |
+| §5 Charging | T2 stages 2-4 (charging, weak USB, complete) and stage 5 (the cell pulled on USB: the blink's period and duty, or a steady 3.3 V, from its 12 s capture). T1 on USB with a cell (P+ follows the charger). The charge current, U11's temperature, the float voltage and the protection trips: meter, supply and thermocouple only. |
+| §6 Sleep current [FW] | P5: every sleep path, the current judged against the [POWER.md §1](POWER.md#1-sleep-current-budget) budget, what a high reading points at, and the pins to probe, listed on the sleep screen. T12: the touch tail's current. The cutoff paths, forced panics and the SD-error timeout: the [reader image](#checks-that-need-the-reader-image). |
+| §7.1 Flex map | Bench supply only, board unpowered. |
+| §7.2 First enable [FW] | [T9](#t9-front-light): the enable sequence for the scope, every brightness step, and each string's `LED_SW` at 100 % and about 10 % duty (`vf=`, `dvf=`). Across `R37`: meter. |
+| §7.3 Colour change [FW] | T9's switch run: 30 of the reader's colour changes at about 100, 50 and 10 % duty. |
+| §7.4 Open load [FW] | [T10](#t10-front-light-over-voltage-trip) step 0, opt-in: the one deliberate unloaded enable (below). |
+| §8 E-paper power [FW] | [T4](#t4-refresh-modes)'s scope loops (FULL, HALF, FAST). The `3V3` rise at plug-in: scope only. |
+| §9 RTC and miscellaneous | RTC: T13 (the oscillator starts at the first I2C write: OSF, then set the time) and T14. Power button: T3 (`power_not_low`, and the meter check at `R76` pad 1) and P1/T3 (`pwr_idle`). QR codes: a phone. UART: the serial log. LDO temperature [FW]: [U2](#u2-sustained-load). SD switch-on [FW]: [P3](#p3-sd-card)'s power cycles. |
+| §10 Cut-down boards | [OPT](#opt-board-options) first (Cut-down board, which also sets UP(2) is POWER). T3: `SW7` as POWER on `IO18` (`up2pwr=`), and `up2_window` if UP(2)'s window still fires on `IO4`. P1 and T3: `power_idle` for `R72` fitted with `R36` still in. T10 step 0: with no `D3`, U10's OVP is the only limit, and the TPS923611 swap is refused. P2 and T9 record `j6=n/a`. The cut and the sealed edge: no firmware. |
+
+**Board options.** What the firmware cannot see about the build, the operator sets in [OPT](#opt-board-options) before the tests: **Cut-down board** (no `J6`, no `SW10`) and **UP(2) is POWER** (`R72`/`R74` in, `R36`/`R73` out). They are kept in `/.silkscreen-test/options.cfg`; without a card they last until the next restart.
+
+**Bench utilities and their limits.** Each runs for a bounded time, holds auto-sleep off only while it runs, and leaves the radio off, the light off and the card mounted on every way out.
+
+| Utility | BRING_UP | Supply and load | Bound | Stops on |
+|---|---|---|---|---|
+| T4 scope loop | §8 | any | 5 min or 1000 refreshes | any key or tap (held until the refresh in progress ends) |
+| T9 switch run | §7.3 | any; lit on the load the operator named | 30 colour changes, about 35 s | Back; the first trip, a light that goes out, `latched_off`, `over_22v` |
+| T10 step 0 | §7.4 | any; no load, opt-in | one switch-on at 10 %, then the 10 s connect wait; about 15 s | its own end, or Back |
+| P3 power cycles | §9 | any | 10 cycles, about 20 s | Back or leaving (the card is mounted again first); a failed mount |
+| U1 TX bursts | §3.3 | USB; a bench supply named on screen (below the 3.4 V Wi-Fi gate too); a cell at 3.4 V or more | 1, 2 or 5 min of 1 s TX and 1 s quiet | Back; USB lost on a USB run; the cell at 3.3 V |
+| U2 sustained load | §9 | USB only, checked every second | 5, 10 or 20 min | any key or tap; USB lost |
+| T2 stage 5 capture | §5 | USB, cell pulled | 12 s at 20 Hz, once per Record | Back (records nothing) |
+
+**Dated exceptions.** Three tests step outside a rule on purpose, and each is recorded in [REQUIREMENTS.md](REQUIREMENTS.md):
+
+- T10 step 0 enables the boost with `J3` and `J6` empty, once, after the operator names the driver build and confirms both empty (`fl-no-open-load`; see [Safety](#safety));
+- U1 transmits below the 3.4 V Wi-Fi gate on a bench supply the operator names in place of the cell, for the brown-out sweep (`bat-wifi-gate`);
+- T2 stage 5 reads `USB_STAT` at 20 Hz for 12 s to time the blink (`usbstat-slow-sampling`).
+
 ## Tests
 
 The ids are stable; `results.csv` and the serial log use them. Every test in the menu is built; none has run on a board yet. Each section gives the purpose and the bring-up step, the steps, what the screen shows and the PASS criteria. The thresholds marked "proposal" are to tune after the first board.
@@ -175,7 +218,7 @@ The ladder is sampled by the SDK, once a second (usbstat-slow-sampling); this sc
 
 PASS: the stage's state is published (stage 5: NoBattery or ExternalIdle); the last sample sits in its window; `isUsbConnected()` and D2 are as the table says; a change into the state during the stage settled in time (3 s; Complete 10 s, since it needs 8 stable samples, about 8.5-9.5 s after the change itself; the no-battery blink 8 s); and in stage 5 Complete was not published during the stage (a Complete still published from stage 4 when stage 5 was picked does not count; one still published at Record fails the state). Switching the stage restarts the stage's own record (the states seen, the settle); the last four changes stay listed.
 
-**Stage 1 (HW-08, BRING_UP §4).** The last 10 samples since the stage was picked or the published state last changed (so the unplug itself does not count) are judged too. Any in the charging band, 700-1350 mV, fails `hw08_clamp`: the unpowered TP4056 clamps CHRG/STDBY (CE back-feed), so firmware cannot tell the cell from USB, and the screen says so. Any other outside 2100-2300 mV gives WARN `partial_clamp`. Wait 10 s after unplugging before Record. The record carries `recent=<lo>-<hi>/<n>`, `clamped=` and `off_nominal=`.
+**Stage 1 (HW-08, BRING_UP §4).** The last 10 samples since the stage was picked or the published state last changed (so the unplug itself does not count) are judged too. Any in the charging band, 700-1350 mV, fails `hw08_clamp`: the unpowered TP4056 clamps CHRG/STDBY (CE back-feed), so firmware cannot tell the cell from USB, and the screen says so. Any other outside 2100-2300 mV gives WARN `partial_clamp`. Wait 10 s after unplugging before Record. The record carries `recent=<lo>-<hi>/<n>`, `clamped=` and `off_nominal=`. A `hw08_clamp` on real boards is the trigger for the `P+` trend check that [POWER.md HW-08](POWER.md#6-hardware-notes-for-a-future-revision) holds in reserve: keep the rows.
 
 **Stage 5.** Record first captures `USB_STAT` for 12 s at 20 Hz (four readings each through `freeink::adc`, no mode or pull set, auto-sleep held off for the run; Back stops it and records nothing), then asks about D2. The capture times the blink: edges at the midpoint of the levels seen, with a quarter of the swing as hysteresis, give the period (from each edge to the next one in the same direction: mean, minimum and maximum) and the share of each whole period at the low level (CHRG and STDBY both on). The record carries `outcome=blink|steady` (the published state) and `cap=blink edges=<n> period_ms=<mean>(<min>-<max>) low_duty=<%> levels=<high>/<low>`, or `cap=steady cap_mv=<lo>-<hi>`: these are the period and duty the firmware's blink rules want. The settle limit is 8 s for the blink and 3 s for the steady level.
 

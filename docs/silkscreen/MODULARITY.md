@@ -9,7 +9,7 @@ Silkscreen is a base board meant to be built many ways: with or without a front 
 
 It records the conclusion of the modularity research of 2026-09-30, which was a synthesis checked by an independent verification pass, as amended by the owner's decisions. It also gives the state after the work that research led to.
 
-- **Status:** SDK `3ee11bc`, app `16374791`, with the follow-up review's fixes (SDK `923f61d`, app `fix(silkscreen): address follow-up review`). **Nothing here has run on a board.** Every probe threshold is derived from datasheets and the netlist, and waits for the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
+- **Status:** SDK `3ee11bc`, app `16374791`, with the follow-up review's fixes (SDK `923f61d`, app `fix(silkscreen): address follow-up review`) and the hardware audit's (SDK `65660a6`, app `f25a8651`). **Nothing here has run on a board.** Every probe threshold is derived from datasheets and the netlist, and waits for the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
 - `§` refers to `de-link_pcb/docs/HARDWARE.md`. SDK paths are relative to `freeink-sdk/libs/`.
 - The battery cost of every check is in [Battery cost of the checks](#battery-cost-of-the-checks); the drain rules they keep to are in [POWER.md](POWER.md).
 
@@ -54,7 +54,7 @@ No passive reading shows whether a light is on `J3` or `J6`: `LED_MONIT` sees a 
 
 ## Module table
 
-Status after this round (SDK `3ee11bc`, app `16374791`, and the follow-up review). "B" steps are the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
+Status after this round (SDK `3ee11bc`, app `16374791`, the follow-up review and the hardware audit). "B" steps are the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
 
 | Module | Variants | Tier and mechanism | Status | Left to do |
 |---|---|---|---|---|
@@ -67,13 +67,13 @@ Status after this round (SDK `3ee11bc`, app `16374791`, and the follow-up review
 | RTC | U13 DS3231MZ at 0x68; U14 RV-8263-C7 at 0x51; none | 2. 0x68 must show the DS3231 register pattern before anything is written to it; then 0x51 is tried; with neither, the board has no RTC. | Done (SDK `abca595`, `3ee11bc`) | B7. 0x51 has no identity check ([J6 accessories](#j6-accessories)) |
 | Key ladders | Both fitted; one built without its pull-up (`R4`/`C27` or `R28`/`C28` off, with no keys on that ladder) | 2. Pull-down, then pull-up readings at a reset other than a deep-sleep wake. A pin that follows both pulls switches its ladder off (`ACTIVE` pin unassigned). 5 B RTC cache. | Done (SDK `3ee11bc`) | B5: measure the floating readings (the 400/2600 mV thresholds are derived) |
 | Individual keys | Any subset fitted; `SW2`/`SW3`/`SW8`/`SW9` front-mounted (MJTP1243, §9.1.1) | 4. An unfitted key reads released; front-mounted keys use the same ladder values. | n/a | Hints for keys that are not fitted stay (cosmetic) |
-| Power key | `SW10`; UP(2)-as-power (`SW7` through `R72`/`R74`) | 4. Both drive `IO18` HIGH through 10 kΩ. A half-done rework (`R72` with `R36` still fitted) is caught by the `IO18` idle check. | Done (SDK `3ee11bc`) | B1: `IO18` read at boot |
+| Power key | `SW10`; UP(2)-as-power (`SW7` through `R72`/`R74`) | 4. Both drive `IO18` HIGH through 10 kΩ (about 3.0 V against `R76`). A half-done rework (`R72` with `R36` still fitted) is caught by the `IO18` idle check. | Done (SDK `3ee11bc`) | B1: `IO18` read at boot; B5: T3 with the test firmware's OPT "UP(2) is POWER" |
 | Front-light driver group | `U10` and its parts fitted (the standard BOM) or left off | Compiled in by default. `[silkscreen] frontlight_flags =` in `platformio.local.ini` drops it, and `IO42`/`IO40` stay parked LOW. With the group left off, `LED_MONIT` floats and a switch-on reports whatever it reads (cosmetic), so drop it from the build. | Done | — |
-| Front-light load | None; a `J3` bonded light (≈15 V); a `J6` strip (6-22 V) | 3. `LED_MONIT` read every 1 ms for 60 ms after each enable. Above 23 V, the string has no load and goes dark at once. If no string lights, the light is off. After a switch-on, a restore that found no light, or a trip in use, the reader says "No front light detected. Wait about 10 s before connecting a light." and keeps the control for a retry. 8 B RTC record: once a switch-on or a restore has found no light, later deep-sleep wakes do not enable the boost (a cold boot clears the record, so a restore may try once). | Done (SDK `b7b00c8`) | B8: where the trip crossing falls in the 60 ms window, the `C9` decay, the `J6` near-trip margin |
+| Front-light load | None; a `J3` bonded light (≈15 V); a `J6` strip (6-22 V) | 3. `LED_MONIT` read every 20 ms for 500 ms after each enable, on the monitor timer: the switch-on returns at once and decides within the window. Above 23 V, the string has no load and goes dark at once. If no string lights, the light is off. After a switch-on, a restore that found no light, a trip in use, or a second string the rail blocked, the reader says "No front light detected. Wait about 10 s before connecting a light." and keeps the control for a retry. 8 B RTC record: once a switch-on or a restore has found no light, later deep-sleep wakes do not enable the boost (a cold boot clears the record, so a restore may try once). | Done (SDK `b7b00c8`; the cadence `65660a6`) | B8: where the trip crossing falls in the 500 ms window, the `C9` decay, the `J6` near-trip margin |
 | Light strings | Warm and cool; warm only; cool only | 3. A trip on the selected string tries the other one in the same switch-on. If that one lights, the first is recorded missing, a later no-light result included, until a cold boot; the reader saves the warmth on the string there is, so it is never selected again, a cold boot included, unless the user changes the warmth after a cold boot. The warmth row names the string there is. | Done (SDK `b7b00c8`, follow-up review) | B8 with a single-colour strip |
 | `R37` / U10 part | `R37` 13.3-22 Ω; TPS923610, or TPS923611 with its SMAJ33A | 4. Brightness is a fraction of the `R37` ceiling. | n/a | — |
 | `J6` accessories | None; I2C; GPIO; a light | Partly 2: the identity checks keep accessories at 0x38 and 0x68 from being written. Otherwise not modelled. | Done for 0x38 and 0x68 | [J6 accessories](#j6-accessories) |
-| Cut board | Full length, or shortened at the cut line | 4. Needs the UP(2)-as-power rework to wake. | Documented | [The cut board](#the-cut-board) |
+| Cut board | Full length, or shortened at the cut line | 4. Needs the UP(2)-as-power rework to wake. The test firmware cannot see it either: the operator sets it in OPT. | Documented | [The cut board](#the-cut-board) |
 | Battery, `R6`, SD socket, USB | Various | 4. | n/a | — |
 | 5.76" extras | Page keys UP2/DOWN2; a LIS2DH12 (not fitted); a left-handed mount | Part of the 5.76" env. | Not started | [Future work](#future-work) |
 
@@ -89,7 +89,7 @@ The SDK already had most of the model. The work added checks to it, not a new la
    - `FREEINK_CAP_POWER_POLICY`: the power fields, the `IO18` idle check included;
    - `FREEINK_CAP_FRONTLIGHT_PROBE`: the switch-on probe, with `FREEINK_CAP_FRONTLIGHT`;
    - also `FREEINK_CAP_CHARGE_LADDER` and `FREEINK_CAP_I2C_RECOVERY`.
-3. **Profile fields switch each check on.** `BoardProfile::displayProbe` (`DisplayProbeConfig`) and `DisplayPins::busyPullUp`; `TouchConfig::requireFocalTechId` and the `fallbackController`/`fallbackAddr` that `SILKSCREEN_TOUCH_ALT_JUMPERS` sets; `SensorsConfig::rtcIdentityCheck` and `rtcFallbackType`/`rtcFallbackAddr`; `PowerConfig::ladderPresenceProbe` and `powerPinIdleCheck`; `FrontlightConfig::loadProbeMs` and `railSafeV`. Every field and flag is listed in the SDK README ("Optional profile fields").
+3. **Profile fields switch each check on.** `BoardProfile::displayProbe` (`DisplayProbeConfig`) and `DisplayPins::busyPullUp`; `TouchConfig::requireFocalTechId` and the `fallbackController`/`fallbackAddr` that `SILKSCREEN_TOUCH_ALT_JUMPERS` sets; `SensorsConfig::rtcIdentityCheck` and `rtcFallbackType`/`rtcFallbackAddr`; `PowerConfig::ladderPresenceProbe` and `powerPinIdleCheck`; `FrontlightConfig::loadProbeWindowMs`, `loadProbePeriodMs` and `railSafeV`. Every field and flag is listed in the SDK README ("Optional profile fields").
 4. **Probes patch `ACTIVE`.** `BoardConfig::ACTIVE` is the mutable copy of the profile that drivers read, so a probe that rules a part out changes it before first use:
 
    | Check | Runs | Patches or records | Kept for a deep-sleep wake | Code |
@@ -125,7 +125,7 @@ Battery drain is the port's first constraint ([POWER.md](POWER.md)). None of the
 | Key ladders | A reset other than a deep-sleep wake | About 10 ms for both ladders. Each pull is on for about 2 ms, and both end off. |
 | Touch tail | Each boot past the wake decision | ≈307 ms for the controller's reset and settle, plus a chip-id read: at a cold boot whether or not a tail is fitted, and at a deep-sleep wake when a tail was found before. Nothing on a deep-sleep wake when none was. |
 | RTC identity | Each boot past the wake decision | One 19-register read; a second read 20 ms later only on a mismatch |
-| Front-light load | Each switch-on the user asks for, and a restore | Holds the caller for 60 ms. On a board with no light, one OVP event (≈35 ms) per string tried, and the rail wait between them (≈1-3 s, at most 4 s, the loop blocked). For a restore that is in `setup()` before the first paint, once per cold boot and once after a wake if the light was removed during the sleep. A fallback to the other string adds the rail wait (≈1-3 s) once: the reader then saves the warmth on the string there is. After a no-light result the light panel's slider and keys only set the level, so a gesture runs the probe once. |
+| Front-light load | Each switch-on the user asks for, and a restore | The caller does not wait: the monitor timer reads `LED_MONIT` every 20 ms for 500 ms (at most 25 readings, each under the ADC lock), then every 100 ms while lit as before. On a board with no light, one OVP event per string tried, and the rail wait between them on the same timer (≈1-3 s, at most 4 s) with the loop running; a restore no longer delays the first paint, and its message comes a few seconds after boot (once per cold boot, and once after a wake if the light was removed during the sleep). A fallback to the other string adds the rail wait (≈1-3 s) and a second window once: the reader then saves the warmth on the string there is. After a no-light result the light panel's slider and keys only set the level, so a gesture runs the probe once. |
 
 A ghost wake (a short tap) and a release wake run none of the costly ones:
 
@@ -144,12 +144,13 @@ The board may be shortened at its cut line (§16, cut-line row). The cut removes
 
 **A cut board needs the UP(2)-as-power option to wake** (§9.2): remove `R36` and `R73` first, then fit `R72` and `R74`, in that order.
 
-- **After the rework.** `SW7` drives `IO18` HIGH through `R72` exactly as `SW10` did through `R62`, so the firmware needs no change: the same ext1 wake, the same hold check.
+- **After the rework.** `SW7` takes 3V3 (through `R74`) to `R72` 10 kΩ into `IO18`, against `R76`'s 100 kΩ: about 3.0 V pressed and 0 V released, exactly as `SW10` through `R62`. The firmware needs no change: the same ext1 wake, the same hold check.
 - **What changes for the keys.** UP(2) leaves ladder 2. Its window never fires again, and UP(1) still gives Up.
 - **Without the rework.** `IO18` sits at 0 V through `R76`. The firmware arms only `IO18`, so once asleep the board wakes only through the `SW11` reset. A wake on `SW1`/`SW2` or on a timer would need firmware support, and the port has neither (REQUIREMENTS `wake-ladder-ext1`).
 - **A half-done rework is caught.** With `R72` fitted while `R36` is still in, `IO18` idles at ≈1.76 V. The boot check switches the pin off and the reader shows the power-button fault. Every sleep then arms no wake source, and `SW11` starts the board. The check runs at resets other than a deep-sleep wake. A boot that finds the button held through the 15 ms check (`pwr_idle=high`, "held at boot") cannot tell, and the fault is caught at the next reset with the button released.
 - **What firmware cannot see.** `R73` and `R74` fitted together short 3V3 to GND. That is a hardware rule only.
 - **The front light.** With `D3`/`D8` gone, an unloaded enable on a cut board relies on U10's own OVP latch alone. Whether that needs its own limit is a hardware question.
+- **The test firmware.** The operator sets OPT's "Cut-down board", which turns "UP(2) is POWER" on too (BRING_UP §10). T3 then counts `SW7` as POWER on `IO18` and fails `up2_window` if UP(2)'s window still fires on `IO4`; P2 and T9 offer no `J6`; T10's step 0 says U10's OVP is the only limit and refuses the TPS923611 swap.
 
 ## J6 accessories
 
