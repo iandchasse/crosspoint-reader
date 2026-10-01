@@ -247,9 +247,21 @@ void FrontlightPanelActivity::noteSwitchOnResult() {
   } else if (Frontlight.isOn()) {
     noLightNote = false;
   }
+  awaitingSwitchOnResult = Frontlight.switchOnPending();
   // A colour change can find a string missing, which pins the warmth row.
   if (warmthLocked()) warmth = Frontlight.stringMissing(true) ? 0 : 100;
   requestUpdate();
+}
+
+void FrontlightPanelActivity::syncLightState() {
+  if (awaitingSwitchOnResult) {
+    if (!Frontlight.switchOnPending()) noteSwitchOnResult();
+    return;
+  }
+  if (lightOn && !Frontlight.isOn()) {
+    lightOn = false;
+    requestUpdate();
+  }
 }
 
 bool FrontlightPanelActivity::warmthLocked() const {
@@ -289,6 +301,9 @@ bool FrontlightPanelActivity::handleHomeGesture() {
 }
 
 void FrontlightPanelActivity::loop() {
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  syncLightState();
+#endif
   const auto touch = routeTouch(mappedInput, false, /*routeHeld=*/true);
   if (touch.routed) {
     if (app.invalidated()) requestUpdate();

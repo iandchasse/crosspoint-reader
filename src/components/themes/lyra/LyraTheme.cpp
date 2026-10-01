@@ -65,6 +65,7 @@ const uint8_t* iconForName(UIIcon icon) {
 }  // namespace
 
 void LyraTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const {
+  if (powerManager.noChargeableCell()) return;  // empty, with no charge state
   const bool charging = gpio.isUsbConnected();
 
   if (charging) {

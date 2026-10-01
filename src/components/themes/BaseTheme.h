@@ -296,6 +296,11 @@ class BaseTheme {
 
   // Shared constants and helpers for battery drawing (used by all themes)
   static constexpr int batteryPercentSpacing = 4;
+  // The text beside the battery glyph: "NN%" when shown, or, on external power
+  // with no chargeable cell (HalPowerManager::noChargeableCell()), a message in
+  // place of a charge state whatever the percentage setting. nullptr for none;
+  // `buf` holds the percentage.
+  static const char* batteryLabel(char* buf, size_t size, uint16_t percentage, bool showPercentage);
   static void drawBatteryOutline(const GfxRenderer& renderer, int x, int y, int battWidth, int rectHeight);
   static void drawBatteryLightningBolt(const GfxRenderer& renderer, int boltX, int boltY);
 };

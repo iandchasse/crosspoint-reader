@@ -384,6 +384,10 @@ bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();
 }
 
+bool ActivityManager::showsFrontlightNotice() const {
+  return currentActivity && currentActivity->showsFrontlightNotice();
+}
+
 bool ActivityManager::isReaderActivity() const {
   return std::any_of(stackActivities.begin(), stackActivities.end(),
                      [](const auto& activity) { return activity->isReaderActivity(); }) ||

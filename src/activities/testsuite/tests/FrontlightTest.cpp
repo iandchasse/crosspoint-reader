@@ -5,8 +5,9 @@
 // the SDK's monitor record is watched for trips: the trip handler in the main
 // loop switches the light off before this screen could see fault(), so a trip
 // shows here as the light dropping out and the record's count rising. Every
-// switch-on and string change also runs the SDK's load probe; its result (a
-// load or none, and which strings answered) is shown and recorded.
+// switch-on and string change also runs the SDK's load probe, on its timer: the
+// screen waits for it to decide, then shows and records its result (a load or
+// none, and which strings answered).
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalFrontlight.h>
@@ -124,6 +125,10 @@ class FrontlightTest final : public TestScreen {
       case Slot::Left:
         warm = !warm;
         Frontlight.setWarmth(warm ? 100 : 0);  // lit: the probe runs on the new string
+        if (lit && !light::awaitSwitchOn()) {
+          abortUndecided();
+          break;
+        }
         changedAt = millis();
         if (lit && checkNoLight()) break;
         redraw();
@@ -197,9 +202,14 @@ class FrontlightTest final : public TestScreen {
   void lightUp() {
     Frontlight.setBrightness(STEPS[step]);
     Frontlight.setWarmth(warm ? 100 : 0);
-    Frontlight.setOn(true);  // the SDK's load probe runs inside
+    Frontlight.setOn(true);  // the SDK's load probe runs on its timer
+    const bool decided = light::awaitSwitchOn();
     lit = true;
     if (checkNoLight()) return;
+    if (!decided) {
+      abortUndecided();
+      return;
+    }
     const unsigned long start = millis();
     everLit = true;
     changedAt = start;
@@ -238,6 +248,18 @@ class FrontlightTest final : public TestScreen {
            static_cast<unsigned>(probeNow.trips - probeTripsAtOpen));
     redraw();
     return true;
+  }
+
+  // The switch-on probe had not decided within LightCheck's bound: its timer
+  // never ran its window. Off, and FAIL.
+  void abortUndecided() {
+    Frontlight.setOn(false);
+    lit = false;
+    offAt = millis();
+    afterOffPending = true;
+    monitorNow = light::monitor();
+    probeNow = light::probe();
+    record(Verdict::Fail, "fails=probe_undecided (the switch-on probe did not decide in time; switched off)");
   }
 
   void abortOverVoltage(const light::Reading& reading, const unsigned long afterMs) {

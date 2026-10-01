@@ -41,7 +41,7 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
 #endif
   manager.setBrightness(lit ? lastBrightness : 0);
 #if FREEINK_CAP_FRONTLIGHT_PROBE
-  settleSwitchOn(false);
+  noteSwitchOn(Pending::Restore);
 #endif
   LOG_INF("LIGHT", "Frontlight up: %u%% warm=%u%% %s", lastBrightness, manager.colorTemperature(), lit ? "on" : "off");
 }
@@ -54,7 +54,7 @@ void HalFrontlight::setBrightness(const uint8_t percent) {
 void HalFrontlight::setWarmth(const uint8_t warmPercent) {
   manager.setColorTemperature(warmPercent > 100 ? 100 : warmPercent);
 #if FREEINK_CAP_FRONTLIGHT_PROBE
-  settleSwitchOn(true);  // a colour change while lit probes the other string
+  noteSwitchOn(Pending::User);  // a colour change while lit probes the other string
 #endif
 }
 
@@ -66,11 +66,32 @@ void HalFrontlight::setOn(const bool on) {
   lit = on;
   manager.setBrightness(lit ? lastBrightness : 0);
 #if FREEINK_CAP_FRONTLIGHT_PROBE
-  settleSwitchOn(true);
+  pending = Pending::None;  // a new switch-on: an earlier one's result no longer counts
+  noteSwitchOn(Pending::User);
+#endif
+}
+
+void HalFrontlight::update() {
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  if (pending == Pending::None || manager.probing()) return;
+  const bool userAsked = pending == Pending::User;
+  pending = Pending::None;
+  settleSwitchOn(userAsked);
 #endif
 }
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE
+void HalFrontlight::noteSwitchOn(const Pending who) {
+  if (!lit) {
+    pending = Pending::None;  // off: nothing is deciding
+    return;
+  }
+  // A colour change while an earlier switch-on decides joins it: that one's
+  // asker gets the result.
+  if (pending == Pending::None) pending = who;
+  update();  // no probe ran (a colour change on the lit string, or no probe window)
+}
+
 void HalFrontlight::settleSwitchOn(const bool userAsked) {
   if (!lit || !manager.fault() || manager.load() != freeink::frontlight::Load::Absent) return;
   lit = false;

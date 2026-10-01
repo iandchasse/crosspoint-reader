@@ -40,10 +40,15 @@ Reading readMonitor(uint8_t samples = 16);
 // The SDK's monitor record (trips, last reading), kept after a trip is handled.
 // Its trips are the in-use ones; a switch-on probe's are in probe().
 FrontlightManager::MonitorDiagnostics monitor();
-// The SDK's load-probe record (FrontlightConfig::loadProbeMs): what the last
+// The SDK's load-probe record (FrontlightConfig::loadProbeWindowMs): what the last
 // switch-on found, each string's state, and the probe's own readings. All zero
 // without FREEINK_CAP_FRONTLIGHT_PROBE.
 FrontlightManager::ProbeDiagnostics probe();
+// The probe decides on the SDK's monitor timer, after the call that switched the
+// light on: this blocks until that switch-on has decided (its window, a rail wait
+// and the other string's window) and the HAL has settled it, as the main loop
+// would. False if it had not decided within the bound.
+bool awaitSwitchOn();
 // The string the SDK's colour select picks now. It differs from the warmth asked
 // for when the probe found that string missing.
 bool selectsWarm();

@@ -72,7 +72,8 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   void stepWarmthByKey(bool warmer);
   void toggleLight();
   // After a switch-on or colour change from this panel: a load probe that found no
-  // light (FrontlightConfig::loadProbeMs) leaves the light off and shows why.
+  // light (FrontlightConfig::loadProbeWindowMs) leaves the light off and shows why.
+  // The probe decides on the SDK's timer, so loop() asks again until it has.
   // One string of a colour-select light is missing (a single-colour light): the
   // warmth row stays on the other string, says so, and ignores input.
   // Without FREEINK_CAP_FRONTLIGHT_PROBE neither can happen.
@@ -105,6 +106,11 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // The last switch-on from this panel found no light: the message sits under the
   // brightness row until the light comes on.
   bool noLightNote = false;
+  // A switch-on from this panel has not decided its load yet.
+  bool awaitingSwitchOnResult = false;
+  // From loop(): take a switch-on's result once it has decided, and follow a light
+  // the main loop switched off after a trip.
+  void syncLightState();
   // The line under the warmth row of a single-colour light, or nullptr.
   static const char* singleStringNote();
   // A note under a row: small text wrapped to the panel's content width, at most
@@ -122,4 +128,5 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   void loop() override;
   void render(RenderLock&&) override;
   bool handleHomeGesture() override;
+  bool showsFrontlightNotice() const override { return true; }
 };

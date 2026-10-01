@@ -201,6 +201,22 @@ bool HalPowerManager::firmwareUpdateBlockedByBattery() const {
   return true;
 }
 
+bool HalPowerManager::noChargeableCell() const {
+  if (!BoardConfig::powerPolicy().noChargeableCellNotice) return false;
+  const unsigned long now = millis();
+  if (_noCellPolledMs != 0 && now - _noCellPolledMs < BATTERY_POLL_MS) return _noCellCached;
+  _noCellPolledMs = now != 0 ? now : 1;
+  // External power: the charge-status ladder says so, or reads the charger's
+  // no-battery blink, which it leaves undecided.
+  const bool external = gpio.isUsbConnected() || BatteryMonitor::chargeStatus() == BoardConfig::ChargeState::NoBattery;
+  static const BatteryMonitor battery;
+  const uint16_t mv = external ? battery.readMillivoltsAveraged(4) : 0;
+  const bool noCell = external && mv < BatteryMonitor::CELL_PRESENT_MIN_MV;
+  if (noCell && !_noCellCached) LOG_INF("PWR", "External power, battery %u mV: no chargeable cell", mv);
+  _noCellCached = noCell;
+  return _noCellCached;
+}
+
 uint16_t HalPowerManager::getBatteryPercentage() const {
   static const BatteryMonitor battery;
   if (BoardConfig::ACTIVE.batteryGauge.gaugeAddr != 0) {

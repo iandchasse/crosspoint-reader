@@ -83,7 +83,16 @@ void BaseTheme::drawBatteryLightningBolt(const GfxRenderer& renderer, int boltX,
   renderer.drawLine(boltX + 1, boltY + 7, boltX + 2, boltY + 7, false);
 }
 
+const char* BaseTheme::batteryLabel(char* buf, const size_t size, const uint16_t percentage,
+                                    const bool showPercentage) {
+  if (powerManager.noChargeableCell()) return tr(STR_NO_CHARGEABLE_CELL);
+  if (!showPercentage) return nullptr;
+  snprintf(buf, size, "%u%%", static_cast<unsigned>(percentage));
+  return buf;
+}
+
 void BaseTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const {
+  if (powerManager.noChargeableCell()) return;  // empty, with no charge state
   const bool charging = gpio.isUsbConnected();
 
   const int maxFillWidth = rect.width - 5;
@@ -115,9 +124,9 @@ void BaseTheme::drawBatteryLeft(const GfxRenderer& renderer, Rect rect, const bo
   const uint16_t percentage = powerManager.getBatteryPercentage();
   const int y = rect.y + 6;
 
-  if (showPercentage) {
-    const auto percentageText = std::to_string(percentage) + "%";
-    renderer.drawText(SMALL_FONT_ID, rect.x + batteryPercentSpacing + rect.width, rect.y, percentageText.c_str());
+  char percentText[8];
+  if (const char* label = batteryLabel(percentText, sizeof(percentText), percentage, showPercentage)) {
+    renderer.drawText(SMALL_FONT_ID, rect.x + batteryPercentSpacing + rect.width, rect.y, label);
   }
 
   const Rect iconRect{rect.x, y, rect.width, rect.height};
@@ -331,15 +340,17 @@ void BaseTheme::applyHeaderStatus(const GfxRenderer& renderer, freeink::ui::Head
 
   status.showBattery = true;
   const uint16_t percentage = powerManager.getBatteryPercentage();
-  status.battery.percent = static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
-  status.battery.charging = gpio.isUsbConnected();
+  // No chargeable cell on external power: an empty glyph and the message, with no
+  // charge state.
+  const bool noCell = powerManager.noChargeableCell();
+  status.battery.percent = noCell ? 0 : static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
+  status.battery.charging = !noCell && gpio.isUsbConnected();
   // Static label buffers: headers draw on the single render task, and the
   // strings only need to outlive the fui::header() call that consumes them.
   static char percentText[8];
-  if (SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS) {
-    snprintf(percentText, sizeof(percentText), "%u%%", static_cast<unsigned>(percentage));
-    status.battery.label = percentText;
-  }
+  status.battery.label =
+      batteryLabel(percentText, sizeof(percentText), percentage,
+                   SETTINGS.hideBatteryPercentage != CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_ALWAYS);
   status.battery.glyphWidth = static_cast<int16_t>(metrics.batteryWidth);
   status.battery.glyphHeight = static_cast<int16_t>(metrics.batteryHeight);
   status.battery.gap = batteryPercentSpacing;
@@ -899,11 +910,11 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
                         showBatteryPercentage);
     int batteryWidth = metrics.batteryWidth;
 
-    if (showBatteryPercentage) {
-      const uint16_t percentage = powerManager.getBatteryPercentage();
+    char percentText[8];
+    const uint16_t percentage = showBatteryPercentage ? powerManager.getBatteryPercentage() : 0;
+    if (const char* label = batteryLabel(percentText, sizeof(percentText), percentage, showBatteryPercentage)) {
       // width of icon + spacing + text for layout purposes
-      batteryWidth +=
-          batteryPercentSpacing + renderer.getTextWidth(SMALL_FONT_ID, (std::to_string(percentage) + "%").c_str());
+      batteryWidth += batteryPercentSpacing + renderer.getTextWidth(SMALL_FONT_ID, label);
     }
 
     leftClusterWidth += batteryWidth;

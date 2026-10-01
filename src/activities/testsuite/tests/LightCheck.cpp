@@ -49,6 +49,21 @@ FrontlightManager::ProbeDiagnostics probe() { return TestSuiteAccess::frontlight
 
 bool selectsWarm() { return TestSuiteAccess::frontlight(Frontlight).warmSelected(); }
 
+bool awaitSwitchOn() {
+  // Two windows and the longest rail wait between them (4 s), with a margin.
+  const unsigned long boundMs = 2UL * BoardConfig::ACTIVE.frontlight.loadProbeWindowMs + 5000UL;
+  const unsigned long start = millis();
+  for (;;) {
+    Frontlight.update();
+    if (!Frontlight.switchOnPending()) return true;
+    if (millis() - start >= boundMs) {
+      LOG_ERR("TEST", "Front-light switch-on still deciding after %lu ms", boundMs);
+      return false;
+    }
+    delay(5);
+  }
+}
+
 const char* loadToken(const freeink::frontlight::Load load) {
   switch (load) {
     case freeink::frontlight::Load::Present:

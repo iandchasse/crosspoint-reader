@@ -161,7 +161,11 @@ class LightTripTest final : public TestScreen {
     }
     Frontlight.setWarmth(0);
     Frontlight.setBrightness(RUN_BRIGHTNESS);
-    Frontlight.setOn(true);  // the switch-on probe runs inside, at the profile's level
+    Frontlight.setOn(true);  // the switch-on probe runs on its timer, at the profile's level
+    if (!light::awaitSwitchOn()) {
+      failRun("probe_undecided");
+      return;
+    }
     if (!Frontlight.isOn()) {
       failRun(Frontlight.noLightFound() ? "no_light" : "not_lit");
       return;
@@ -201,10 +205,11 @@ class LightTripTest final : public TestScreen {
   }
 
   // The operator's retry with the level still lowered: the SDK's switch-on probe
-  // runs inside setOn() and must take the lit load for absent.
+  // runs on its timer once setOn() returns, and must take the lit load for absent.
   ProbeTrip retryAtLoweredLevel() {
     const uint32_t before = light::probe().trips;
     Frontlight.setOn(true);
+    light::awaitSwitchOn();  // undecided: the checks below fail it
     const auto probe = light::probe();
     ProbeTrip result;
     result.seen = probe.trips != before && probe.lastTripped;
@@ -273,6 +278,10 @@ class LightTripTest final : public TestScreen {
       case Phase::Restore:
         if (inPhase < RESTORE_GAP_MS) return;
         Frontlight.setOn(true);  // probed again, now at the profile's level
+        if (!light::awaitSwitchOn()) {
+          failRun("probe_undecided");
+          return;
+        }
         if (!Frontlight.isOn()) {
           failRun(Frontlight.noLightFound() ? "no_light_after_restore" : "not_lit_after_restore");
           return;

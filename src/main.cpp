@@ -171,16 +171,22 @@ static bool storageErrorScreen = false;
 
 // FrontlightConfig::monitorAdc: a tripped light is switched off and the saved
 // preference with it, so no wake, restart or power cycle turns the boost on
-// into the fault again; the user switching it on is the retry. From the loop
-// task only (the trip itself happens on the esp_timer task).
-static void handleFrontlightTrip() {
-  if (!Frontlight.present() || !Frontlight.fault()) return;
+// into the fault again; the user switching it on is the retry. A switch-on still
+// deciding its load (FrontlightConfig::loadProbeWindowMs) is not a trip: its
+// result is settled first, and a "no light" one is the HAL's notice instead.
+// Returns true when it switched a tripped light off. From the loop task only (the
+// trip itself happens on the esp_timer task).
+static bool handleFrontlightTrip() {
+  if (!Frontlight.present()) return false;
+  Frontlight.update();
+  if (!Frontlight.fault() || Frontlight.switchOnPending()) return false;
   Frontlight.setOn(false);
   LOG_ERR("LIGHT", "Front light tripped its LED over-voltage monitor; switched off until switched on again");
   if (SETTINGS.frontlightOn != 0) {
     SETTINGS.frontlightOn = 0;
     SETTINGS.saveToFile();
   }
+  return true;
 }
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
@@ -193,29 +199,41 @@ static void showFrontlightNotFound() {
   GUI.drawWrappedPopup(renderer, tr(STR_FRONTLIGHT_NOT_DETECTED), 3);
 }
 
-// FrontlightConfig::loadProbeMs: a switch-on the user asked for found no light
-// (HalFrontlight has already left it off). Say so, with the wait the boost's
-// charged output needs before a light is plugged in, and save the light as off,
-// as it now is. The light controls stay where they are, so switching it on again
-// is the retry. The light panel shows the message itself and takes the notice
-// first. A restore at boot that found none (Restore Light on Wake, or a silent
-// restart's replay) is said from the second loop pass, once the first pass has
-// started the first screen's render, which the popup must not go under; its
-// saved "on" stays (a cold boot clears the SDK's record, so a restore may try
-// once again). From the loop task only.
-static void handleFrontlightNotFound() {
+// FrontlightConfig::loadProbeWindowMs: the one message, with the wait the boost's
+// charged output needs before a light is plugged in, for every way the boost ran
+// with nothing to light or went off near its OVP level (an over-voltage trip
+// means no light connected):
+// - a switch-on the user asked for that found no light (HalFrontlight has already
+//   left it off): the light is saved as off, as it now is. The light panel shows
+//   the message itself while it is open (Activity::showsFrontlightNotice()).
+// - a restore at boot that found none (Restore Light on Wake, or a silent
+//   restart's replay): the saved "on" stays (a cold boot clears the SDK's record,
+//   so a restore may try once again).
+// - a trip in use, or a switch-on whose second string the rail blocked
+//   (handleFrontlightTrip() saves the light as off).
+// The light controls stay where they are, so switching it on again is the retry.
+// The popup waits for the second loop pass, once the first pass has started the
+// first screen's render, which it must not go under. From the loop task only.
+static void handleFrontlightNotices() {
   static bool firstPassDone = false;
-  if (firstPassDone && Frontlight.takeRestoreNoLightNotice()) showFrontlightNotFound();
-  firstPassDone = true;
-  if (!Frontlight.takeNoLightNotice()) return;
-  if (SETTINGS.frontlightOn != 0) {
-    SETTINGS.frontlightOn = 0;
-    SETTINGS.saveToFile();
+  static bool noticeDue = false;
+  if (handleFrontlightTrip()) noticeDue = true;
+  if (Frontlight.takeRestoreNoLightNotice()) noticeDue = true;
+  if (!activityManager.showsFrontlightNotice() && Frontlight.takeNoLightNotice()) {
+    if (SETTINGS.frontlightOn != 0) {
+      SETTINGS.frontlightOn = 0;
+      SETTINGS.saveToFile();
+    }
+    noticeDue = true;
   }
-  showFrontlightNotFound();
+  if (noticeDue && firstPassDone) {
+    noticeDue = false;
+    showFrontlightNotFound();
+  }
+  firstPassDone = true;
 }
 
-// FrontlightConfig::loadProbeMs: a single-colour light. The SDK records the
+// FrontlightConfig::loadProbeWindowMs: a single-colour light. The SDK records the
 // missing string until a cold boot; saving the warmth on the string that is
 // there keeps a cold boot (and Restore Light on Wake) from selecting the missing
 // one again. Only a warmth that selects the missing string changes, so the
@@ -961,15 +979,7 @@ void loop() {
   renderer.setFadingFix(SETTINGS.fadingFix);
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
-  // A trip leaves the boost output near its OVP level, as an open-load switch-on
-  // does: the same message and connect advice (an over-voltage trip means no
-  // light connected, HARDWARE.md 13.1). Only this task clears the fault, so
-  // handleFrontlightTrip() sees the one checked here.
-  if (Frontlight.present() && Frontlight.fault()) {
-    handleFrontlightTrip();
-    showFrontlightNotFound();
-  }
-  handleFrontlightNotFound();
+  handleFrontlightNotices();
   keepWarmthOnPresentString();
 #else
   handleFrontlightTrip();

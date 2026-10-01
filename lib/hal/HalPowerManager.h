@@ -19,6 +19,8 @@ class HalPowerManager {
 
   mutable int _batteryCachedPercent = 0;         // Last read battery percentage (0-100)
   mutable unsigned long _batteryLastPollMs = 0;  // Timestamp of last battery read in milliseconds
+  mutable bool _noCellCached = false;            // noChargeableCell()'s last answer
+  mutable unsigned long _noCellPolledMs = 0;     // and when it was read, 0 = never
 
   enum LockMode { None, NormalSpeed };
   LockMode currentLockMode = None;
@@ -79,6 +81,13 @@ class HalPowerManager {
 
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
+
+  // PowerConfig::noChargeableCellNotice: external power runs the board and the
+  // battery reads below BatteryMonitor::CELL_PRESENT_MIN_MV, so there is no cell
+  // or one too flat to charge; battery displays say that instead of a charge
+  // state. Always false on boards without the field. Reads at most once per
+  // BATTERY_POLL_MS.
+  bool noChargeableCell() const;
 
   // RAII helper class to manage power saving locks
   // Usage: create an instance of Lock in a scope to disable power saving, for example when running a task that needs
