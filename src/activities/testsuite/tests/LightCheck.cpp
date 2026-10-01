@@ -49,9 +49,10 @@ FrontlightManager::ProbeDiagnostics probe() { return TestSuiteAccess::frontlight
 
 bool selectsWarm() { return TestSuiteAccess::frontlight(Frontlight).warmSelected(); }
 
+unsigned long switchOnBoundMs() { return 2UL * BoardConfig::ACTIVE.frontlight.loadProbeWindowMs + 5000UL; }
+
 bool awaitSwitchOn() {
-  // Two windows and the longest rail wait between them (4 s), with a margin.
-  const unsigned long boundMs = 2UL * BoardConfig::ACTIVE.frontlight.loadProbeWindowMs + 5000UL;
+  const unsigned long boundMs = switchOnBoundMs();
   const unsigned long start = millis();
   for (;;) {
     Frontlight.update();

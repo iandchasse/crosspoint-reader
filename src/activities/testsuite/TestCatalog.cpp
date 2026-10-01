@@ -36,6 +36,8 @@ constexpr TestInfo TESTS[] = {
     {"T14", "RTC across sleep", "Time kept through a deep sleep", createRtcSleepTest},
     {"P3", "SD card", "Card identity, bus, speed and a verified write", createSdCardTest},
     {"T15", "Wi-Fi", "Connect and sync the clock over NTP", createWifiTest},
+    {"U1", "Wi-Fi TX bursts", "Bounded TX bursts for the supply's brown-out sweep", createTxBurstTest},
+    {"U2", "Sustained load", "Wi-Fi, card and refreshes on USB, for the LDO's temperature", createSustainedLoadTest},
     {"P5", "Sleep and wake", "Sleep paths, wake, sleep current procedure", createSleepWakeTest},
     {"P8", "Reader data", "Reader files on the card left untouched", createReaderDataTest},
 };

@@ -47,8 +47,11 @@ FrontlightManager::ProbeDiagnostics probe();
 // The probe decides on the SDK's monitor timer, after the call that switched the
 // light on: this blocks until that switch-on has decided (its window, a rail wait
 // and the other string's window) and the HAL has settled it, as the main loop
-// would. False if it had not decided within the bound.
+// would. False if it had not decided within switchOnBoundMs().
 bool awaitSwitchOn();
+// The longest a switch-on may take to decide: two probe windows and the longest
+// rail wait between them (4 s), with a margin.
+unsigned long switchOnBoundMs();
 // The string the SDK's colour select picks now. It differs from the warmth asked
 // for when the probe found that string missing.
 bool selectsWarm();

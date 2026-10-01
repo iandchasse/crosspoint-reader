@@ -7,7 +7,11 @@
 // shows here as the light dropping out and the record's count rising. Every
 // switch-on and string change also runs the SDK's load probe, on its timer: the
 // screen waits for it to decide, then shows and records its result (a load or
-// none, and which strings answered).
+// none, and which strings answered). The record carries each string's LED_SW at
+// full and about 10 % duty and their difference (dVf, BRING_UP section 7.2).
+// While lit, the switch run (BRING_UP section 7.3) repeats the reader's colour
+// change at about 100, 50 and 10 % duty for a scope on TP3 and COLOR_SEL, and
+// fails on any trip or a light that goes out.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalFrontlight.h>
@@ -35,6 +39,23 @@ constexpr unsigned long REDRAW_MS = 3000;
 // soon is an open or reverse-wired load on its way to U10's OVP.
 constexpr unsigned long EARLY_CHECK_MS[] = {50, 100, 200};
 constexpr uint32_t J6_MIN_RISE_MV = 1000;  // lit LED_SW above the dark rail: the boost runs
+// dVf (BRING_UP section 7.2): the settled readings of the full step and of the
+// 25 % step, which the SDK's curve runs at about 10 % duty.
+constexpr int STEP_FULL = 4;
+constexpr int STEP_TENTH_DUTY = 1;
+static_assert(STEPS[STEP_FULL] == 100 && STEPS[STEP_TENTH_DUTY] == 25, "dVf reads the 100 % and 25 % steps");
+
+// The switch run (BRING_UP section 7.3): the reader's colour change while lit
+// (dark for the dwell, COLOR_SEL, the enable pulse, the load probe), repeated at
+// three duties. The brightness values sit on the SDK's curve at about 100, 50
+// and 10 % duty.
+constexpr uint8_t SWITCH_BRIGHTNESS[] = {100, 66, 25};
+constexpr uint8_t SWITCH_DUTY_PCT[] = {100, 50, 10};
+constexpr int SWITCH_DUTIES = static_cast<int>(sizeof(SWITCH_BRIGHTNESS));
+constexpr int SWITCHES_PER_DUTY = 10;
+// One switch a second: the probe window (500 ms) and a settled reading fit in it.
+constexpr unsigned long SWITCH_PERIOD_MS = 1000;
+constexpr unsigned long SWITCH_REDRAW_MS = 5000;
 
 constexpr int QUESTION_SEEN = 1;
 constexpr const char* SEEN_ANSWERS[] = {"Both, brighter each step", "Only one string lit", "No rise, or flicker",
@@ -44,12 +65,24 @@ constexpr char SEEN_HEADING[] = "What did the light do?";
 constexpr char SEEN_BODY[] =
     "Cool and warm through 10-100 %: did each string light, get brighter at every step, and stay free of flicker?";
 
+constexpr int QUESTION_SWITCH = 2;
+constexpr const char* SWITCH_ANSWERS[] = {"Clean: re-slew within 350 us, below 23 V", "Spike, slow re-slew or dropout",
+                                          "Not scoped"};
+constexpr const char* SWITCH_CODES[] = {"clean", "spike_or_slow", "not_scoped"};
+constexpr char SWITCH_HEADING[] = "What did the scope show?";
+constexpr char SWITCH_BODY[] =
+    "CH1 TP3 (LED_SW), CH2 COLOR_SEL (U12.2): at each switch LED_SW re-slews by dVf in about 100-150 us (350 us "
+    "at most) and stays below 23 V.";
+
 constexpr char INTRO[] =
-    "Confirm lights the boost once you name the LED load; the probe then says which strings answered. Up/Down "
-    "step the brightness (10-100 %), Left switches cool/warm. Take both strings through every step, then Record.";
+    "Confirm lights the boost once you name the load. Up/Down: brightness 10-100 %. Left: cool/warm. Right, lit: "
+    "30 colour switches for a scope. Take both strings through every step, switch off, then Record (Right).";
 constexpr char SCOPE_NOTE[] =
     "Scope (optional): IO42 LOW for at least 3 ms, HIGH for the enable pulse, then the carrier. IO40 (HIGH = warm) "
     "moves only while IO42 is LOW, at least 3 ms after it fell.";
+constexpr char SWITCH_NOTE[] =
+    "Switch run: CH1 TP3 (LED_SW), CH2 COLOR_SEL (U12.2), 10x probes. One colour change a second, 10 at each duty. "
+    "Back stops.";
 constexpr char BLIND_NOTE[] =
     "LED_MONIT reads about 0 V with the light off, so the over-voltage watch cannot see LED_SW. The light stays off: "
     "check the R39/R41 divider and C31.";
@@ -74,11 +107,27 @@ class FrontlightTest final : public TestScreen {
     Frontlight.setBrightness(STEPS[step]);
   }
 
+  // The switch run is bounded (30 switches, about 35 s) and gets no input.
+  bool preventAutoSleep() override { return sw.active; }
+
+  bool onBack() override {
+    if (!sw.active) return false;
+    LOG_INF("TEST", "T9: switch run stopped after %d switches", sw.total);
+    sw.stop = "back";
+    endSwitchRun();
+    recordSwitchRun(-1);
+    return true;
+  }
+
   void onTick() override {
     if (!present) return;
     const unsigned long now = millis();
     // The dark reading waits for LED_MONIT to settle from anything lit before.
     if (!darkTaken && now - openedAt >= light::SETTLE_MS) takeDarkReading();
+    if (sw.active) {
+      switchRunTick();
+      return;
+    }
     if (lit && !Frontlight.isOn()) {
       onTripped();
       return;
@@ -96,6 +145,7 @@ class FrontlightTest final : public TestScreen {
   }
 
   const char* slotLabel(const Slot slot) const override {
+    if (sw.active) return nullptr;  // Back stops the switch run
     switch (slot) {
       case Slot::Confirm:
         if (!present) return "Record";
@@ -104,7 +154,11 @@ class FrontlightTest final : public TestScreen {
         if (!present || !Frontlight.warmthIsSelection()) return nullptr;
         return warm ? "Cool" : "Warm";
       case Slot::Right:
-        return present ? "Record" : nullptr;
+        // Lit: the switch run, which needs both strings behind a colour select.
+        // Dark: Record.
+        if (!present) return nullptr;
+        if (lit) return Frontlight.warmthIsSelection() ? "Switch run" : nullptr;
+        return "Record";
       default:
         return nullptr;
     }
@@ -135,10 +189,12 @@ class FrontlightTest final : public TestScreen {
         redraw();
         break;
       case Slot::Right:
-        // The question stops this screen's ticks (and its 22 V watch) while it
-        // is open, and it is about what the operator already saw: dark first,
-        // with the after-off reading taken now.
-        if (lit) switchOff();
+        if (lit) {
+          startSwitchRun();
+          break;
+        }
+        // The question is about what the operator already saw, dark, with the
+        // after-off reading taken now.
         completeAfterOff();
         if (!everLit) {
           recordResult(-1);
@@ -152,7 +208,7 @@ class FrontlightTest final : public TestScreen {
   }
 
   void onStep(const int direction) override {
-    if (!present) return;
+    if (!present || sw.active) return;
     const int next = step + direction;
     if (next < 0 || next >= STEP_COUNT) return;
     step = next;
@@ -163,6 +219,7 @@ class FrontlightTest final : public TestScreen {
 
   void onAnswer(const int question, const int answer) override {
     if (question == QUESTION_SEEN && answer >= 0) recordResult(answer);
+    if (question == QUESTION_SWITCH) recordSwitchRun(answer);
   }
 
   void onLightLoadConfirmed(const LightLoad chosen) override {
@@ -308,6 +365,187 @@ class FrontlightTest final : public TestScreen {
            static_cast<unsigned>(monitor.trips - tripsAtOpen));
   }
 
+  // --- switch run (BRING_UP section 7.3) ---------------------------------------
+
+  void startSwitchRun() {
+    if (Frontlight.stringMissing(false) || Frontlight.stringMissing(true)) {
+      record(Verdict::Skip, "mode=colour_switch reason=one_string (the probe found a string missing)");
+      return;
+    }
+    sw = SwitchRun{};
+    sw.active = true;
+    sw.trips0 = light::monitor().trips;
+    sw.probeTrips0 = light::probe().trips;
+    sw.warmNow = light::selectsWarm();
+    Frontlight.setBrightness(SWITCH_BRIGHTNESS[0]);  // lit: applies at once, no probe
+    // A settled reading at the first duty, then the first switch a period later.
+    sw.switchedAt = millis();
+    sw.decidedAt = sw.switchedAt;
+    sw.readPending = true;
+    LOG_INF("TEST", "T9: switch run, %d colour changes at each of %d duties", SWITCHES_PER_DUTY, SWITCH_DUTIES);
+    redraw();
+  }
+
+  void switchRunTick() {
+    const unsigned long now = millis();
+    // The main loop switches a tripped light off before this runs, so an in-use
+    // trip shows as the monitor's count. A probe trip is a string read above
+    // the trip level right after a change.
+    if (light::monitor().trips != sw.trips0) {
+      failSwitchRun("trip");
+      return;
+    }
+    if (light::probe().trips != sw.probeTrips0) {
+      failSwitchRun("probe_trip");
+      return;
+    }
+    if (sw.deciding) {
+      if (Frontlight.switchOnPending()) {
+        if (now - sw.switchedAt > light::switchOnBoundMs()) failSwitchRun("probe_undecided");
+        return;
+      }
+      sw.deciding = false;
+      sw.decidedAt = now;
+      sw.readPending = true;
+    }
+    if (!Frontlight.isOn()) {
+      failSwitchRun(Frontlight.noLightFound() ? "no_light" : "light_off");
+      return;
+    }
+    if (sw.readPending) {
+      if (now - sw.decidedAt < light::SETTLE_MS) return;
+      sw.readPending = false;
+      current = light::readMonitor(4);
+      if (current.ledMv > light::LIT_MAX_LED_MV) {
+        failSwitchRun("over_22v");
+        return;
+      }
+      // At the dark rail while the carrier runs: U10 latched off by itself.
+      if (current.ledMv < dark.ledMv + J6_MIN_RISE_MV) {
+        failSwitchRun("latched_off");
+        return;
+      }
+      if (sw.minLedMv == 0 || current.ledMv < sw.minLedMv) sw.minLedMv = current.ledMv;
+      if (current.ledMv > sw.maxLedMv) sw.maxLedMv = current.ledMv;
+      sw.vf[sw.duty][light::selectsWarm() ? 1 : 0] = current.ledMv;
+    }
+    if (now - drawnAt >= SWITCH_REDRAW_MS) redraw();
+    if (now - sw.switchedAt < SWITCH_PERIOD_MS) return;
+    if (sw.doneAtDuty >= SWITCHES_PER_DUTY) {
+      if (sw.duty + 1 >= SWITCH_DUTIES) {
+        finishSwitchRun();
+        return;
+      }
+      ++sw.duty;
+      sw.doneAtDuty = 0;
+      Frontlight.setBrightness(SWITCH_BRIGHTNESS[sw.duty]);
+      sw.switchedAt = now;
+      sw.decidedAt = now;
+      sw.readPending = true;
+      return;
+    }
+    // The reader's colour change while lit: dark, COLOR_SEL, enable, load probe.
+    sw.warmNow = !sw.warmNow;
+    Frontlight.setWarmth(sw.warmNow ? 100 : 0);
+    sw.deciding = true;
+    sw.switchedAt = now;
+    ++sw.doneAtDuty;
+    ++sw.perDuty[sw.duty];
+    ++sw.total;
+  }
+
+  void finishSwitchRun() {
+    sw.stop = "done";
+    endSwitchRun();
+    if (!ask(QUESTION_SWITCH, SWITCH_HEADING, SWITCH_BODY, SWITCH_ANSWERS, 3)) recordSwitchRun(-1);
+  }
+
+  void failSwitchRun(const char* what) {
+    addFailure(sw.fails, sizeof(sw.fails), what);
+    LOG_ERR("TEST", "T9: switch run failed (%s) after %d switches", what, sw.total);
+    sw.stop = "failed";
+    endSwitchRun();
+    recordSwitchRun(-1);
+  }
+
+  // Dark, with the screen's own step and colour back for the next light-up.
+  void endSwitchRun() {
+    sw.active = false;
+    Frontlight.setOn(false);
+    lit = false;
+    offAt = millis();
+    afterOffPending = true;
+    Frontlight.setBrightness(STEPS[step]);
+    Frontlight.setWarmth(warm ? 100 : 0);
+    redraw();
+  }
+
+  // answer: the operator's (SWITCH_ANSWERS), or -1 when not asked.
+  void recordSwitchRun(const int answer) {
+    char fails[80];
+    snprintf(fails, sizeof(fails), "%s", sw.fails);
+    if (answer == 1) addFailure(fails, sizeof(fails), "operator");
+    const bool complete = strcmp(sw.stop, "done") == 0;
+    const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : complete && answer == 0 ? Verdict::Pass : Verdict::Info;
+    char vf[SWITCH_DUTIES][24];
+    for (int d = 0; d < SWITCH_DUTIES; ++d) formatPair(vf[d], sizeof(vf[d]), sw.vf[d][0], sw.vf[d][1]);
+    const auto monitor = light::monitor();
+    const auto probe = light::probe();
+    monitorNow = monitor;
+    probeNow = probe;
+    record(verdict,
+           "mode=colour_switch load=%s switches=%d at_duty=%u:%d,%u:%d,%u:%d vf_%u=%s vf_%u=%s vf_%u=%s led=%u-%u "
+           "trips=%u probe_trips=%u scope=%s stop=%s fails=%s",
+           load == LightLoad::J3Panel ? "J3" : "J6", sw.total, SWITCH_DUTY_PCT[0], sw.perDuty[0], SWITCH_DUTY_PCT[1],
+           sw.perDuty[1], SWITCH_DUTY_PCT[2], sw.perDuty[2], SWITCH_DUTY_PCT[0], vf[0], SWITCH_DUTY_PCT[1], vf[1],
+           SWITCH_DUTY_PCT[2], vf[2], static_cast<unsigned>(sw.minLedMv), static_cast<unsigned>(sw.maxLedMv),
+           static_cast<unsigned>(monitor.trips - sw.trips0), static_cast<unsigned>(probe.trips - sw.probeTrips0),
+           answer >= 0 ? SWITCH_CODES[answer] : "none", sw.stop, fails[0] != '\0' ? fails : "none");
+  }
+
+  // --- dVf (BRING_UP section 7.2) ------------------------------------------------
+
+  // "<cool>/<warm>" in mV, "-" for a value not measured.
+  static void formatPair(char* out, const size_t size, const uint32_t first, const uint32_t second) {
+    out[0] = '\0';
+    appendMv(out, size, first);
+    appendf(out, size, "/");
+    appendMv(out, size, second);
+  }
+  static void appendMv(char* out, const size_t size, const uint32_t mv) {
+    if (mv != 0) {
+      appendf(out, size, "%lu", static_cast<unsigned long>(mv));
+    } else {
+      appendf(out, size, "-");
+    }
+  }
+
+  // A settled table reading as LED_SW in mV; 0 when not measured.
+  uint32_t tableLedMv(const int colour, const int s) const {
+    return table[colour][s] != 0 ? light::ledFromPin(table[colour][s]) : 0;
+  }
+
+  // vf: "<cool full>/<cool 10 %>,<warm full>/<warm 10 %>"; dvf: warm - cool at
+  // full and at 10 % duty. LED_SW in mV, "-" where a reading is missing.
+  void formatVf(char* vf, const size_t vfSize, char* dvf, const size_t dvfSize) const {
+    char cool[24];
+    char warmPair[24];
+    formatPair(cool, sizeof(cool), tableLedMv(0, STEP_FULL), tableLedMv(0, STEP_TENTH_DUTY));
+    formatPair(warmPair, sizeof(warmPair), tableLedMv(1, STEP_FULL), tableLedMv(1, STEP_TENTH_DUTY));
+    snprintf(vf, vfSize, "%s,%s", cool, warmPair);
+    dvf[0] = '\0';
+    for (const int s : {STEP_FULL, STEP_TENTH_DUTY}) {
+      if (s != STEP_FULL) appendf(dvf, dvfSize, "/");
+      const uint32_t c = tableLedMv(0, s);
+      const uint32_t w = tableLedMv(1, s);
+      if (c != 0 && w != 0) {
+        appendf(dvf, dvfSize, "%ld", static_cast<long>(w) - static_cast<long>(c));
+      } else {
+        appendf(dvf, dvfSize, "-");
+      }
+    }
+  }
+
   void sample() {
     sampledAt = millis();
     current = light::readMonitor();
@@ -417,12 +655,15 @@ class FrontlightTest final : public TestScreen {
     char warmSteps[40];
     formatSteps(cool, sizeof(cool), 0);
     formatSteps(warmSteps, sizeof(warmSteps), 1);
+    char vf[48];
+    char dvf[24];
+    formatVf(vf, sizeof(vf), dvf, sizeof(dvf));
     const auto monitor = light::monitor();
     monitorNow = monitor;
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : answer == 0 ? Verdict::Pass : Verdict::Info;
     record(verdict,
            "load=%s probe=%s cool=%s warm=%s probe_trips=%u probe_peak=%u dark_pin=%u cool_pin=%s warm_pin=%s "
-           "max_led=%u after_off_pin=%u trips=%u skipped=%u seen=%s j6=%s fails=%s",
+           "max_led=%u after_off_pin=%u trips=%u skipped=%u vf=%s dvf=%s seen=%s j6=%s fails=%s",
            !loadKnown                   ? "none"
            : load == LightLoad::J3Panel ? "J3"
                                         : "J6",
@@ -430,7 +671,7 @@ class FrontlightTest final : public TestScreen {
            light::stringToken(probe.record.warm), static_cast<unsigned>(probe.trips - probeTripsAtOpen),
            static_cast<unsigned>(probe.lastPeakLedMv), static_cast<unsigned>(dark.pinMv), cool, warmSteps,
            static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
-           static_cast<unsigned>(monitor.skippedSamples), answer >= 0 ? SEEN_CODES[answer] : "not_lit",
+           static_cast<unsigned>(monitor.skippedSamples), vf, dvf, answer >= 0 ? SEEN_CODES[answer] : "not_lit",
            options::cutDown() ? "n/a" : "ok", fails[0] != '\0' ? fails : "none");
   }
 
@@ -443,6 +684,10 @@ class FrontlightTest final : public TestScreen {
   void drawBody(TestPage& page) const override {
     if (!present) {
       page.paragraph(NOT_BUILT, 3);
+      return;
+    }
+    if (sw.active) {
+      drawSwitchRun(page);
       return;
     }
     page.paragraph(INTRO, 5);
@@ -492,6 +737,11 @@ class FrontlightTest final : public TestScreen {
     if (Frontlight.warmthIsSelection()) {
       formatSteps(steps, sizeof(steps), 1);
       page.row("Warm 10/25/50/75/100 %, pin mV", steps);
+      char vf[48];
+      char dvf[24];
+      formatVf(vf, sizeof(vf), dvf, sizeof(dvf));
+      page.row("LED_SW mV, C / W at 100 / 10 % duty", vf);
+      page.row("dVf mV (W - C) at 100 / 10 % duty", dvf);
     }
     page.rowf("Lit window", "%s", load == LightLoad::J6Strip ? "above dark +1 V, below 22 V" : "11-18 V (about 15 V)");
     page.rowf("IO42 / IO40 / pulls", "%s / %s / %s", padText(adim, true), padText(colorSel, false),
@@ -506,6 +756,51 @@ class FrontlightTest final : public TestScreen {
     }
     page.paragraph(SCOPE_NOTE, 4);
   }
+
+  void drawSwitchRun(TestPage& page) const {
+    page.paragraph(SWITCH_NOTE, 4);
+    page.gap(4);
+    page.setCompact(true);
+    page.rowf("Duty / switch", "%u %% / %d of %d (%d of %d in all)", SWITCH_DUTY_PCT[sw.duty], sw.doneAtDuty,
+              SWITCHES_PER_DUTY, sw.total, SWITCHES_PER_DUTY * SWITCH_DUTIES);
+    page.rowf("Lit now", "%s", light::selectsWarm() ? "warm" : "cool");
+    if (current.ledMv != 0) {
+      page.rowf("LED_SW, last settled", "%u.%02u V", static_cast<unsigned>(current.ledMv / 1000U),
+                static_cast<unsigned>(current.ledMv % 1000U / 10U));
+    }
+    for (int d = 0; d < SWITCH_DUTIES; ++d) {
+      char label[32];
+      char pair[24];
+      snprintf(label, sizeof(label), "LED_SW mV C / W at %u %%", SWITCH_DUTY_PCT[d]);
+      formatPair(pair, sizeof(pair), sw.vf[d][0], sw.vf[d][1]);
+      page.row(label, pair);
+    }
+    page.rowf("Trips / probe trips this run", "%u / %u", static_cast<unsigned>(monitorNow.trips - sw.trips0),
+              static_cast<unsigned>(probeNow.trips - sw.probeTrips0));
+    page.setCompact(false);
+  }
+
+  // The switch run's state (BRING_UP section 7.3).
+  struct SwitchRun {
+    bool active = false;
+    int duty = 0;  // index into SWITCH_BRIGHTNESS
+    int doneAtDuty = 0;
+    int perDuty[SWITCH_DUTIES] = {};
+    int total = 0;
+    bool warmNow = false;  // the string asked for by the last change
+    bool deciding = false;
+    bool readPending = false;
+    unsigned long switchedAt = 0;
+    unsigned long decidedAt = 0;
+    uint32_t trips0 = 0;
+    uint32_t probeTrips0 = 0;
+    uint32_t minLedMv = 0;
+    uint32_t maxLedMv = 0;
+    uint32_t vf[SWITCH_DUTIES][2] = {};  // last settled LED_SW per duty, [cool, warm]
+    char fails[64] = "";
+    const char* stop = "done";
+  };
+  SwitchRun sw;
 
   static constexpr uint8_t PAD_ADIM_PULL = 1U << 0;
   static constexpr uint8_t PAD_COLOR_PULL = 1U << 1;

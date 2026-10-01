@@ -142,6 +142,15 @@ void PanelRunTest::onTick() {
     if (gpio.wasAnyReleased() || mappedInput.wasScreenTapped(x, y)) resume();
     return;
   }
+  if (stopsOnAnyInput()) {
+    int x = 0;
+    int y = 0;
+    if (gpio.wasAnyReleased() || mappedInput.wasScreenTapped(x, y)) {
+      LOG_INF("TEST", "%s: run stopped by input after %d steps", info.id, stepIndex);
+      endRun(false);
+      return;
+    }
+  }
   if (!stepQueued) {
     beforeStep(stepIndex);
     glassDirty = true;
@@ -167,7 +176,11 @@ void PanelRunTest::onSlot(const Slot slot) {
     onIdleSlot(slot);
     return;
   }
-  if (paused) resume();
+  if (paused) {
+    resume();
+  } else if (stopsOnAnyInput()) {
+    endRun(false);
+  }
 }
 
 void PanelRunTest::onStep(const int direction) {
@@ -175,7 +188,11 @@ void PanelRunTest::onStep(const int direction) {
     onIdleStep(direction);
     return;
   }
-  if (paused) resume();
+  if (paused) {
+    resume();
+  } else if (stopsOnAnyInput()) {
+    endRun(false);
+  }
 }
 
 bool PanelRunTest::onBack() {

@@ -9,6 +9,12 @@
 // (end of run, Back, exit, sleep) and when the menu opens; a restart restores it
 // anyway. The main loop's trip handler switches the light off before this screen
 // runs, so the in-use trip is read from the SDK's monitor record, not from fault().
+//
+// Step 0 (BRING_UP section 7.4) is the one deliberate exception to "never light
+// the boost without a load": opt-in, after the operator names the driver build
+// (refused on the TPS923611 swap unless D3 is an SMAJ33A, and on a cut-down
+// board with the swap) and confirms J3 and J6 are empty, it switches the light on
+// once through the reader's own path and checks that the SDK caught the open load.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <HalFrontlight.h>
@@ -20,6 +26,7 @@
 #include "LightCheck.h"
 #include "TestFactories.h"
 #include "TextBuffer.h"
+#include "activities/testsuite/BoardOptions.h"
 #include "activities/testsuite/TestCatalog.h"
 #include "activities/testsuite/TestScreen.h"
 
@@ -39,19 +46,71 @@ constexpr unsigned long RESTORED_MS = 1000;  // lit at the profile's level again
 constexpr uint32_t MIN_DROP_MV = 2000;
 constexpr uint32_t MIN_ABOVE_DARK_MV = 1000;
 
+// Step 0: a real open load (BRING_UP section 7.4). With no load the boost climbs
+// to U10's OVP at any duty, so the reader's lowest brightness step is used.
+constexpr uint8_t OPEN_BRIGHTNESS = 10;
+constexpr unsigned long OPEN_TRIP_WITHIN_MS = 500;    // PASS: the SDK tripped within the probe window
+constexpr unsigned long OPEN_TRIP_TIMEOUT_MS = 1000;  // no trip by then: the monitor missed it
+constexpr unsigned long OPEN_WATCH_MS = 2000;         // after the switch-on decided: dark, no relight
+constexpr unsigned long OPEN_COOL_MS = 10000;         // LED_SW logged this long after the last trip (C9's decay)
+constexpr unsigned long OPEN_REDRAW_MS = 3000;
+constexpr uint32_t OPEN_RISE_PIN_MV = 50;  // LED_MONIT rising this much over the watch: the boost ran again
+
 constexpr int QUESTION_SEEN = 1;
 constexpr const char* SEEN_ANSWERS[] = {"Yes", "No"};
 constexpr char SEEN_HEADING[] = "Did the light do this?";
 constexpr char SEEN_BODY[] = "Lit, went dark, stayed dark when switched on again, then lit steadily for a second.";
 
+constexpr int QUESTION_OPEN_BUILD = 2;
+constexpr const char* OPEN_BUILD_ANSWERS[] = {"Cancel", "TPS923610, D3 SMAJ26A (standard)", "TPS923611 (driver swap)"};
+constexpr char OPEN_BUILD_HEADING[] = "Step 0: which light driver?";
+constexpr char OPEN_BUILD_BODY[] =
+    "Step 0 switches the light on with NO load: U10 climbs to its OVP (24.25-25.5 V) and latches off. That is safe "
+    "on the standard build. The TPS923611 swap is safe only with an SMAJ33A at D3.";
+constexpr char OPEN_BUILD_BODY_CUT[] =
+    "Step 0 switches the light on with NO load: U10 climbs to its OVP (24.25-25.5 V) and latches off. Cut-down "
+    "board: D3 is cut away, so U10's OVP is the only limit, and the TPS923611 swap is refused.";
+constexpr int QUESTION_OPEN_D3 = 3;
+constexpr const char* OPEN_D3_ANSWERS[] = {"No, or not sure: cancel", "Yes: D3 is an SMAJ33A"};
+constexpr char OPEN_D3_HEADING[] = "Is D3 an SMAJ33A?";
+constexpr char OPEN_D3_BODY[] =
+    "The TPS923611's OVP (29.6-31.4 V) overlaps the stock SMAJ26A's 28.9 V breakdown, so the driver could push "
+    "current into D3. Read the marking on D3 (93.4, 58.8) first.";
+constexpr int QUESTION_OPEN_EMPTY = 4;
+constexpr const char* OPEN_EMPTY_ANSWERS[] = {"Cancel", "J3 and J6 are both empty"};
+constexpr const char* OPEN_EMPTY_ANSWERS_CUT[] = {"Cancel", "J3 is empty"};
+constexpr char OPEN_EMPTY_HEADING[] = "Nothing on J3 or J6?";
+constexpr char OPEN_EMPTY_BODY[] =
+    "Unplug the light's flex from J3 and leave J6 empty. Hands off TP3 and J3: LED_SW reaches about 25 V. After "
+    "the step, wait at least 10 s before plugging a light in.";
+constexpr char OPEN_ADVICE[] =
+    "EXCEPTION: step 0 lights the boost with NO load. Wait at least 10 s after it before plugging a light into J3 "
+    "or J6: C9 is left charged near 25 V.";
+
 constexpr char INTRO[] =
-    "Confirm lights the cool string at 50 % once you name the load, then lowers the trip level in RAM below the "
-    "lit reading. The monitor must switch the light off within 300 ms and keep it off; switched on again, the "
-    "probe must find no load; at the profile's level it lights again. About 5 s; Back stops.";
+    "Confirm, with a light connected: the cool string at 50 %, then the trip level lowered in RAM below the lit "
+    "reading. The monitor must switch the light off within 300 ms and keep it off; switched on again, the probe "
+    "must find no load; at the profile's level it lights again. About 5 s. Left: step 0, an opt-in open load with "
+    "J3 and J6 empty. Back stops.";
 constexpr char NOT_BUILT[] =
     "No front light with an LED monitor in this build or on this board (frontlight_flags): nothing to test.";
 
-enum class Phase : uint8_t { Idle, Baseline, Lowered, Watch, Restore, Restored, Asking };
+enum class Phase : uint8_t {
+  Idle,
+  Baseline,
+  Lowered,
+  Watch,
+  Restore,
+  Restored,
+  Asking,
+  OpenDeciding,  // step 0: switched on with no load, waiting for the SDK's trip
+  OpenWatch,     // step 0: decided, must stay dark
+  OpenCooling,   // step 0: C9 discharging; LED_SW read at the end
+};
+
+bool openPhase(const Phase phase) {
+  return phase == Phase::OpenDeciding || phase == Phase::OpenWatch || phase == Phase::OpenCooling;
+}
 
 const char* phaseName(const Phase phase) {
   switch (phase) {
@@ -68,9 +127,51 @@ const char* phaseName(const Phase phase) {
       return "profile's level back: must stay lit";
     case Phase::Asking:
       return "done";
+    case Phase::OpenDeciding:
+      return "step 0: on with no load, waiting for the trip";
+    case Phase::OpenWatch:
+      return "step 0: tripped, must stay dark 2 s";
+    case Phase::OpenCooling:
+      return "step 0: C9 discharging, wait 10 s";
   }
   return "?";
 }
+
+// Step 0's run: the first trip of the switch-on, how it ended, the watch after it.
+struct OpenLoad {
+  bool swapDriver = false;  // the TPS923611, with the operator's word that D3 is an SMAJ33A
+  light::Reading dark;
+  unsigned long enabledAt = 0;
+  uint32_t probes0 = 0;
+  uint32_t probeTrips0 = 0;
+  uint32_t monitorTrips0 = 0;
+  uint32_t railTimeouts0 = 0;
+  // the first trip, from the SDK's records
+  bool tripSeen = false;
+  bool byMonitor = false;      // the 100 ms monitor's in-use trip, after the probe window
+  bool firstRecord = true;     // the probe record polled was the first string's
+  int32_t tripMs = -1;         // setOn() to the trip, by the SDK's millis() stamp
+  uint32_t afterUs = 0;        // probe: carrier start to the reading above the trip
+  uint32_t tripLedMv = 0;      // that reading
+  uint32_t darkAfterUs = 0;    // that reading to IO42 held LOW (the SDK's record)
+  bool io42LowAtTrip = false;  // IO42 held LOW by the GPIO register when the trip was seen
+  // the switch-on's end
+  uint32_t strings = 0;  // probe trips in the switch-on: the strings tried
+  freeink::frontlight::Load load = freeink::frontlight::Load::Unknown;
+  bool railTimeout = false;
+  unsigned long decidedAt = 0;
+  unsigned long lastTripAt = 0;  // millis() of the last trip (or the switch-off), for the 10 s
+  uint32_t probesAtDecision = 0;
+  uint32_t monitorTripsAtDecision = 0;
+  // the watch and the cool-down
+  light::Reading watchStart;
+  light::Reading watchEnd;
+  bool io42LowThroughout = true;
+  bool relit = false;
+  bool after10sTaken = false;
+  light::Reading after10s;
+  char fails[96] = "";
+};
 
 struct Trip {
   bool seen = false;
@@ -109,24 +210,45 @@ class LightTripTest final : public TestScreen {
     TestScreen::onExit();  // light off
   }
 
+  // A run is bounded (about 5 s, step 0 about 15 s) and gets no input.
+  bool preventAutoSleep() override { return phase != Phase::Idle && phase != Phase::Asking; }
+
   const char* slotLabel(const Slot slot) const override {
-    if (slot != Slot::Confirm) return nullptr;
-    if (!present) return "Record";
-    return phase == Phase::Idle ? "Run" : nullptr;
+    if (!present) return slot == Slot::Confirm ? "Record" : nullptr;
+    if (phase != Phase::Idle) return nullptr;
+    switch (slot) {
+      case Slot::Confirm:
+        return "Run";
+      case Slot::Left:
+        return "Step 0";
+      default:
+        return nullptr;
+    }
   }
 
   void onSlot(const Slot slot) override {
-    if (slot != Slot::Confirm) return;
     if (!present) {
-      record(Verdict::Skip, "light=not_built");
+      if (slot == Slot::Confirm) record(Verdict::Skip, "light=not_built");
       return;
     }
-    if (phase == Phase::Idle) confirmLightLoad();
+    if (phase != Phase::Idle) return;
+    if (slot == Slot::Confirm) {
+      showOpen = false;
+      confirmLightLoad();
+    } else if (slot == Slot::Left) {
+      ask(QUESTION_OPEN_BUILD, OPEN_BUILD_HEADING, options::cutDown() ? OPEN_BUILD_BODY_CUT : OPEN_BUILD_BODY,
+          OPEN_BUILD_ANSWERS, 3);
+    }
   }
 
   bool onBack() override {
     if (phase == Phase::Idle || phase == Phase::Asking) return false;
     LOG_INF("TEST", "T10: run stopped in phase %s", phaseName(phase));
+    if (phase == Phase::OpenCooling) {
+      // The checks are done: record them without the 10 s reading.
+      recordOpenLoad();
+      return true;
+    }
     endRun();
     requestUpdate();
     return true;
@@ -138,7 +260,42 @@ class LightTripTest final : public TestScreen {
   }
 
   void onAnswer(const int question, const int answer) override {
-    if (question == QUESTION_SEEN) recordRun(answer);
+    switch (question) {
+      case QUESTION_SEEN:
+        recordRun(answer);
+        return;
+      case QUESTION_OPEN_BUILD:
+        // Cancel and Back record nothing.
+        if (answer == 1) {
+          openRun = OpenLoad{};
+          askOpenEmpty();
+        } else if (answer == 2 && options::cutDown()) {
+          record(Verdict::Skip, "step=0 reason=swap_on_cut_down (no D3 on a cut-down board: TPS923611 refused)");
+        } else if (answer == 2) {
+          ask(QUESTION_OPEN_D3, OPEN_D3_HEADING, OPEN_D3_BODY, OPEN_D3_ANSWERS, 2);
+        }
+        return;
+      case QUESTION_OPEN_D3:
+        if (answer == 1) {
+          openRun = OpenLoad{};
+          openRun.swapDriver = true;
+          askOpenEmpty();
+        } else if (answer == 0) {
+          record(Verdict::Skip, "step=0 reason=swap_without_smaj33a (TPS923611 refused: D3 not an SMAJ33A)");
+        }
+        return;
+      case QUESTION_OPEN_EMPTY:
+        if (answer == 1) startOpenLoad();
+        return;
+      default:
+        return;
+    }
+  }
+
+  void askOpenEmpty() {
+    const bool cutDown = options::cutDown();
+    ask(QUESTION_OPEN_EMPTY, OPEN_EMPTY_HEADING, OPEN_EMPTY_BODY, cutDown ? OPEN_EMPTY_ANSWERS_CUT : OPEN_EMPTY_ANSWERS,
+        2);
   }
 
   void setPhase(const Phase next) {
@@ -228,6 +385,10 @@ class LightTripTest final : public TestScreen {
 
   void onTick() override {
     if (phase == Phase::Idle || phase == Phase::Asking) return;
+    if (openPhase(phase)) {
+      openTick();
+      return;
+    }
     const unsigned long now = millis();
     const uint32_t trips = light::monitor().trips - trips0;
     const unsigned long inPhase = now - phaseAt;
@@ -353,6 +514,238 @@ class LightTripTest final : public TestScreen {
            fails[0] != '\0' ? fails : "none");
   }
 
+  // --- step 0: a real open load (BRING_UP section 7.4) ------------------------
+
+  // The operator named the build and confirmed J3 and J6 empty. Starts from a
+  // valid dark reading and switches on once, through the reader's own path (the
+  // load probe, the other string after the rail wait).
+  void startOpenLoad() {
+    showOpen = true;
+    light::restoreTripMv();  // the profile's level: never a lowered one here
+    if (Frontlight.isOn()) Frontlight.setOn(false);
+    openRun.dark = light::readMonitor();
+    if (openRun.dark.pinMv < light::DARK_MIN_PIN_MV) {
+      record(Verdict::Fail, "step=0 dark_pin=%u fails=dark_blind (LED_MONIT reads nothing: the trip is blind; not lit)",
+             static_cast<unsigned>(openRun.dark.pinMv));
+      return;
+    }
+    if (openRun.dark.pinMv > light::DARK_MAX_PIN_MV) {
+      record(Verdict::Skip, "step=0 reason=not_dark dark_pin=%u (LED_SW still charged: wait 10 s, then again)",
+             static_cast<unsigned>(openRun.dark.pinMv));
+      return;
+    }
+    const auto probe = light::probe();
+    openRun.probes0 = probe.probes;
+    openRun.probeTrips0 = probe.trips;
+    openRun.railTimeouts0 = probe.railTimeouts;
+    openRun.monitorTrips0 = light::monitor().trips;
+    LOG_INF("TEST", "T10 step 0: switching on at %u %% with no load (%s), opt-in", OPEN_BRIGHTNESS,
+            openRun.swapDriver ? "TPS923611, D3 SMAJ33A" : "TPS923610, D3 SMAJ26A");
+    Frontlight.setWarmth(0);
+    Frontlight.setBrightness(OPEN_BRIGHTNESS);
+    openRun.enabledAt = millis();
+    Frontlight.setOn(true);  // the load probe decides on the SDK's monitor timer
+    setPhase(Phase::OpenDeciding);
+  }
+
+  void openTick() {
+    switch (phase) {
+      case Phase::OpenDeciding:
+        openDecidingTick();
+        return;
+      case Phase::OpenWatch:
+        openWatchTick();
+        return;
+      case Phase::OpenCooling:
+        openCoolingTick();
+        return;
+      default:
+        return;
+    }
+  }
+
+  // The first trip of the switch-on, from the SDK's records: the probe's (the
+  // expected one), or the in-use monitor's after the probe window. Polled every
+  // loop pass: the other string's probe follows only after the rail wait.
+  void noteOpenTrip() {
+    const auto probe = light::probe();
+    const auto monitor = light::monitor();
+    uint32_t stampMs = 0;
+    if (probe.trips != openRun.probeTrips0) {
+      openRun.byMonitor = false;
+      openRun.firstRecord = probe.trips - openRun.probeTrips0 == 1;
+      stampMs = probe.lastMs;
+      openRun.afterUs = probe.lastTripAfterUs;
+      openRun.tripLedMv = probe.lastPeakLedMv;
+      openRun.darkAfterUs = probe.lastDarkAfterTripUs;
+    } else if (monitor.trips != openRun.monitorTrips0) {
+      openRun.byMonitor = true;
+      stampMs = monitor.lastTripMs;
+      openRun.tripLedMv = monitor.lastTripLedMv;
+    } else {
+      return;
+    }
+    openRun.tripSeen = true;
+    const int32_t ms = static_cast<int32_t>(stampMs - static_cast<uint32_t>(openRun.enabledAt));
+    openRun.tripMs = ms > 0 ? ms : 0;
+    const auto& fl = BoardConfig::ACTIVE.frontlight;
+    openRun.io42LowAtTrip = light::padHeldAt(light::readPad(fl.gpio), !fl.activeHigh);
+    LOG_INF("TEST", "T10 step 0: %s trip %ld ms after the switch-on at %u mV, IO42 %s",
+            openRun.byMonitor ? "monitor" : "probe", static_cast<long>(openRun.tripMs),
+            static_cast<unsigned>(openRun.tripLedMv), openRun.io42LowAtTrip ? "LOW" : "not held LOW");
+  }
+
+  void openDecidingTick() {
+    const unsigned long since = millis() - openRun.enabledAt;
+    if (!openRun.tripSeen) noteOpenTrip();
+    if (Frontlight.switchOnPending()) {
+      if (since > light::switchOnBoundMs()) {
+        addFailure(openRun.fails, sizeof(openRun.fails), "probe_undecided");
+        openSwitchedOff();
+      } else if (!openRun.tripSeen && since > OPEN_TRIP_TIMEOUT_MS) {
+        openNoTrip();
+      }
+      return;
+    }
+    if (!openRun.tripSeen) {
+      // The probe passed: the 100 ms monitor watches on until the timeout.
+      if (since <= OPEN_TRIP_TIMEOUT_MS) return;
+      openNoTrip();
+      return;
+    }
+    if (Frontlight.isOn()) {
+      // The other string lit: something is on J3 or J6.
+      LOG_ERR("TEST", "T10 step 0: a string lit after the first tripped; switching off");
+      addFailure(openRun.fails, sizeof(openRun.fails), "lit");
+    }
+    openSwitchedOff();
+  }
+
+  // No trip within OPEN_TRIP_TIMEOUT_MS: neither the probe nor the monitor saw
+  // LED_SW above the trip, so U10 latched off by itself (or a load answered).
+  void openNoTrip() {
+    LOG_ERR("TEST", "T10 step 0: no trip within %lu ms: the monitor missed the open load; switching off",
+            OPEN_TRIP_TIMEOUT_MS);
+    addFailure(openRun.fails, sizeof(openRun.fails), "no_trip");
+    openSwitchedOff();
+  }
+
+  // The switch-on has ended, or is ended now: off (a no-op when the HAL already
+  // left it off after a no-light result), and the watch starts.
+  void openSwitchedOff() {
+    Frontlight.setOn(false);
+    const auto probe = light::probe();
+    const auto monitor = light::monitor();
+    openRun.strings = probe.trips - openRun.probeTrips0;
+    openRun.load = probe.record.load;
+    openRun.railTimeout = probe.railTimeouts != openRun.railTimeouts0;
+    openRun.decidedAt = millis();
+    // The 10 s run from the last time the boost output was driven up.
+    openRun.lastTripAt = openRun.decidedAt;
+    if (openRun.strings != 0 && probe.lastTripped) {
+      const int32_t ago = static_cast<int32_t>(static_cast<uint32_t>(openRun.decidedAt) - probe.lastMs);
+      if (ago > 0) openRun.lastTripAt = openRun.decidedAt - static_cast<unsigned long>(ago);
+    }
+    openRun.probesAtDecision = probe.probes;
+    openRun.monitorTripsAtDecision = monitor.trips;
+    openRun.watchStart = light::readMonitor(4);
+    setPhase(Phase::OpenWatch);
+  }
+
+  // Dark for OPEN_WATCH_MS: IO42 held LOW, no new enable, LED_MONIT not rising.
+  void openWatchTick() {
+    const auto& fl = BoardConfig::ACTIVE.frontlight;
+    if (!light::padHeldAt(light::readPad(fl.gpio), !fl.activeHigh)) openRun.io42LowThroughout = false;
+    if (Frontlight.isOn() || light::probe().probes != openRun.probesAtDecision ||
+        light::monitor().trips != openRun.monitorTripsAtDecision) {
+      openRun.relit = true;
+    }
+    if (millis() - phaseAt < OPEN_WATCH_MS) return;
+    openRun.watchEnd = light::readMonitor(4);
+    if (openRun.watchEnd.pinMv > openRun.watchStart.pinMv + OPEN_RISE_PIN_MV) openRun.relit = true;
+    setPhase(Phase::OpenCooling);
+  }
+
+  void openCoolingTick() {
+    const unsigned long now = millis();
+    if (now - openRun.lastTripAt < OPEN_COOL_MS) {
+      if (now - drawnAt >= OPEN_REDRAW_MS) {
+        drawnAt = now;
+        requestUpdate();
+      }
+      return;
+    }
+    openRun.after10s = light::readMonitor();
+    openRun.after10sTaken = true;
+    recordOpenLoad();
+  }
+
+  void recordOpenLoad() {
+    phase = Phase::Idle;
+    char fails[96];
+    snprintf(fails, sizeof(fails), "%s", openRun.fails);
+    if (openRun.tripSeen) {
+      if (openRun.tripMs > static_cast<int32_t>(OPEN_TRIP_WITHIN_MS)) addFailure(fails, sizeof(fails), "trip_slow");
+      if (!openRun.io42LowAtTrip) addFailure(fails, sizeof(fails), "io42_not_low");
+    }
+    if (!openRun.io42LowThroughout) addFailure(fails, sizeof(fails), "io42_released");
+    if (openRun.relit) addFailure(fails, sizeof(fails), "relit");
+    char tripMs[12] = "-";
+    if (openRun.tripSeen) snprintf(tripMs, sizeof(tripMs), "%ld", static_cast<long>(openRun.tripMs));
+    char led10[12] = "stopped";
+    if (openRun.after10sTaken) snprintf(led10, sizeof(led10), "%u", static_cast<unsigned>(openRun.after10s.ledMv));
+    monitorNow = light::monitor();
+    record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+           "step=0 build=%s cut=%d dark_pin=%u trip=%s trip_ms=%s after_us=%u trip_led=%u dark_after_us=%u "
+           "io42_low=%d strings=%u load=%s rail_timeout=%d watch_pin=%u-%u relit=%d led_10s=%s fails=%s",
+           openRun.swapDriver ? "tps923611_smaj33a" : "tps923610", options::cutDown() ? 1 : 0,
+           static_cast<unsigned>(openRun.dark.pinMv),
+           !openRun.tripSeen     ? "none"
+           : openRun.byMonitor   ? "monitor"
+           : openRun.firstRecord ? "probe"
+                                 : "probe_late_poll",
+           tripMs, static_cast<unsigned>(openRun.afterUs), static_cast<unsigned>(openRun.tripLedMv),
+           static_cast<unsigned>(openRun.darkAfterUs), openRun.io42LowAtTrip ? 1 : 0,
+           static_cast<unsigned>(openRun.strings), light::loadToken(openRun.load), openRun.railTimeout ? 1 : 0,
+           static_cast<unsigned>(openRun.watchStart.pinMv), static_cast<unsigned>(openRun.watchEnd.pinMv),
+           openRun.relit ? 1 : 0, led10, fails[0] != '\0' ? fails : "none");
+  }
+
+  void drawOpenLoad(TestPage& page) const {
+    page.paragraph(OPEN_ADVICE, 3);
+    page.gap(4);
+    page.setCompact(true);
+    page.row("Step 0", phaseName(phase));
+    page.row("Driver", openRun.swapDriver ? "TPS923611, D3 SMAJ33A" : "TPS923610, D3 SMAJ26A");
+    if (openRun.dark.pinMv != 0) page.rowf("Dark, before", "%u mV pin", static_cast<unsigned>(openRun.dark.pinMv));
+    if (openRun.tripSeen) {
+      page.rowf("Trip (within 500 ms)", "%s, %ld ms, %u mV%s", openRun.byMonitor ? "monitor" : "probe",
+                static_cast<long>(openRun.tripMs), static_cast<unsigned>(openRun.tripLedMv),
+                openRun.tripMs > static_cast<int32_t>(OPEN_TRIP_WITHIN_MS) ? " SLOW" : "");
+      page.row("IO42 at the trip", openRun.io42LowAtTrip ? "LOW (GPIO)" : "NOT held LOW");
+    } else if (phase != Phase::OpenDeciding) {
+      page.row("Trip", "NONE within 1 s: the monitor missed the open load; U10 latched off by itself");
+    }
+    if (phase == Phase::OpenWatch || phase == Phase::OpenCooling || openRun.after10sTaken) {
+      page.rowf("Strings tried / load", "%u / %s", static_cast<unsigned>(openRun.strings),
+                light::loadToken(openRun.load));
+    }
+    if (phase == Phase::OpenCooling || openRun.after10sTaken) {
+      page.rowf("Dark 2 s, IO42 LOW", "%s, %s", openRun.relit ? "RELIT" : "yes",
+                openRun.io42LowThroughout ? "yes" : "RELEASED");
+    }
+    if (openRun.after10sTaken) {
+      page.rowf("LED_SW 10 s after the trip", "%u.%02u V (about 7 V or less)",
+                static_cast<unsigned>(openRun.after10s.ledMv / 1000U),
+                static_cast<unsigned>(openRun.after10s.ledMv % 1000U / 10U));
+    } else if (phase == Phase::OpenCooling) {
+      const unsigned long elapsed = millis() - openRun.lastTripAt;
+      const unsigned long left = elapsed < OPEN_COOL_MS ? (OPEN_COOL_MS - elapsed + 999) / 1000 : 0;
+      page.rowf("LED_SW 10 s after the trip", "in %lu s", left);
+    }
+    page.setCompact(false);
+  }
+
   void drawProbeTrip(TestPage& page, const char* label, const ProbeTrip& trip) const {
     if (!trip.seen) {
       page.row(label, "-");
@@ -380,6 +773,10 @@ class LightTripTest final : public TestScreen {
     }
     page.paragraph(INTRO, 7);
     page.gap(4);
+    if (showOpen) {
+      drawOpenLoad(page);
+      return;
+    }
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     page.row("Phase", phaseName(phase));
@@ -427,6 +824,9 @@ class LightTripTest final : public TestScreen {
   RunResult run;
   FrontlightManager::MonitorDiagnostics monitorNow;  // as of the last phase change or record
   char fails[96] = "";
+  OpenLoad openRun;       // step 0
+  bool showOpen = false;  // the body shows step 0 (it ran last)
+  unsigned long drawnAt = 0;
 };
 
 }  // namespace

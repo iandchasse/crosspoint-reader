@@ -17,7 +17,7 @@ using TestFactory = std::unique_ptr<Activity> (*)(const TestInfo& info, GfxRende
                                                   MappedInputManager& mappedInput);
 
 struct TestInfo {
-  const char* id;       // stable id in results.csv and the serial log: "OPT", "T1".."T15", "P1"..
+  const char* id;       // stable id in results.csv and the serial log: "OPT", "T1".."T15", "P1".., "U1".. (bench tools)
   const char* title;    // menu label
   const char* summary;  // what it checks, one line
   TestFactory create;   // nullptr: not implemented yet (the menu opens a placeholder)

@@ -6,7 +6,10 @@
 // and a byte compare, with the MB/s for a baseline. On battery it needs the
 // firmware-write floor (3.6 V), as a brown-out mid-write could damage the FAT
 // the reader shares. The optional overlap runs Wi-Fi scans and FAST refreshes
-// during the run (sd-clock), on USB only.
+// during the run (sd-clock), on USB only. The power-cycle mode (BRING_UP section
+// 9) takes the card through the reader's own sleep shutdown (write-back, unmount,
+// bus parked LOW, SD_VDD gated off) and parked mount, ten times, so 3V3 at U3.5
+// can be scoped as SD_VDD switches on.
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <FS.h>  // before SdFat (SDCardManager.h), as HalStorage.cpp includes them
@@ -42,6 +45,14 @@ using CardType = SDCardManager::CardType;
 constexpr char TEST_FILE[] = "/.silkscreen-test/sdcheck.tmp";
 constexpr uint32_t SIZES_MB[] = {8, 64, 200};
 constexpr int SIZE_COUNT = static_cast<int>(sizeof(SIZES_MB) / sizeof(SIZES_MB[0]));
+// Left steps through the verify sizes, then the power cycles.
+constexpr int MODE_POWER_CYCLE = SIZE_COUNT;
+constexpr int MODE_COUNT = SIZE_COUNT + 1;
+// Power cycles: SD_VDD off long enough to fall below 0.5 V (R77 bleeds it in
+// about 0.11 s with no card; the card adds capacitance), then the parked mount.
+constexpr int POWER_CYCLES = 10;
+constexpr unsigned long CYCLE_OFF_MS = 1000;
+constexpr unsigned long CYCLE_GAP_MS = 1000;  // mounted between two cycles
 constexpr size_t CHUNK = 32 * 1024;
 static_assert(CHUNK % 4 == 0, "the generator writes 4 bytes at a time");
 constexpr unsigned long SLICE_MS = 200;  // work per loop pass, so Back and repaints get through
@@ -61,9 +72,19 @@ constexpr char FITTED_BODY[] =
     "The card is not mounted. With no card, the parked mount must fail cleanly and the menu say so; with a card, "
     "this is a failure.";
 
+constexpr int QUESTION_SCOPE = 2;
+constexpr const char* SCOPE_ANSWERS[] = {"Stayed above 3.0 V", "Dipped below 3.0 V", "Not scoped"};
+constexpr const char* SCOPE_CODES[] = {"ok", "dip", "not_scoped"};
+constexpr char SCOPE_HEADING[] = "3V3 at U3.5";
+constexpr char SCOPE_BODY[] = "As SD_VDD switched on at each cycle, did 3V3 at U3.5 stay above 3.0 V?";
+
 constexpr char INTRO[] =
-    "Confirm writes, reads back and verifies a scratch file in /.silkscreen-test/, then removes it. Left: size. "
-    "Right: overlap Wi-Fi scans and screen refreshes (USB only). Back stops a run. On battery it needs 3.6 V.";
+    "Confirm writes, reads back and verifies a scratch file in /.silkscreen-test/, then removes it. Left: size, or "
+    "SD power cycles. Right: overlap Wi-Fi scans and screen refreshes (USB only). Back stops a run. On battery a "
+    "verify needs 3.6 V.";
+constexpr char CYCLE_NOTE[] =
+    "Power cycles: 10 times, the card is unmounted, its bus parked LOW and SD_VDD gated off for 1 s, then mounted "
+    "again. Scope 3V3 at U3.5 (77.30, 83.20), trigger on SD_VDD (C36) rising: 3V3 must stay above 3.0 V.";
 
 const char* cardTypeName(const CardType type) {
   switch (type) {
@@ -101,7 +122,8 @@ class SdCardTest final : public TestScreen {
       : TestScreen(info, renderer, mappedInput) {}
 
  private:
-  enum class Phase : uint8_t { Idle, Writing, Reading };
+  // CycleOff: unmounted, bus parked, SD_VDD off. CycleOn: mounted between cycles.
+  enum class Phase : uint8_t { Idle, Writing, Reading, CycleOff, CycleOn };
 
   struct Result {
     bool done = false;
@@ -117,21 +139,29 @@ class SdCardTest final : public TestScreen {
     char shaHex[2 * Sha256::SIZE + 1] = "";
   };
 
-  bool running() const { return phase != Phase::Idle; }
+  bool running() const { return phase == Phase::Writing || phase == Phase::Reading; }
+  bool cycling() const { return phase == Phase::CycleOff || phase == Phase::CycleOn; }
+  bool powerCycleMode() const { return modeIndex == MODE_POWER_CYCLE; }
   bool skipLoopDelay() override { return running(); }
-  // A run is bounded (200 MB at the slowest card still ends within the ceiling).
-  bool preventAutoSleep() override { return running(); }
+  // A run is bounded (200 MB at the slowest card still ends within the ceiling),
+  // and so are the power cycles (about 25 s).
+  bool preventAutoSleep() override { return running() || cycling(); }
 
   void onStart() override { readCardInfo(); }
 
   void onExit() override {
     if (running()) abortRun("exit");
+    if (cycling()) stopCycles("exit", /*recordIt=*/false);
     buffer.reset();
     expected.reset();
     TestScreen::onExit();
   }
 
   bool onBack() override {
+    if (cycling()) {
+      stopCycles("back", /*recordIt=*/true);
+      return true;
+    }
     if (!running()) return false;
     abortRun("stopped");
     requestUpdate();
@@ -139,28 +169,36 @@ class SdCardTest final : public TestScreen {
   }
 
   const char* slotLabel(const Slot slot) const override {
-    if (running()) return nullptr;
+    if (running() || cycling()) return nullptr;
     switch (slot) {
       case Slot::Confirm:
-        return card.mounted ? "Run" : "Record";
+        if (!card.mounted) return "Record";
+        return powerCycleMode() ? "Cycle" : "Run";
       case Slot::Left:
-        return card.mounted ? "Size" : nullptr;
+        return card.mounted ? "Mode" : nullptr;
       case Slot::Right:
-        return card.mounted ? (overlap ? "Overlap off" : "Overlap on") : nullptr;
+        if (!card.mounted || powerCycleMode()) return nullptr;
+        return overlap ? "Overlap off" : "Overlap on";
       default:
         return nullptr;
     }
   }
 
   void onSlot(const Slot slot) override {
-    if (running()) return;
+    if (running() || cycling()) return;
     if (!card.mounted) {
       if (slot == Slot::Confirm) ask(QUESTION_FITTED, FITTED_HEADING, FITTED_BODY, FITTED_ANSWERS, 2);
       return;
     }
-    if (slot == Slot::Confirm) startRun();
+    if (slot == Slot::Confirm) {
+      if (powerCycleMode()) {
+        startCycles();
+      } else {
+        startRun();
+      }
+    }
     if (slot == Slot::Left) {
-      sizeIndex = (sizeIndex + 1) % SIZE_COUNT;
+      modeIndex = (modeIndex + 1) % MODE_COUNT;
       requestUpdate();
     }
     if (slot == Slot::Right) {
@@ -170,6 +208,10 @@ class SdCardTest final : public TestScreen {
   }
 
   void onAnswer(const int question, const int answer) override {
+    if (question == QUESTION_SCOPE) {
+      recordCycles(answer);
+      return;
+    }
     if (question != QUESTION_FITTED || answer < 0) return;
     record(answer == 0 ? Verdict::Pass : Verdict::Fail, "mounted=0 fitted=%s attempts=%u last_err=0x%lx (%s)",
            answer == 0 ? "no" : "yes", card.mountAttempts, static_cast<unsigned long>(card.lastMountError),
@@ -177,6 +219,10 @@ class SdCardTest final : public TestScreen {
   }
 
   void onTick() override {
+    if (cycling()) {
+      cycleTick();
+      return;
+    }
     if (!running()) return;
     if (millis() - supplyCheckedAt >= SUPPLY_CHECK_MS && !supplyStillOk()) return;
     if (result.overlap) overlapWork();
@@ -248,9 +294,9 @@ class SdCardTest final : public TestScreen {
 
   void startRun() {
     readCardInfo();
-    const uint64_t bytes = static_cast<uint64_t>(SIZES_MB[sizeIndex]) * 1024ULL * 1024ULL;
+    const uint64_t bytes = static_cast<uint64_t>(SIZES_MB[modeIndex]) * 1024ULL * 1024ULL;
     if (powerManager.firmwareUpdateBlockedByBattery()) {
-      record(Verdict::Skip, "reason=battery_floor size_mb=%lu", static_cast<unsigned long>(SIZES_MB[sizeIndex]));
+      record(Verdict::Skip, "reason=battery_floor size_mb=%lu", static_cast<unsigned long>(SIZES_MB[modeIndex]));
       return;
     }
     const Supply supply = readSupply();
@@ -262,7 +308,7 @@ class SdCardTest final : public TestScreen {
     if (totalBytes != 0 && totalBytes - usedBytes < bytes + FREE_MARGIN_BYTES) {
       record(Verdict::Skip, "reason=no_space free_mb=%lu size_mb=%lu",
              static_cast<unsigned long>((totalBytes - usedBytes) >> 20),
-             static_cast<unsigned long>(SIZES_MB[sizeIndex]));
+             static_cast<unsigned long>(SIZES_MB[modeIndex]));
       return;
     }
     if (!buffer) buffer = makeUniqueNoThrow<uint8_t[]>(CHUNK);
@@ -283,7 +329,7 @@ class SdCardTest final : public TestScreen {
       return;
     }
     result = Result{};
-    result.sizeMb = SIZES_MB[sizeIndex];
+    result.sizeMb = SIZES_MB[modeIndex];
     result.overlap = overlap;
     totalRun = bytes;
     doneBytes = 0;
@@ -417,7 +463,115 @@ class SdCardTest final : public TestScreen {
             static_cast<unsigned long>(totalRun >> 20), removed ? "removed" : "left for the next boot");
   }
 
+  // --- power cycles (BRING_UP section 9) ---------------------------------------
+
+  void startCycles() {
+    cycles = CycleResult{};
+    LOG_INF("TEST", "P3: %d SD power cycles, %lu ms off each", POWER_CYCLES, CYCLE_OFF_MS);
+    powerOff();
+  }
+
+  // The reader's sleep shutdown (HalStorage takes its own lock): cached sectors
+  // written back, unmounted, the bus parked LOW and SD_VDD gated off. No file of
+  // this screen is open here.
+  void powerOff() {
+    Storage.prepareForDeepSleep();
+    phase = Phase::CycleOff;
+    phaseStart = millis();
+    redraw();
+  }
+
+  // The boot's parked mount: SD_VDD switches on at its start, then the card is
+  // initialised and sector 0 read. HalStorage::begin() takes no lock of its own.
+  bool powerOn() {
+    SemaphoreHandle_t mutex = TestSuiteAccess::storageMutex();
+    xSemaphoreTakeRecursive(mutex, portMAX_DELAY);
+    const bool ok = Storage.begin();
+    xSemaphoreGiveRecursive(mutex);
+    readCardInfo();
+    const uint8_t attempts = card.mountAttempts;
+    if (cycles.done < POWER_CYCLES) {
+      cycles.attempts[cycles.done] = ok ? static_cast<char>('0' + (attempts < 9 ? attempts : 9)) : 'x';
+    }
+    ++cycles.done;
+    if (attempts > cycles.maxAttempts) cycles.maxAttempts = attempts;
+    if (!ok) {
+      ++cycles.failed;
+      cycles.lastError = card.lastMountError;
+    }
+    LOG_INF("TEST", "P3: power cycle %d: %s after %u power-on(s)", cycles.done, ok ? "mounted" : "NOT mounted",
+            attempts);
+    return ok;
+  }
+
+  void cycleTick() {
+    const unsigned long now = millis();
+    if (phase == Phase::CycleOff) {
+      if (now - phaseStart < CYCLE_OFF_MS) return;
+      if (!powerOn()) {
+        finishCycles(/*failed=*/true);
+        return;
+      }
+      phase = Phase::CycleOn;
+      phaseStart = now;
+      redraw();
+      return;
+    }
+    if (now - phaseStart < CYCLE_GAP_MS) return;
+    if (cycles.done >= POWER_CYCLES) {
+      finishCycles(/*failed=*/false);
+      return;
+    }
+    powerOff();
+  }
+
+  // Back or leaving: the card is mounted again if it is off.
+  void stopCycles(const char* why, const bool recordIt) {
+    if (phase == Phase::CycleOff) powerOn();
+    phase = Phase::Idle;
+    cycles.stop = why;
+    LOG_INF("TEST", "P3: power cycles stopped (%s) after %d", why, cycles.done);
+    if (recordIt) recordCycles(-1);
+  }
+
+  void finishCycles(const bool failed) {
+    phase = Phase::Idle;
+    if (failed) {
+      cycles.stop = "remount_failed";
+      recordCycles(-1);
+      return;
+    }
+    cycles.stop = "done";
+    if (!ask(QUESTION_SCOPE, SCOPE_HEADING, SCOPE_BODY, SCOPE_ANSWERS, 3)) recordCycles(-1);
+  }
+
+  // answer: the operator's (SCOPE_ANSWERS), or -1 when not asked.
+  void recordCycles(const int answer) {
+    char fails[48] = "";
+    if (cycles.failed != 0) addFailure(fails, sizeof(fails), "remount");
+    if (answer == 1) addFailure(fails, sizeof(fails), "3v3_dip");
+    const bool complete = strcmp(cycles.stop, "done") == 0;
+    const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : complete && answer == 0 ? Verdict::Pass : Verdict::Info;
+    record(verdict,
+           "action=power_cycle cycles=%d/%d attempts=%s max_attempts=%u failed=%d last_err=0x%lx mounted=%d "
+           "off_ms=%lu scope=%s stop=%s fails=%s",
+           cycles.done, POWER_CYCLES, cycles.attempts[0] != '\0' ? cycles.attempts : "-", cycles.maxAttempts,
+           cycles.failed, static_cast<unsigned long>(cycles.lastError), card.mounted ? 1 : 0, CYCLE_OFF_MS,
+           answer >= 0 ? SCOPE_CODES[answer] : "none", cycles.stop, fails[0] != '\0' ? fails : "none");
+  }
+
   // --- screen ----------------------------------------------------------------
+
+  void drawCycles(TestPage& page) const {
+    page.paragraph(CYCLE_NOTE, 4);
+    page.rowf("Power cycles", "%d of %d%s", cycles.done, POWER_CYCLES,
+              phase == Phase::CycleOff  ? ": SD_VDD off"
+              : phase == Phase::CycleOn ? ": mounted"
+                                        : "");
+    if (cycles.attempts[0] != '\0') {
+      page.rowf("Power-ons per mount / failed", "%s / %d", cycles.attempts, cycles.failed);
+    }
+  }
 
   void drawBody(TestPage& page) const override {
     page.paragraph(INTRO, 5);
@@ -427,6 +581,7 @@ class SdCardTest final : public TestScreen {
       page.row("Card", "NOT MOUNTED");
       page.rowf("Power cycles / last error", "%u / 0x%lx", card.mountAttempts,
                 static_cast<unsigned long>(card.lastMountError));
+      if (cycles.done != 0) drawCycles(page);
       page.setCompact(false);
       return;
     }
@@ -441,7 +596,12 @@ class SdCardTest final : public TestScreen {
     page.rowf("Power cycles at mount", "%u%s", card.mountAttempts, card.lastMountError != 0 ? " (retried)" : "");
     page.rowf("Volume used / total", "%lu / %lu MB", static_cast<unsigned long>(usedBytes >> 20),
               static_cast<unsigned long>(totalBytes >> 20));
-    page.rowf("Run size / overlap", "%lu MB / %s", static_cast<unsigned long>(SIZES_MB[sizeIndex]),
+    if (powerCycleMode() || cycling()) {
+      drawCycles(page);
+      page.setCompact(false);
+      return;
+    }
+    page.rowf("Run size / overlap", "%lu MB / %s", static_cast<unsigned long>(SIZES_MB[modeIndex]),
               overlap ? "Wi-Fi scans + refreshes" : "off");
     if (running()) {
       const unsigned pct = totalRun == 0 ? 0 : static_cast<unsigned>(doneBytes * 100 / totalRun);
@@ -461,7 +621,7 @@ class SdCardTest final : public TestScreen {
   CardInfo card;
   uint64_t totalBytes = 0;
   uint64_t usedBytes = 0;
-  int sizeIndex = 0;
+  int modeIndex = 0;  // a verify size (SIZES_MB), or MODE_POWER_CYCLE
   bool overlap = false;
   Phase phase = Phase::Idle;
   Result result;
@@ -477,6 +637,16 @@ class SdCardTest final : public TestScreen {
   unsigned long phaseStart = 0;
   unsigned long drawnAt = 0;
   unsigned long supplyCheckedAt = 0;
+  // The power cycles' result.
+  struct CycleResult {
+    int done = 0;  // mounts tried
+    int failed = 0;
+    uint8_t maxAttempts = 0;  // the most power-ons one mount needed
+    int32_t lastError = 0;
+    char attempts[POWER_CYCLES + 1] = {};  // power-ons per mount, one digit each; 'x' failed
+    const char* stop = "done";
+  };
+  CycleResult cycles;
 };
 
 }  // namespace

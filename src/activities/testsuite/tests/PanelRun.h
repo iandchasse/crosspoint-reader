@@ -110,12 +110,18 @@ class PanelRunTest : public TestScreen {
   virtual void onIdleSlot(Slot) {}
   virtual void onIdleStep(int) {}
   virtual void onIdleTick() {}
+  // True while any key or tap ends the run as Back does (a run with no frame to
+  // hold, such as T4's scope loop).
+  virtual bool stopsOnAnyInput() const { return false; }
 
   // --- helpers ---------------------------------------------------------------
   // Loop task. Starts a run of `steps` steps. SETTINGS.fadingFix set here reach
   // the renderer before step 0 (the loop applies them at the top of a pass).
   void startRun(int steps);
   void pauseRun() { paused = true; }
+  // From afterStep(): the step that just ran is the run's last, and the run
+  // completes after it.
+  void endAfterThisStep() { stepCount = stepIndex + 1; }
   bool runOn() const { return phase.load() != Phase::Idle; }
   // Back to the pinned values (TestSuite.cpp): Fading Fix off, normal polarity.
   static void restoreDisplaySettings();

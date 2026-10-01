@@ -49,6 +49,10 @@ std::unique_ptr<Activity> createRtcSleepTest(const TestInfo& info, GfxRenderer& 
                                              MappedInputManager& mappedInput);  // T14
 std::unique_ptr<Activity> createWifiTest(const TestInfo& info, GfxRenderer& renderer,
                                          MappedInputManager& mappedInput);  // T15
+std::unique_ptr<Activity> createTxBurstTest(const TestInfo& info, GfxRenderer& renderer,
+                                            MappedInputManager& mappedInput);  // U1 (LoadTest.cpp)
+std::unique_ptr<Activity> createSustainedLoadTest(const TestInfo& info, GfxRenderer& renderer,
+                                                  MappedInputManager& mappedInput);  // U2 (LoadTest.cpp)
 std::unique_ptr<Activity> createSdCardTest(const TestInfo& info, GfxRenderer& renderer,
                                            MappedInputManager& mappedInput);  // P3
 std::unique_ptr<Activity> createUsbTest(const TestInfo& info, GfxRenderer& renderer,
