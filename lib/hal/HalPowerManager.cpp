@@ -176,6 +176,20 @@ bool HalPowerManager::lowBatteryCutoffTripped() {
   return true;
 }
 
+bool HalPowerManager::awakeCeilingPassed() const {
+  const unsigned long ceilingMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL;
+  return ceilingMs > 0 && msSinceInput() >= ceilingMs && msSinceClientTraffic() >= ceilingMs && !gpio.isUsbConnected();
+}
+
+bool HalPowerManager::awakeInputCapPassed() const {
+  const unsigned long capMs = BoardConfig::powerPolicy().awakeInputCapMin * 60UL * 1000UL;
+  return capMs > 0 && msSinceInput() >= capMs && !gpio.isUsbConnected();
+}
+
+bool HalPowerManager::backgroundNetworkMustStop() {
+  return lowBatteryCutoffTripped() || awakeCeilingPassed() || awakeInputCapPassed();
+}
+
 bool HalPowerManager::radioOffWhenIdle() { return BoardConfig::powerPolicy().radioOffWhenIdle; }
 
 bool HalPowerManager::releaseIdleRadio(const char* tag) {

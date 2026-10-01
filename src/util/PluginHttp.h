@@ -80,14 +80,17 @@ int request(freeink::SecureHttpClient* session, const std::string& url, const st
             const std::string& body, const Headers& headers, String& out, size_t maxResponse,
             Headers* responseHeaders = nullptr, const std::function<bool()>& shouldAbort = nullptr);
 
-// Same request, body streamed to a file on SD instead of DRAM.
+// Same request, body streamed to a file on SD instead of DRAM. shouldAbort as
+// for request().
 int requestToFile(freeink::SecureHttpClient* session, const std::string& url, const std::string& method,
-                  const std::string& body, const Headers& headers, const char* destPath, size_t maxResponse);
+                  const std::string& body, const Headers& headers, const char* destPath, size_t maxResponse,
+                  const std::function<bool()>& shouldAbort = nullptr);
 
 // Password-grant token mint: runs the (already-substituted) auth request and
-// extracts the token at `tokenPath` from a 2xx JSON response.
+// extracts the token at `tokenPath` from a 2xx JSON response. shouldAbort as
+// for request().
 bool mintPasswordToken(freeink::SecureHttpClient* session, const std::string& url, const std::string& method,
                        const std::string& body, const Headers& headers, const std::string& tokenPath,
-                       std::string& outToken);
+                       std::string& outToken, const std::function<bool()>& shouldAbort = nullptr);
 
 }  // namespace pluginhttp

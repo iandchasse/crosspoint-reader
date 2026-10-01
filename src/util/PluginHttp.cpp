@@ -210,7 +210,8 @@ int request(freeink::SecureHttpClient* session, const std::string& url, const st
 }
 
 int requestToFile(freeink::SecureHttpClient* session, const std::string& url, const std::string& method,
-                  const std::string& body, const Headers& headers, const char* destPath, const size_t maxResponse) {
+                  const std::string& body, const Headers& headers, const char* destPath, const size_t maxResponse,
+                  const std::function<bool()>& shouldAbort) {
   WifiPowerSaveGuard psGuard;
   freeink::SecureHttpClient tmp;
   freeink::SecureHttpClient* httpPtr = openClient(session, tmp, url, headers);
@@ -223,19 +224,21 @@ int requestToFile(freeink::SecureHttpClient* session, const std::string& url, co
   {
     HalFile file;
     if (!Storage.openFileForWrite("PHTP", destPath, file)) return -1;
-    status = http.sendRequest(method.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size(),
-                              [&](const uint8_t* data, size_t len) {
-                                if (written + len > maxResponse) {
-                                  writeOk = false;
-                                  return false;
-                                }
-                                if (file.write(data, len) != len) {
-                                  writeOk = false;
-                                  return false;
-                                }
-                                written += len;
-                                return true;
-                              });
+    status = http.sendRequest(
+        method.c_str(), reinterpret_cast<const uint8_t*>(body.data()), body.size(),
+        [&](const uint8_t* data, size_t len) {
+          if (written + len > maxResponse) {
+            writeOk = false;
+            return false;
+          }
+          if (file.write(data, len) != len) {
+            writeOk = false;
+            return false;
+          }
+          written += len;
+          return true;
+        },
+        shouldAbort);
     file.flush();
     // file closed at scope exit, before any Storage.remove of destPath
   }
@@ -250,10 +253,10 @@ int requestToFile(freeink::SecureHttpClient* session, const std::string& url, co
 
 bool mintPasswordToken(freeink::SecureHttpClient* session, const std::string& url, const std::string& method,
                        const std::string& body, const Headers& headers, const std::string& tokenPath,
-                       std::string& outToken) {
+                       std::string& outToken, const std::function<bool()>& shouldAbort) {
   String response;
   constexpr size_t MAX_AUTH_RESPONSE = 8 * 1024;
-  const int status = request(session, url, method, body, headers, response, MAX_AUTH_RESPONSE);
+  const int status = request(session, url, method, body, headers, response, MAX_AUTH_RESPONSE, nullptr, shouldAbort);
   if (status < 200 || status >= 300) return false;
   JsonDocument doc;
   if (deserializeJson(doc, response) != DeserializationError::Ok) return false;

@@ -83,7 +83,9 @@ void emit(Event e, const Var* vars, size_t varCount);
 // backlog cannot stall an interactive session. Successfully delivered events
 // leave the outbox; failures stay for the next drain. When `renderer` is
 // non-null, a handler's "toast" template is shown via the standard popup after
-// its request succeeds.
+// its request succeeds. On a board with a low-battery cutoff, an awake ceiling
+// or an input cap (PowerConfig), the drain stops when one of them is reached,
+// aborting a request in flight; its events stay queued.
 void drain(GfxRenderer* renderer, size_t maxEvents = 4);
 
 }  // namespace pluginevents

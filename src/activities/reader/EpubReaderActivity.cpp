@@ -1193,6 +1193,9 @@ void EpubReaderActivity::beginLoanTimeSync() {
   }
   startActivityForResult(std::move(wifi), [this](const ActivityResult& result) {
     if (result.isCancelled || WiFi.status() != WL_CONNECTED) {
+      // The Wi-Fi picker leaves the station up, and nothing on the way home
+      // restarts (PowerConfig::radioOffWhenIdle).
+      HalPowerManager::releaseIdleRadio("ERS");
       finish();
       return;
     }

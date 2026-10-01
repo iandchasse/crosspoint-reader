@@ -418,9 +418,11 @@ static void deliverSleepPluginEvents() {
     vars[varCount++] = {"percent", percent};
   }
   pluginevents::emit(pluginevents::Event::SleepEnter, vars, varCount);
-  // At the low-battery cutoff (PowerConfig::lowBatteryCutoffMv) no network work
-  // runs on the way down; the events stay queued for the next drain.
-  if (powerManager.lowBatteryCutoffTripped()) return;
+  // At the low-battery cutoff, or once the awake ceiling or the input cap has
+  // passed (PowerConfig::lowBatteryCutoffMv, awakeCeilingMin, awakeInputCapMin:
+  // nobody is at the device), no network work runs on the way down; the events
+  // stay queued for the next drain. The drain stops on the same check.
+  if (powerManager.backgroundNetworkMustStop()) return;
   if (WiFi.status() == WL_CONNECTED) {
     pluginevents::drain(&renderer);
     return;
@@ -1119,10 +1121,14 @@ void loop() {
 
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
-  static unsigned long lastInputTime = millis();
+  // The input clock (HalPowerManager::noteInput()) starts with the first pass.
+  static bool inputClockStarted = false;
   const bool userInput =
       gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity();
-  if (userInput) lastInputTime = millis();
+  if (userInput || !inputClockStarted) {
+    powerManager.noteInput();
+    inputClockStarted = true;
+  }
   // The release of the press that woke the device is not the user's first input.
   if (userInput && !wakePowerReleasePending) wakeNoInputArmed = false;
   if (userInput || activityManager.preventAutoSleep()) {
@@ -1222,10 +1228,9 @@ void loop() {
   // update) or a Never timeout still ends once nothing has pressed a key or
   // talked to the web server for this long. enterDeepSleep() drops Wi-Fi. A
   // timeout the user set still governs every other screen.
-  if (const unsigned long ceilingMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL; ceilingMs > 0) {
+  if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
     const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep();
-    if (!governedByTimeout && millis() - lastInputTime >= ceilingMs &&
-        powerManager.msSinceClientTraffic() >= ceilingMs && !gpio.isUsbConnected()) {
+    if (!governedByTimeout && powerManager.awakeCeilingPassed()) {
       LOG_INF("SLP", "No input or client traffic for %u min on battery; sleeping",
               BoardConfig::powerPolicy().awakeCeilingMin);
       enterDeepSleep(true);
@@ -1236,8 +1241,7 @@ void loop() {
   // Input-only cap on battery (PowerConfig::awakeInputCapMin; 0 on boards
   // without one): client traffic cannot extend it, since a desktop that keeps a
   // WebDAV share mounted polls without anyone at the device.
-  if (const unsigned long capMs = BoardConfig::powerPolicy().awakeInputCapMin * 60UL * 1000UL;
-      capMs > 0 && millis() - lastInputTime >= capMs && !gpio.isUsbConnected()) {
+  if (powerManager.awakeInputCapPassed()) {
     LOG_INF("SLP", "No input for %u min on battery; sleeping", BoardConfig::powerPolicy().awakeInputCapMin);
     enterDeepSleep(true);
     return;
@@ -1246,7 +1250,7 @@ void loop() {
   // A power-button wake that gets no input (a press in a pocket that passed the
   // hold check) sleeps again on battery (PowerConfig::wakeNoInputTimeoutS).
   if (const unsigned long wakeMs = BoardConfig::powerPolicy().wakeNoInputTimeoutS * 1000UL;
-      wakeNoInputArmed && wakeMs > 0 && millis() - lastInputTime >= wakeMs && !activityManager.preventAutoSleep() &&
+      wakeNoInputArmed && wakeMs > 0 && powerManager.msSinceInput() >= wakeMs && !activityManager.preventAutoSleep() &&
       !gpio.isUsbConnected()) {
     LOG_INF("SLP", "No input for %lu s after the wake on battery; sleeping", wakeMs / 1000UL);
     enterDeepSleep(true);
@@ -1255,7 +1259,7 @@ void loop() {
 
   // Nothing can be done on the SD-card error screen (PowerConfig::storageErrorSleepS).
   if (const unsigned long errorMs = BoardConfig::powerPolicy().storageErrorSleepS * 1000UL;
-      storageErrorScreen && errorMs > 0 && millis() - lastInputTime >= errorMs && !gpio.isUsbConnected()) {
+      storageErrorScreen && errorMs > 0 && powerManager.msSinceInput() >= errorMs && !gpio.isUsbConnected()) {
     LOG_INF("SLP", "SD card error screen idle for %lu s on battery; sleeping", errorMs / 1000UL);
     enterDeepSleep(true);
     return;

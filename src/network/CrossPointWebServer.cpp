@@ -206,7 +206,10 @@ void CrossPointWebServer::begin() {
         case HTTP_UNLOCK:
           break;
         default:
-          powerManager.noteClientTraffic();
+          // A page hosting a plugin action polls for jobs every 2.5 s for as
+          // long as it stays open, queued or not: only a claimed job counts
+          // (handlePluginJobClaim()).
+          if (request.uri() != "/api/plugin-jobs/claim") powerManager.noteClientTraffic();
           break;
       }
       return next();
@@ -1891,7 +1894,9 @@ void CrossPointWebServer::handleRelay() {
   const int status =
       pluginhttp::request(nullptr, url, method, body, headers, respBody, RELAY_BODY_LIMIT, &respHeaders, [] {
         resetTaskWatchdogIfSubscribed();
-        return false;  // never aborts; only feeds
+        // The loop's low-battery cutoff cannot run during the relay: abort on it
+        // here (never on boards without one), and the next loop pass sleeps.
+        return powerManager.lowBatteryCutoffTripped();
       });
   // Transport failure, a truncated body, or one over the cap / out of memory
   // (the reason is logged by pluginhttp).
@@ -2442,6 +2447,9 @@ void CrossPointWebServer::handlePluginJobClaim() {
       LOG_INF("WEB", "Plugin job %u lease expired; requeued", (unsigned)job.id);
     }
     if (job.state != JOB_PENDING || plugin != job.plugin) continue;
+    // A claimed job is client work for the awake ceiling; the idle poll is not
+    // (begin()'s middleware).
+    powerManager.noteClientTraffic();
     job.state = JOB_RUNNING;
     job.claim = nextPluginJobClaim++;
     job.updatedAt = now;

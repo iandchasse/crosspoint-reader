@@ -26,6 +26,7 @@ class HalPowerManager {
   LockMode currentLockMode = None;
   SemaphoreHandle_t modeMutex = nullptr;  // Protect access to currentLockMode
   unsigned long lastClientTrafficMs = 0;  // noteClientTraffic()
+  unsigned long lastInputMs = 0;          // noteInput()
   bool cutoffTripped = false;             // lowBatteryCutoffTripped() latch
 
   [[noreturn]] void sleepImpl(HalGPIO& gpio, bool sleepCommands) const;
@@ -57,6 +58,26 @@ class HalPowerManager {
   // and the last input.
   void noteClientTraffic() { lastClientTrafficMs = millis(); }
   unsigned long msSinceClientTraffic() const { return millis() - lastClientTrafficMs; }
+
+  // A key, touch or tilt input (loop(), which also starts this clock on its
+  // first pass). The awake ceiling, the input cap and the wake and storage-error
+  // timeouts count from it.
+  void noteInput() { lastInputMs = millis(); }
+  unsigned long msSinceInput() const { return millis() - lastInputMs; }
+
+  // PowerConfig::awakeCeilingMin (always false on boards without one): on
+  // battery, no input and no client traffic for the ceiling.
+  bool awakeCeilingPassed() const;
+  // PowerConfig::awakeInputCapMin (always false on boards without one): on
+  // battery, no input for the cap, whatever the client traffic.
+  bool awakeInputCapPassed() const;
+
+  // PowerConfig::lowBatteryCutoffMv, awakeCeilingMin and awakeInputCapMin
+  // (always false on boards without them): network work nobody is waiting on
+  // (the plugin event drains) must stop or not start. Such work blocks loop(),
+  // whose cutoff, ceiling and cap checks cannot run meanwhile; loop() sleeps on
+  // them once it returns. Call from the loop task.
+  bool backgroundNetworkMustStop();
 
   // PowerConfig::lowBatteryCutoffMv (always false on boards without one): true
   // once BatteryMonitor::isBelowCutoff() fires (with the radio allowance while

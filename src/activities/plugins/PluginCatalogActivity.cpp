@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <FreeInkUIIcon.h>
 #include <GfxRenderer.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <JsonListParser.h>
@@ -325,8 +326,13 @@ void PluginCatalogActivity::enterCatalog() {
 
 // Leaving the open catalog (Back at its root, or Back out of an error /
 // sign-in screen): return to the plugin picker. Wi-Fi stays up so the next
-// pick connects instantly; onExit tears it down when the activity ends.
-void PluginCatalogActivity::exitCatalog() { enterPluginPicker(); }
+// pick connects instantly; onExit tears it down when the activity ends. With
+// PowerConfig::radioOffWhenIdle the picker, which needs no network, switches it
+// off instead, and the next pick joins again.
+void PluginCatalogActivity::exitCatalog() {
+  enterPluginPicker();
+  if (HalPowerManager::releaseIdleRadio("PCAT")) radioReleased = true;
+}
 
 void PluginCatalogActivity::resetBrowse() {
   items.clear();

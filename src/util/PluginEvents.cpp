@@ -1,6 +1,7 @@
 #include "PluginEvents.h"
 
 #include <ArduinoJson.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <esp_random.h>
@@ -278,7 +279,7 @@ std::string drainSubstituted(std::string tpl, const std::string& token, const pl
 // `token` is shared across the drain: a 401-minted refresh persists to the
 // remaining lines instead of re-minting per line.
 bool deliverLine(const DrainManifest& mf, const std::string& lineText, std::string& token,
-                 const pluginhttp::Headers& config, GfxRenderer* renderer) {
+                 const pluginhttp::Headers& config, GfxRenderer* renderer, const std::function<bool()>& shouldAbort) {
   JsonDocument doc;
   if (deserializeJson(doc, lineText) != DeserializationError::Ok) return true;  // corrupt line: drop
   const int e = eventFromName(doc["e"] | "");
@@ -328,7 +329,7 @@ bool deliverLine(const DrainManifest& mf, const std::string& lineText, std::stri
       const int st = pluginhttp::requestToFile(
           nullptr, drainSubstituted(handler->req.url, tok, config, meta, vars, ts, id), handler->req.method,
           drainSubstituted(handler->req.body, tok, config, meta, vars, ts, id), headers, tmp.c_str(),
-          MAX_EVENT_DOWNLOAD);
+          MAX_EVENT_DOWNLOAD, shouldAbort);
       if (st >= 200 && st < 300) {
         // rename won't overwrite an existing file, so park the old dest as a
         // backup and restore it if the swap fails: a failed commit must not
@@ -355,9 +356,10 @@ bool deliverLine(const DrainManifest& mf, const std::string& lineText, std::stri
       return st;
     }
     String response;
-    return pluginhttp::request(
-        nullptr, drainSubstituted(handler->req.url, tok, config, meta, vars, ts, id), handler->req.method,
-        drainSubstituted(handler->req.body, tok, config, meta, vars, ts, id), headers, response, MAX_EVENT_RESPONSE);
+    return pluginhttp::request(nullptr, drainSubstituted(handler->req.url, tok, config, meta, vars, ts, id),
+                               handler->req.method,
+                               drainSubstituted(handler->req.body, tok, config, meta, vars, ts, id), headers, response,
+                               MAX_EVENT_RESPONSE, nullptr, shouldAbort);
   };
 
   int status = run(token);
@@ -374,7 +376,7 @@ bool deliverLine(const DrainManifest& mf, const std::string& lineText, std::stri
     if (pluginhttp::mintPasswordToken(nullptr, drainSubstituted(mf.authReq.url, token, config, meta, vars, ts, id),
                                       mf.authReq.method,
                                       drainSubstituted(mf.authReq.body, token, config, meta, vars, ts, id), authHeaders,
-                                      mf.authTokenPath, minted)) {
+                                      mf.authTokenPath, minted, shouldAbort)) {
       pluginhttp::saveTokenToFile(mf.tokenFile, mf.tokenPath, minted);
       token = minted;
       status = run(token);
@@ -391,10 +393,20 @@ bool deliverLine(const DrainManifest& mf, const std::string& lineText, std::stri
 }  // namespace
 
 void drain(GfxRenderer* renderer, const size_t maxEvents) {
+  // PowerConfig::lowBatteryCutoffMv, awakeCeilingMin and awakeInputCapMin
+  // (always false on boards without them): a drain blocks loop(), whose cutoff,
+  // ceiling and cap checks cannot run meanwhile, so it stops on them itself. A
+  // request in flight aborts and its event stays queued, as on a transport
+  // failure; loop() sleeps once the drain returns.
+  const std::function<bool()> mustStop = [] { return powerManager.backgroundNetworkMustStop(); };
   size_t budget = maxEvents;
   for (const auto& sub : subscribers) {
     if (budget == 0) break;
     if (sub.name[0] == '\0') continue;
+    if (mustStop()) {
+      LOG_INF("PEVT", "Drain stopped (low battery, or idle past the awake limit); events stay queued");
+      break;
+    }
     const std::string path = outboxPath(sub);
     if (!Storage.exists(path.c_str())) continue;
 
@@ -426,7 +438,7 @@ void drain(GfxRenderer* renderer, const size_t maxEvents) {
       if (nl == std::string::npos) nl = raw.size();
       const std::string lineText = raw.substr(pos, nl - pos);
       if (!lineText.empty()) {
-        if (deliverLine(mf, lineText, token, config, renderer)) {
+        if (deliverLine(mf, lineText, token, config, renderer, mustStop)) {
           budget--;
         } else {
           stalled = true;

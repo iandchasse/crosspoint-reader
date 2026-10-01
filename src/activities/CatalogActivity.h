@@ -36,6 +36,9 @@ class CatalogActivity : public UiListActivity {
   std::string errorMessage, statusMessage;
   size_t downloadProgress = 0, downloadTotal = 0;
   bool cancelDownload = false;
+  // HalPowerManager::releaseIdleRadio() switched Wi-Fi off before exit; onExit()
+  // still restarts to clear the heap the radio left.
+  bool radioReleased = false;
 
   virtual void startBrowse() = 0;
   virtual void retryBrowse() { startBrowse(); }
