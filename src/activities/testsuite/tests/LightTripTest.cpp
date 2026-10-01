@@ -83,6 +83,14 @@ constexpr char OPEN_EMPTY_HEADING[] = "Nothing on J3 or J6?";
 constexpr char OPEN_EMPTY_BODY[] =
     "Unplug the light's flex from J3 and leave J6 empty. Hands off TP3 and J3: LED_SW reaches about 25 V. After "
     "the step, wait at least 10 s before plugging a light in.";
+// No trip within OPEN_TRIP_TIMEOUT_MS: the firmware cannot tell a load that
+// answered from a missed open load, so the operator does.
+constexpr int QUESTION_OPEN_LIT = 5;
+constexpr const char* OPEN_LIT_ANSWERS[] = {"Yes: something is on J3 or J6", "No: it stayed dark"};
+constexpr char OPEN_LIT_HEADING[] = "Did a light come on?";
+constexpr char OPEN_LIT_BODY[] =
+    "Step 0 saw no trip within 1 s: either a load answered (J3 or J6 not empty) or the monitor missed the open "
+    "load. Did any light come on at the switch-on?";
 constexpr char OPEN_ADVICE[] =
     "EXCEPTION: step 0 lights the boost with NO load. Wait at least 10 s after it before plugging a light into J3 "
     "or J6: C9 is left charged near 25 V.";
@@ -159,6 +167,11 @@ struct OpenLoad {
   uint32_t strings = 0;  // probe trips in the switch-on: the strings tried
   freeink::frontlight::Load load = freeink::frontlight::Load::Unknown;
   bool railTimeout = false;
+  bool noTrip = false;  // none within OPEN_TRIP_TIMEOUT_MS: the operator says whether a light came on
+  // LED_SW as the switch-on ended, before the switch-off: a lit string's steady
+  // forward voltage (about 12-15 V) or the boost output decaying from its OVP.
+  light::Reading atOff;
+  bool atOffTaken = false;
   unsigned long decidedAt = 0;
   unsigned long lastTripAt = 0;  // millis() of the last trip (or the switch-off), for the 10 s
   uint32_t probesAtDecision = 0;
@@ -246,7 +259,7 @@ class LightTripTest final : public TestScreen {
     LOG_INF("TEST", "T10: run stopped in phase %s", phaseName(phase));
     if (phase == Phase::OpenCooling) {
       // The checks are done: record them without the 10 s reading.
-      recordOpenLoad();
+      endOpenLoad();
       return true;
     }
     endRun();
@@ -286,6 +299,9 @@ class LightTripTest final : public TestScreen {
         return;
       case QUESTION_OPEN_EMPTY:
         if (answer == 1) startOpenLoad();
+        return;
+      case QUESTION_OPEN_LIT:
+        recordOpenLoad(answer);
         return;
       default:
         return;
@@ -622,17 +638,23 @@ class LightTripTest final : public TestScreen {
   }
 
   // No trip within OPEN_TRIP_TIMEOUT_MS: neither the probe nor the monitor saw
-  // LED_SW above the trip, so U10 latched off by itself (or a load answered).
+  // LED_SW above the trip. Either a load answered (J3 or J6 not empty), or the
+  // monitor missed the open load and U10 latched off by itself; the operator
+  // tells them apart at the end (QUESTION_OPEN_LIT).
   void openNoTrip() {
-    LOG_ERR("TEST", "T10 step 0: no trip within %lu ms: the monitor missed the open load; switching off",
+    LOG_ERR("TEST",
+            "T10 step 0: no trip within %lu ms: a load answered (J3/J6 not empty?) or the monitor missed the open "
+            "load; switching off",
             OPEN_TRIP_TIMEOUT_MS);
-    addFailure(openRun.fails, sizeof(openRun.fails), "no_trip");
+    openRun.noTrip = true;
     openSwitchedOff();
   }
 
   // The switch-on has ended, or is ended now: off (a no-op when the HAL already
   // left it off after a no-light result), and the watch starts.
   void openSwitchedOff() {
+    openRun.atOff = light::readMonitor(4);
+    openRun.atOffTaken = true;
     Frontlight.setOn(false);
     const auto probe = light::probe();
     const auto monitor = light::monitor();
@@ -677,13 +699,23 @@ class LightTripTest final : public TestScreen {
     }
     openRun.after10s = light::readMonitor();
     openRun.after10sTaken = true;
-    recordOpenLoad();
+    endOpenLoad();
   }
 
-  void recordOpenLoad() {
+  // The checks are done. With no trip, the operator first says whether a light
+  // came on; Back on that question records the firmware's own verdict, no_trip.
+  void endOpenLoad() {
+    phase = Phase::Idle;
+    if (openRun.noTrip && ask(QUESTION_OPEN_LIT, OPEN_LIT_HEADING, OPEN_LIT_BODY, OPEN_LIT_ANSWERS, 2)) return;
+    recordOpenLoad(-1);
+  }
+
+  // litAnswer: QUESTION_OPEN_LIT's (0 yes, 1 no), or -1 when not asked or not answered.
+  void recordOpenLoad(const int litAnswer) {
     phase = Phase::Idle;
     char fails[96];
     snprintf(fails, sizeof(fails), "%s", openRun.fails);
+    if (openRun.noTrip) addFailure(fails, sizeof(fails), litAnswer == 0 ? "lit" : "no_trip");
     if (openRun.tripSeen) {
       if (openRun.tripMs > static_cast<int32_t>(OPEN_TRIP_WITHIN_MS)) addFailure(fails, sizeof(fails), "trip_slow");
       if (!openRun.io42LowAtTrip) addFailure(fails, sizeof(fails), "io42_not_low");
@@ -694,10 +726,14 @@ class LightTripTest final : public TestScreen {
     if (openRun.tripSeen) snprintf(tripMs, sizeof(tripMs), "%ld", static_cast<long>(openRun.tripMs));
     char led10[12] = "stopped";
     if (openRun.after10sTaken) snprintf(led10, sizeof(led10), "%u", static_cast<unsigned>(openRun.after10s.ledMv));
+    char ledAtOff[12] = "-";
+    if (openRun.atOffTaken) snprintf(ledAtOff, sizeof(ledAtOff), "%u", static_cast<unsigned>(openRun.atOff.ledMv));
+    const char* litSeen = !openRun.noTrip ? "-" : litAnswer == 0 ? "yes" : litAnswer == 1 ? "no" : "none";
     monitorNow = light::monitor();
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
            "step=0 build=%s cut=%d dark_pin=%u trip=%s trip_ms=%s after_us=%u trip_led=%u dark_after_us=%u "
-           "io42_low=%d strings=%u load=%s rail_timeout=%d watch_pin=%u-%u relit=%d led_10s=%s fails=%s",
+           "io42_low=%d strings=%u load=%s rail_timeout=%d led_at_off=%s lit_seen=%s watch_pin=%u-%u relit=%d "
+           "led_10s=%s fails=%s",
            openRun.swapDriver ? "tps923611_smaj33a" : "tps923610", options::cutDown() ? 1 : 0,
            static_cast<unsigned>(openRun.dark.pinMv),
            !openRun.tripSeen     ? "none"
@@ -707,8 +743,9 @@ class LightTripTest final : public TestScreen {
            tripMs, static_cast<unsigned>(openRun.afterUs), static_cast<unsigned>(openRun.tripLedMv),
            static_cast<unsigned>(openRun.darkAfterUs), openRun.io42LowAtTrip ? 1 : 0,
            static_cast<unsigned>(openRun.strings), light::loadToken(openRun.load), openRun.railTimeout ? 1 : 0,
-           static_cast<unsigned>(openRun.watchStart.pinMv), static_cast<unsigned>(openRun.watchEnd.pinMv),
-           openRun.relit ? 1 : 0, led10, fails[0] != '\0' ? fails : "none");
+           ledAtOff, litSeen, static_cast<unsigned>(openRun.watchStart.pinMv),
+           static_cast<unsigned>(openRun.watchEnd.pinMv), openRun.relit ? 1 : 0, led10,
+           fails[0] != '\0' ? fails : "none");
   }
 
   void drawOpenLoad(TestPage& page) const {
@@ -724,7 +761,11 @@ class LightTripTest final : public TestScreen {
                 openRun.tripMs > static_cast<int32_t>(OPEN_TRIP_WITHIN_MS) ? " SLOW" : "");
       page.row("IO42 at the trip", openRun.io42LowAtTrip ? "LOW (GPIO)" : "NOT held LOW");
     } else if (phase != Phase::OpenDeciding) {
-      page.row("Trip", "NONE within 1 s: the monitor missed the open load; U10 latched off by itself");
+      page.row("Trip", "NONE within 1 s: a load on J3/J6, or a missed open load");
+    }
+    if (openRun.atOffTaken) {
+      page.rowf("LED_SW at the switch-off", "%u.%02u V", static_cast<unsigned>(openRun.atOff.ledMv / 1000U),
+                static_cast<unsigned>(openRun.atOff.ledMv % 1000U / 10U));
     }
     if (phase == Phase::OpenWatch || phase == Phase::OpenCooling || openRun.after10sTaken) {
       page.rowf("Strings tried / load", "%u / %s", static_cast<unsigned>(openRun.strings),

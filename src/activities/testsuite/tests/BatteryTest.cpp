@@ -238,7 +238,11 @@ class BatteryTest final : public TestScreen {
     page.rowf("Percent (10 % steps)", "%u %%", percent);
     page.row("Cell", cellPresent() ? "present (P+ >= 2500 mV)" : "none (P+ < 2500 mV)");
     // The reader's header and status bar on external power with no chargeable cell.
-    page.row("Reader's battery label", noCellNotice ? tr(STR_NO_CHARGEABLE_CELL) : "the percentage");
+    if (noCellNotice) {
+      page.rowf("Reader's battery label", "%s (no cell, or one too flat to charge)", tr(STR_NO_BATTERY));
+    } else {
+      page.row("Reader's battery label", "the percentage");
+    }
     page.rowf("USB_STAT / external power", "%s / %s", chargeStateName(charge),
               !externalKnown  ? "unknown"
               : externalPower ? "yes"

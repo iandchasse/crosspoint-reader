@@ -35,16 +35,22 @@ constexpr unsigned long REDRAW_MS = 5000;
 constexpr int QUESTION_D2 = 1;
 constexpr uint8_t HISTORY = 4;
 
-// Stage 1 (HW-08, BRING_UP §4): on the cell the ladder sits at 2.20 V. A sample
-// outside 2100-2300 mV hints at a partial clamp by the unpowered charger (WARN);
-// one in the charging band means its status pins clamp the node, so firmware
-// cannot tell the cell from USB (FAIL). Judged over the last RECENT samples
-// since the stage was picked or the published state last changed, so the
-// set-up's own transition is not counted.
+// Stage 1 (HW-08, BRING_UP §4): on the cell the ladder sits at 2.20 V. Each
+// sample since the stage was picked or the published state last changed (so the
+// set-up's own transition is not counted) falls in one band:
+// - at most 1350 mV, the charging or complete band: the unpowered charger's
+//   status pins clamp the node, so firmware cannot tell the cell from USB (FAIL,
+//   at any sample count: a clamp seen once is a clamp);
+// - 1350-2100 mV: a partial clamp by the unpowered charger (WARN);
+// - 2300-2600 mV: above nominal, ladder tolerance or a weak ST (WARN; a clamp
+//   only pulls the node down);
+// - above 2600 mV, about 3.3 V: ST is not asserting (U2.8/R17; WARN beside the
+//   state's FAIL).
+// PASS or WARN needs RECENT samples; fewer record INFO.
 constexpr uint16_t ON_BATTERY_NOMINAL_MIN_MV = 2100;
 constexpr uint16_t ON_BATTERY_NOMINAL_MAX_MV = 2300;
-constexpr uint16_t CLAMP_MIN_MV = 700;
 constexpr uint16_t CLAMP_MAX_MV = 1350;
+constexpr uint16_t ST_HIGH_ABOVE_MV = 2600;
 constexpr uint8_t RECENT = 10;
 
 // Stage 5's capture: 20 Hz for 12 s, so the datasheet's slowest blink (4 s)
@@ -57,10 +63,14 @@ constexpr uint8_t CAPTURE_OVERSAMPLE = 4;
 constexpr int MAX_EDGES = 48;
 
 constexpr char HW08_NOTE[] =
-    "HW-08: USB_STAT reads in the charging band on the cell. The unpowered TP4056 clamps CHRG/STDBY (CE back-feed), "
-    "so firmware cannot tell the cell from USB. BRING_UP section 4.";
+    "HW-08: USB_STAT reads in the charging or complete band on the cell. The unpowered TP4056 clamps CHRG/STDBY (CE "
+    "back-feed), so firmware cannot tell the cell from USB. BRING_UP section 4.";
+constexpr char ST_NOTE[] =
+    "USB_STAT at about 3.3 V on the cell: ST is not asserting. Check U2.8/R17 (BRING_UP section 4).";
 constexpr char PARTIAL_NOTE[] =
-    "USB_STAT outside 2100-2300 mV on the cell: a partial clamp by the unpowered charger? Check USB_VBUS and D2.";
+    "USB_STAT at 1350-2100 mV on the cell: a partial clamp by the unpowered charger? Check USB_VBUS and D2.";
+constexpr char ABOVE_NOTE[] =
+    "USB_STAT at 2300-2600 mV on the cell: above nominal, not a clamp. Ladder tolerance, or a weak ST.";
 
 // One bench state to set up and check. D2 lights whenever USB power is present,
 // whatever the charger does (HARDWARE.md §3).
@@ -241,8 +251,10 @@ class ChargeTest final : public TestScreen {
   struct RecentLevels {
     uint16_t lo = 0;
     uint16_t hi = 0;
-    uint8_t clamped = 0;     // in the charging band
-    uint8_t offNominal = 0;  // outside 2100-2300 mV
+    uint8_t clamped = 0;  // at most 1350 mV: the charging or complete band
+    uint8_t partial = 0;  // 1350-2100 mV
+    uint8_t above = 0;    // 2300-2600 mV
+    uint8_t stHigh = 0;   // above 2600 mV: ST not asserting
   };
 
   RecentLevels recentLevels() const {
@@ -252,10 +264,14 @@ class ChargeTest final : public TestScreen {
       const uint16_t mv = recent[i];
       if (mv < r.lo) r.lo = mv;
       if (mv > r.hi) r.hi = mv;
-      if (mv >= CLAMP_MIN_MV && mv <= CLAMP_MAX_MV) {
+      if (mv <= CLAMP_MAX_MV) {
         ++r.clamped;
-      } else if (mv < ON_BATTERY_NOMINAL_MIN_MV || mv > ON_BATTERY_NOMINAL_MAX_MV) {
-        ++r.offNominal;
+      } else if (mv < ON_BATTERY_NOMINAL_MIN_MV) {
+        ++r.partial;
+      } else if (mv > ST_HIGH_ABOVE_MV) {
+        ++r.stHigh;
+      } else if (mv > ON_BATTERY_NOMINAL_MAX_MV) {
+        ++r.above;
       }
     }
     if (recentCount == 0) r.lo = 0;
@@ -494,7 +510,7 @@ class ChargeTest final : public TestScreen {
     const Stage& s = STAGES[stage];
     const bool d2Lit = answer == 1;
     char fails[64] = "";
-    char warns[32] = "";
+    char warns[48] = "";
     const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
     if (!accepts(s, published)) fail("state");
     // The window of the state the stage reached, or of the one it expects.
@@ -510,18 +526,23 @@ class ChargeTest final : public TestScreen {
     const RecentLevels recentNow = recentLevels();
     if (s.clampCheck) {
       if (recentNow.clamped > 0) fail("hw08_clamp");
-      if (recentNow.offNominal > 0) addFailure(warns, sizeof(warns), "partial_clamp");
+      if (recentNow.stHigh > 0) addFailure(warns, sizeof(warns), "st_not_asserting");
+      if (recentNow.partial > 0) addFailure(warns, sizeof(warns), "partial_clamp");
+      if (recentNow.above > 0) addFailure(warns, sizeof(warns), "above_nominal");
     }
+    // Stage 1 passes or warns only on RECENT samples since the last change.
+    const bool tooFew = s.clampCheck && recentCount < RECENT;
     char settle[16];
     if (stageReached && stageSettle.settleKnown) {
       snprintf(settle, sizeof(settle), "%ums", stageSettle.settleMs);
     } else {
       snprintf(settle, sizeof(settle), "n/a");
     }
-    char extra[128] = "";
+    char extra[112] = "";
     if (s.clampCheck) {
-      snprintf(extra, sizeof(extra), " recent=%u-%u/%u clamped=%u off_nominal=%u", recentNow.lo, recentNow.hi,
-               recentCount, recentNow.clamped, recentNow.offNominal);
+      snprintf(extra, sizeof(extra), " recent=%u-%u/%u clamped=%u partial=%u above=%u st_high=%u", recentNow.lo,
+               recentNow.hi, recentCount, recentNow.clamped, recentNow.partial, recentNow.above, recentNow.stHigh);
+      if (tooFew) appendf(extra, sizeof(extra), " too_few_samples=%u/%u", recentCount, RECENT);
     } else if (s.capture) {
       const int n = snprintf(extra, sizeof(extra), " outcome=%s ",
                              published == State::NoBattery      ? "blink"
@@ -529,7 +550,10 @@ class ChargeTest final : public TestScreen {
                                                                 : "other");
       if (n > 0 && static_cast<size_t>(n) < sizeof(extra)) formatCapture(extra + n, sizeof(extra) - n);
     }
-    const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : warns[0] != '\0' ? Verdict::Warn : Verdict::Pass;
+    const Verdict verdict = fails[0] != '\0'   ? Verdict::Fail
+                            : tooFew           ? Verdict::Info
+                            : warns[0] != '\0' ? Verdict::Warn
+                                               : Verdict::Pass;
     record(verdict,
            "stage=%d stage_s=%lu state=%s decoded=%s mv=%lu usb=%d d2=%s settle=%s lost=%d disproved=%d "
            "samples=%lu complete_seen=%d no_cell=%d%s warns=%s fails=%s",
@@ -604,7 +628,11 @@ class ChargeTest final : public TestScreen {
               diag.unknownRun, ladder.unknownHoldSamples);
     page.rowf("isUsbConnected / changes", "%s / %u", usbConnected ? "yes" : "no", usbEdges);
     // The reader's header and status bar on external power with no chargeable cell.
-    page.row("Reader's battery label", noCellNotice ? tr(STR_NO_CHARGEABLE_CELL) : "the percentage");
+    if (noCellNotice) {
+      page.rowf("Reader's battery label", "%s (no cell, or one too flat to charge)", tr(STR_NO_BATTERY));
+    } else {
+      page.row("Reader's battery label", "the percentage");
+    }
     char trend[32];
     if (diag.trendSamples > 0) {
       snprintf(trend, sizeof(trend), "%u of 5 from %u mV", diag.trendSamples, diag.trendStartMv);
@@ -622,20 +650,27 @@ class ChargeTest final : public TestScreen {
     if (s.clampCheck) {
       recentNow = recentLevels();
       if (recentCount == 0) {
-        page.row("Recent samples (2100-2300 mV)", "none since the change");
+        page.rowf("Recent samples (2100-2300 mV)", "0 of %u since the change, wait", RECENT);
       } else {
-        page.rowf("Recent samples (2100-2300 mV)", "%u: %u-%u mV, %u off, %u clamped", recentCount, recentNow.lo,
-                  recentNow.hi, recentNow.offNominal, recentNow.clamped);
+        page.rowf("Recent samples (2100-2300 mV)", "%u of %u%s, %u-%u mV", recentCount, RECENT,
+                  recentCount < RECENT ? ", wait" : "", recentNow.lo, recentNow.hi);
+        page.rowf("Clamped / partial / above / 3.3 V", "%u / %u / %u / %u", recentNow.clamped, recentNow.partial,
+                  recentNow.above, recentNow.stHigh);
       }
     }
     if (s.capture) drawCapture(page);
     page.setCompact(false);
-    if (s.clampCheck && recentNow.clamped > 0) {
+    const char* note = nullptr;
+    if (s.clampCheck) {
+      note = recentNow.clamped > 0   ? HW08_NOTE
+             : recentNow.stHigh > 0  ? ST_NOTE
+             : recentNow.partial > 0 ? PARTIAL_NOTE
+             : recentNow.above > 0   ? ABOVE_NOTE
+                                     : nullptr;
+    }
+    if (note != nullptr) {
       page.gap(4);
-      page.paragraph(HW08_NOTE, 4);
-    } else if (s.clampCheck && recentNow.offNominal > 0) {
-      page.gap(4);
-      page.paragraph(PARTIAL_NOTE, 3);
+      page.paragraph(note, 4);
     }
     page.gap(4);
     page.setCompact(true);

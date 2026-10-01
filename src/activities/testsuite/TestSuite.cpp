@@ -71,8 +71,8 @@ void beginAfterSettings() {
   LOG_INF("TEST", "Silkscreen hardware test firmware %s, board tag %.*s, reset reason %d, SD %s", CROSSPOINT_VERSION,
           static_cast<int>(board_tag::boardNameLen()), board_tag::boardName(), static_cast<int>(esp_reset_reason()),
           Storage.ready() ? "mounted" : "not mounted");
+  options::load();  // before the sweep: it may take up a whole options.tmp
   removeStaleScratchFiles();
-  options::load();
 }
 
 bool usbHostAttached() {

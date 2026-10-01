@@ -8,10 +8,13 @@
 // network needed) or UDP datagrams to the gateway of a network joined through the
 // reader's Wi-Fi screen. The screen repaints only in a quiet second, so TX never
 // overlaps a refresh (PWR-02). On USB it always runs; with no USB power the
-// operator names what is on J5: a bench supply may be swept down through the
-// brown-out region, a cell keeps the 3.4 V Wi-Fi gate (bat-wifi-gate). A
-// brown-out resets the board: P1 then shows reset=BROWNOUT, and this screen shows
-// the boot's reset reason.
+// operator names what is on J5: a bench supply may be swept below the 3.4 V
+// Wi-Fi gate, down to the reader's cutoff (about 3.3 V on P+ with the radio on,
+// where the main loop sleeps the board); a cell keeps the gate (bat-wifi-gate).
+// A brown-out shows as reset=BROWNOUT here and in P1 only when P+ is still at
+// about 3.4 V or more as the board reboots (a current-limited supply); below
+// that the boot cutoff sleeps it first, so only the scope at U3.5 and the ROM's
+// reset line on the UART log show it.
 //
 // U2, sustained load (BRING_UP section 9, the LDO's temperature): continuous TX,
 // a scratch file in /.silkscreen-test/ written and read back, and full-screen
@@ -93,15 +96,16 @@ constexpr int QUESTION_SUPPLY = 1;
 constexpr const char* SUPPLY_ANSWERS[] = {"Cancel", "A bench supply (brown-out sweep)", "A cell"};
 constexpr char SUPPLY_HEADING[] = "What is on J5?";
 constexpr char SUPPLY_BODY[] =
-    "No USB power. A bench supply in place of the cell may be swept down through the brown-out region (BRING_UP "
-    "3.3); a cell keeps the 3.4 V Wi-Fi gate.";
+    "No USB power. A bench supply in place of the cell may be swept down to the reader's cutoff (about 3.3 V on P+ "
+    "with the radio on; BRING_UP 3.3); a cell keeps the 3.4 V Wi-Fi gate.";
 
 constexpr char BURST_INTRO[] =
     "Confirm: 1 s of Wi-Fi TX, 1 s quiet, for the time set (Left). Right: scans, or UDP to a network joined on the "
     "Wi-Fi screen. Scope 3V3 at U3.5 for dips below 3.0 V while the supply on J5 is swept down. Back stops.";
 constexpr char BURST_NOTE[] =
-    "A brown-out resets the board: open P1 (reset=BROWNOUT). Three in a row and it sleeps until POWER. Below about "
-    "3.3 V on P+ with the radio on, the reader's cutoff sleeps it first (a cutoff, not a brown-out).";
+    "The reader's cutoff sleeps the board at about 3.3 V on P+ with the radio on (reset=DEEPSLEEP after the wake). A "
+    "brown-out shows here and in P1 as reset=BROWNOUT only with P+ at 3.4 V or more as it reboots; lower, the boot "
+    "cutoff sleeps it first: scope U3.5, UART log. Three in a row and it sleeps until POWER.";
 constexpr char LOAD_INTRO[] =
     "Confirm, on USB only: Wi-Fi TX, a scratch file written and read back, and full-screen refreshes, back to back "
     "for the time set (Left). Right: scans, or UDP to a joined network. Thermocouple on U3, board in its case.";
@@ -653,7 +657,7 @@ class LoadTest final : public TestScreen {
 
   void drawBody(TestPage& page) const override {
     page.paragraph(sustained ? LOAD_INTRO : BURST_INTRO, 5);
-    if (!sustained) page.paragraph(BURST_NOTE, 4);
+    if (!sustained) page.paragraph(BURST_NOTE, 5);
     page.gap(4);
     page.setCompact(true);
     const unsigned long totalS = durationS();

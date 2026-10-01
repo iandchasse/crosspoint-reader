@@ -206,13 +206,19 @@ bool HalPowerManager::noChargeableCell() const {
   const unsigned long now = millis();
   if (_noCellPolledMs != 0 && now - _noCellPolledMs < BATTERY_POLL_MS) return _noCellCached;
   _noCellPolledMs = now != 0 ? now : 1;
-  // External power: the charge-status ladder says so, or reads the charger's
-  // no-battery blink, which it leaves undecided.
-  const bool external = gpio.isUsbConnected() || BatteryMonitor::chargeStatus() == BoardConfig::ChargeState::NoBattery;
-  static const BatteryMonitor battery;
-  const uint16_t mv = external ? battery.readMillivoltsAveraged(4) : 0;
-  const bool noCell = external && mv < BatteryMonitor::CELL_PRESENT_MIN_MV;
-  if (noCell && !_noCellCached) LOG_INF("PWR", "External power, battery %u mV: no chargeable cell", mv);
+  // The charger's no-battery blink decides by itself: the charger then holds P+
+  // between its recharge threshold and 4.2 V, so P+ cannot show the missing cell.
+  bool noCell = BatteryMonitor::chargeStatus() == BoardConfig::ChargeState::NoBattery;
+  if (noCell) {
+    if (!_noCellCached) LOG_INF("PWR", "Charger's no-battery blink: no chargeable cell");
+  } else if (gpio.isUsbConnected()) {
+    // Set below CELL_PRESENT_MIN_MV, cleared only at NO_CELL_CLEAR_MV, so a flat
+    // cell charging up through the threshold does not flip the label.
+    static const BatteryMonitor battery;
+    const uint16_t mv = battery.readMillivoltsAveraged(4);
+    noCell = mv < (_noCellCached ? NO_CELL_CLEAR_MV : BatteryMonitor::CELL_PRESENT_MIN_MV);
+    if (noCell && !_noCellCached) LOG_INF("PWR", "External power, battery %u mV: no chargeable cell", mv);
+  }
   _noCellCached = noCell;
   return _noCellCached;
 }

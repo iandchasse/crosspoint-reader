@@ -12,7 +12,8 @@
 // Hands off (any key event is a phantom, and the power button must read LOW
 // throughout), each with the radio on or off. A ladder the boot test found with
 // no pull-up is off: its keys are not expected. With UP(2) as the power button
-// (BoardOptions.h), SW7 counts as POWER and UP(2)'s window must never fire.
+// (BoardOptions.h), SW7 counts as POWER and UP(2)'s window must never fire; on a
+// full-length board SW10 drives IO18 too, so POWER expects twice a key's count.
 #include <AdcLadderDecode.h>
 #include <Arduino.h>
 #include <BatteryMonitor.h>
@@ -217,6 +218,8 @@ class KeysTest final : public TestScreen {
     const unsigned long now = millis();
     powerHoldLimitMs = SETTINGS.getPowerButtonDuration();
     up2Power = options::up2IsPower();
+    // A full-length board reworked for UP(2) as POWER keeps SW10: both drive IO18.
+    powerSwitches = up2Power && !options::cutDown() ? 2 : 1;
     quietSince = now;
     tickMhz = getCpuFrequencyMhz();
     usbHost = usbHostAttached();
@@ -635,7 +638,8 @@ class KeysTest final : public TestScreen {
     }
     appendf(counts, sizeof(counts), ",PWR=%u", powerClicks);
     if (powerClicks == 0) appendf(missing, sizeof(missing), "%sPWR", missing[0] == '\0' ? "" : ",");
-    if (static_cast<int>(powerClicks) != firstCount) countsDiffer = true;
+    // Each switch on IO18 is pressed as often as every key.
+    if (static_cast<int>(powerClicks) != firstCount * powerSwitches) countsDiffer = true;
 
     char fails[64] = "";
     const auto fail = [&fails](const char* what) { addFailure(fails, sizeof(fails), what); };
@@ -650,15 +654,17 @@ class KeysTest final : public TestScreen {
     char powerIdle[24];
     formatLadderToken(ladders, sizeof(ladders));
     formatPowerIdleToken(powerIdle, sizeof(powerIdle));
-    record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
-           "mode=keys radio=%d host=%d usbstat=%s ladders=%s pwr_idle=%s up2pwr=%d up2_hits=%u counts=%s worst=%d(%s) "
-           "marginal=%s missing=%s released=%d,%d idle=%u lowclk=%u shortest=%lums noread=%u pwr_edges=%u/%u fails=%s",
-           radioOn ? 1 : 0, usbHost ? 1 : 0, chargeStateName(BatteryMonitor::chargeStatus()), ladders, powerIdle,
-           up2Power ? 1 : 0, up2Hits, counts, worst == INT_MAX ? 0 : worst, worstCode,
-           marginal[0] != '\0' ? marginal : "none", missing[0] != '\0' ? missing : "none",
-           releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0], releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1],
-           idlePresses, idleLowClock, shortestIdleMs == ULONG_MAX ? 0UL : shortestIdleMs, unattributed, powerPressEdges,
-           powerReleaseEdges, fails[0] == '\0' ? "none" : fails);
+    record(
+        fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+        "mode=keys radio=%d host=%d usbstat=%s ladders=%s pwr_idle=%s up2pwr=%d up2_hits=%u pwr_expect=%dx counts=%s "
+        "worst=%d(%s) marginal=%s missing=%s released=%d,%d idle=%u lowclk=%u shortest=%lums noread=%u "
+        "pwr_edges=%u/%u fails=%s",
+        radioOn ? 1 : 0, usbHost ? 1 : 0, chargeStateName(BatteryMonitor::chargeStatus()), ladders, powerIdle,
+        up2Power ? 1 : 0, up2Hits, powerSwitches, counts, worst == INT_MAX ? 0 : worst, worstCode,
+        marginal[0] != '\0' ? marginal : "none", missing[0] != '\0' ? missing : "none",
+        releasedMinMv[0] == INT_MAX ? 0 : releasedMinMv[0], releasedMinMv[1] == INT_MAX ? 0 : releasedMinMv[1],
+        idlePresses, idleLowClock, shortestIdleMs == ULONG_MAX ? 0UL : shortestIdleMs, unattributed, powerPressEdges,
+        powerReleaseEdges, fails[0] == '\0' ? "none" : fails);
   }
 
   void recordChords() {
@@ -765,7 +771,10 @@ class KeysTest final : public TestScreen {
     formatLadderToken(ladders, sizeof(ladders));
     formatPowerIdleToken(powerIdle, sizeof(powerIdle));
     page.rowf("Boot checks", "%s, power %s", ladders, powerIdle);
-    if (up2Power) page.row("UP(2) is POWER (OPT)", "SW7 counts as POWER");
+    if (up2Power) {
+      page.row("UP(2) is POWER (OPT)",
+               powerSwitches == 2 ? "SW10 and SW7 count as POWER (2x a key)" : "SW7 counts as POWER");
+    }
     for (int l = 0; l < LADDERS; ++l) {
       if (ladderOff(l)) {
         page.row(l == 0 ? "Bottom ladder" : "Side ladder", "off: no pull-up fitted (boot test)");
@@ -787,7 +796,9 @@ class KeysTest final : public TestScreen {
     }
     char powerLabel[32];
     snprintf(powerLabel, sizeof(powerLabel), "POWER  IO%d%s", BoardConfig::ACTIVE.input.power,
-             up2Power ? " (SW7)" : "");
+             !up2Power            ? ""
+             : powerSwitches == 2 ? " (SW10 + SW7)"
+                                  : " (SW7)");
     page.rowf(powerLabel, "%u clicks, edges %u/%u, last %lu ms, %s", powerClicks, powerPressEdges, powerReleaseEdges,
               lastPowerHeldMs, powerLevelHigh ? "HIGH" : "LOW");
     drawLadders(page);
@@ -910,6 +921,7 @@ class KeysTest final : public TestScreen {
   uint32_t releasedCount[LADDERS] = {};
   unsigned uncleanIdle = 0;
   bool up2Power = false;  // BoardOptions: SW7 is the power button
+  int powerSwitches = 1;  // switches on IO18: 2 when SW10 stays beside SW7
   unsigned up2Hits = 0;   // UP(2)'s window decoded (a press) or read with no key down
 
   KeyStats stats[LADDERS][WINDOWS] = {};

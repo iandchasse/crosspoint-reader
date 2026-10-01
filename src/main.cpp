@@ -213,7 +213,10 @@ static void showFrontlightNotFound() {
 //   (handleFrontlightTrip() saves the light as off).
 // The light controls stay where they are, so switching it on again is the retry.
 // The popup waits for the second loop pass, once the first pass has started the
-// first screen's render, which it must not go under. From the loop task only.
+// first screen's render, which it must not go under. The screen is first drawn
+// again from the settled state, so a light checkbox drawn while the switch-on
+// was still deciding (or before a trip) does not stay checked beside the popup.
+// From the loop task only.
 static void handleFrontlightNotices() {
   static bool firstPassDone = false;
   static bool noticeDue = false;
@@ -228,6 +231,7 @@ static void handleFrontlightNotices() {
   }
   if (noticeDue && firstPassDone) {
     noticeDue = false;
+    activityManager.requestUpdateAndWait();
     showFrontlightNotFound();
   }
   firstPassDone = true;

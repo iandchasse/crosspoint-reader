@@ -12,8 +12,11 @@
 namespace testsuite::options {
 namespace {
 
-// Written beside the file and renamed over it: an interrupted write leaves a
-// ".tmp" that the next boot removes, never half a file.
+// Written beside the file and renamed over it, never half a file. SdFat's rename
+// does not overwrite, so the old file is removed first: a reset between the
+// remove and the rename leaves only a complete ".tmp", which load() takes up
+// before the boot's scratch sweep. A ".tmp" from an interrupted write is
+// incomplete, and the sweep removes it.
 constexpr char OPTIONS_TMP[] = "/.silkscreen-test/options.tmp";
 constexpr char KEY_CUT_DOWN[] = "cut_down=";
 constexpr char KEY_UP2_POWER[] = "up2_power=";
@@ -22,15 +25,39 @@ bool cutDownOn = false;
 bool up2PowerOn = false;
 bool fromCard = false;
 
-// "key=1" anywhere in the text, at the start of a line.
-bool readFlag(const char* text, const char* key) {
+// The line starting "key=" anywhere in the text, or nullptr.
+const char* findKey(const char* text, const char* key) {
   const size_t keyLen = strlen(key);
   for (const char* line = text; line != nullptr && *line != '\0';) {
-    if (strncmp(line, key, keyLen) == 0) return line[keyLen] == '1';
+    if (strncmp(line, key, keyLen) == 0) return line;
     line = strchr(line, '\n');
     if (line != nullptr) ++line;
   }
-  return false;
+  return nullptr;
+}
+
+// "key=1" anywhere in the text, at the start of a line.
+bool readFlag(const char* text, const char* key) {
+  const char* line = findKey(text, key);
+  return line != nullptr && line[strlen(key)] == '1';
+}
+
+// options.tmp left whole by a save cut short between its remove and its rename:
+// both lines and the final newline. Renamed into place; false otherwise.
+bool recoverTmp() {
+  if (Storage.exists(OPTIONS_FILE) || !Storage.exists(OPTIONS_TMP)) return false;
+  char text[64] = "";
+  const size_t len = Storage.readFileToBuffer(OPTIONS_TMP, text, sizeof(text));
+  if (len == 0 || text[len - 1] != '\n' || findKey(text, KEY_CUT_DOWN) == nullptr ||
+      findKey(text, KEY_UP2_POWER) == nullptr) {
+    return false;
+  }
+  if (!Storage.rename(OPTIONS_TMP, OPTIONS_FILE)) {
+    LOG_ERR("TEST", "Board options: could not rename %s", OPTIONS_TMP);
+    return false;
+  }
+  LOG_INF("TEST", "Board options: recovered %s from an interrupted save", OPTIONS_FILE);
+  return true;
 }
 
 bool save() {
@@ -86,7 +113,9 @@ void load() {
   cutDownOn = false;
   up2PowerOn = false;
   fromCard = false;
-  if (!Storage.ready() || !Storage.exists(OPTIONS_FILE)) return;
+  if (!Storage.ready()) return;
+  recoverTmp();
+  if (!Storage.exists(OPTIONS_FILE)) return;
   char text[64] = "";
   if (Storage.readFileToBuffer(OPTIONS_FILE, text, sizeof(text)) == 0) {
     LOG_ERR("TEST", "Board options: could not read %s", OPTIONS_FILE);

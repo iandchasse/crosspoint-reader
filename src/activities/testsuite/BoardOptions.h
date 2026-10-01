@@ -24,7 +24,9 @@ bool up2IsPower();
 bool setCutDown(bool on);
 bool setUp2IsPower(bool on);
 
-// Reads the file. setup(), once the card is mounted; no file: both off.
+// Reads the file. setup(), once the card is mounted and before the scratch
+// sweep, which would remove an options.tmp a cut-short save left in its place;
+// no file: both off.
 void load();
 // Whether the values came from, or went to, the card this boot.
 bool onCard();

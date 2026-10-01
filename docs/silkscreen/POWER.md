@@ -169,13 +169,13 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 - Without touch: ≈58-73 µA. With an FT6336U hibernated: ≈113-130 µA.
 - Above ≈150 µA, A/B one change at a time: J4 tail out, J2 flex out, R5 lifted, card out.
 - **What a high reading points at** (BRING_UP §6; the test firmware's P5 lists these above the budget):
-  - +0-20 µA: U3's extra ground current at its real load (row 4);
-  - +190-260 µA: a cell below ≈3.3-3.35 V, with U3 in dropout;
+  - +0-15 µA: U3's extra ground current at its real load (row 4; BRING_UP §6 says 0-20);
+  - +≈165-235 µA: a cell below ≈3.3-3.35 V, with U3 in dropout (its IQ rises from 25 to ≈190-260 µA; BRING_UP §6 quotes the total);
   - +100-300 µA: the GPIO47/48 back-feed (HW-01; the R5, R34 and flex checks below);
   - +18 µA: R36 and R72 both fitted (IO18 idles at ≈1.76 V, and the boot check then arms no wake);
   - touch: +55 µA hibernated, +220 µA in Monitor mode, ≈1.1 mA with TP_RST LOW;
   - mA: the TP4056 back-feed on battery (HW-08, with D2 lit or glowing), or an unparked SD bus (SD_VDD ≈3.2 V).
-- At a 3.30 V supply, expect the LDO dropout step (+≈170-200 µA).
+- At a 3.30 V supply, expect the LDO dropout step (+≈165-200 µA at 25 °C).
 - Repeat the measurement after each sleep path. All should agree within ≈2 µA:
   - menu sleep, auto-sleep and the 15-min ceiling;
   - the loop and boot cutoffs;
@@ -201,7 +201,7 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
   - With the GDEQ0426T82, the flex in and out should differ by a few µA (its 2-6 µA). A 100-300 µA gap is back-feed; ≈40-70 µA is a panel that never reached deep sleep (BRING_UP §4).
   - The test firmware's P5 takes these readings after a sleep (the current, the flex in or out, across R5 and across R34) and judges R5 under 20 mV, R34 under 0.2 mV and, with an SSD1677 panel, a flex gap of at most 8 µA in the same set-up.
   - Watch for flash boot failures after wake.
-- **Charger on battery (HW-08):** USB_VBUS ≈0 V, D2 dark, USB_STAT (IO9) ≈2.20 V (≈2.06 V on a 10 MΩ meter). D2 lit means the TP4056 pins conduct into VCC (≈500 µA). USB_STAT at 0.7-1.2 V means the unpowered TP4056 clamps CHRG/STDBY, so the firmware cannot tell the cell from USB; 3.3 V means ST is not asserting (BRING_UP §4). The test firmware's T2 stage 1 judges the last 10 samples: `hw08_clamp` for any in 700-1350 mV, WARN `partial_clamp` outside 2100-2300 mV.
+- **Charger on battery (HW-08):** USB_VBUS ≈0 V, D2 dark, USB_STAT (IO9) ≈2.20 V (≈2.06 V on a 10 MΩ meter). D2 lit means the TP4056 pins conduct into VCC (≈500 µA). USB_STAT at 0.7-1.2 V means the unpowered TP4056 clamps CHRG/STDBY, so the firmware cannot tell the cell from USB; 3.3 V means ST is not asserting (BRING_UP §4). The test firmware's T2 stage 1 judges 10 samples since the last change: `hw08_clamp` for any at or below 1350 mV (the charging or complete band), WARN `partial_clamp` for 1350-2100 mV, `above_nominal` for 2300-2600 mV and `st_not_asserting` above 2600 mV.
 - **Touch (tail fitted):**
   - An I2C scan shows 0x38 (FT6336U), or 0x5D/0x14 (GT911, alternate-jumper builds).
   - With a device other than a FocalTech controller at 0x38 (an AHT20 on J6) and no tail: the log shows no touch, and a logic analyzer shows only the ID read (`0xA3`) at boot and nothing at sleep entry.
@@ -258,7 +258,7 @@ After every session the device stays awake until auto-sleep, and this tail outwe
 - **HW-08: TP4056 CE is held at 3V3 while its VCC is 0 V on battery.** No datasheet row covers this. If CE, CHRG or STDBY conduct into VCC, D2 lights (≈500 µA) and USB_STAT reads ≈1.2 V ("charging"). Bench check in [section 4](#4-measurement-and-bench-checks). The firmware no longer trusts such a reading near empty: Charging/Complete with `P+` at or below the cutoff and not rising for 5 min is treated as on battery, and logged once. T2 stage 1 checks the level on each board (`hw08_clamp`).
   - **Contingency: a `P+` trend check. Not implemented; implement it only if T2 stage 1 fails `hw08_clamp` on real boards.** With the clamp, a board on its cell decodes "Charging" and is taken for one on USB. The cutoff still protects the cell (the cross-check above, about 5 min late), but until then the battery-only timeouts (the 15-min ceiling, the 60-min input cap, the 3-min wake timeout) do not apply, USB presence reads connected and the UI shows a charge.
   - The check would extend the HW-08 cross-check above the cutoff (`BatteryMonitor::pollChargeStatus()`). While the ladder decodes Charging, a real charge holds `P+` at the charger's output, rising in CC or at the 4.2 V float in CV, so `P+` falling across a window means the cell carries the load, and the state would be published as OnBattery, as the cross-check does today.
-  - It would sample as the cross-check does: once a minute, 16× averaged, at a quiet moment (the 0.24-0.35 Ω path reads low under load, §3.6), with the window restarted on any ladder change.
+  - It would sample once a minute and 16× averaged, as the cross-check does, but (unlike it) only at a quiet moment, since the 0.24-0.35 Ω path reads low under load (§3.6), and with the window restarted on any ladder change (the cross-check restarts it only when the state leaves Charging/Complete).
   - The window and the fall that counts must come from the board: log T1 and T2 on a clamped board, on the cell and on a charger, before choosing them. Complete is harder, since a charged cell relaxes after termination.
   - It adds no wake source, hold or pull, and nothing in sleep.
 - **HW-09: 2.5-6.5 µA keep flowing from the raw cell after a DW01A over-discharge trip.** §3.3's "years from 2.4 V to flat" is doubtful; months is more likely.

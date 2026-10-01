@@ -85,7 +85,7 @@ void BaseTheme::drawBatteryLightningBolt(const GfxRenderer& renderer, int boltX,
 
 const char* BaseTheme::batteryLabel(char* buf, const size_t size, const uint16_t percentage,
                                     const bool showPercentage) {
-  if (powerManager.noChargeableCell()) return tr(STR_NO_CHARGEABLE_CELL);
+  if (powerManager.noChargeableCell()) return tr(STR_NO_BATTERY);
   if (!showPercentage) return nullptr;
   snprintf(buf, size, "%u%%", static_cast<unsigned>(percentage));
   return buf;
