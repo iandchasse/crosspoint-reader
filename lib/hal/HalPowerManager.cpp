@@ -8,6 +8,7 @@
 #include <esp_sleep.h>
 #include <soc/soc_caps.h>
 
+#include <algorithm>
 #include <cassert>
 
 #include "HalFrontlight.h"
@@ -176,8 +177,14 @@ bool HalPowerManager::lowBatteryCutoffTripped() {
   return true;
 }
 
-bool HalPowerManager::awakeCeilingPassed() const {
-  const unsigned long ceilingMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL;
+unsigned long HalPowerManager::awakeCeilingMs(const unsigned long sleepTimeoutMs) {
+  const unsigned long profileMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL;
+  if (profileMs == 0) return 0;
+  return std::max(profileMs, sleepTimeoutMs);
+}
+
+bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
+  const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
   return ceilingMs > 0 && msSinceInput() >= ceilingMs && msSinceClientTraffic() >= ceilingMs && !gpio.isUsbConnected();
 }
 
@@ -186,8 +193,8 @@ bool HalPowerManager::awakeInputCapPassed() const {
   return capMs > 0 && msSinceInput() >= capMs && !gpio.isUsbConnected();
 }
 
-bool HalPowerManager::backgroundNetworkMustStop() {
-  return lowBatteryCutoffTripped() || awakeCeilingPassed() || awakeInputCapPassed();
+bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
+  return lowBatteryCutoffTripped() || awakeCeilingPassed(sleepTimeoutMs) || awakeInputCapPassed();
 }
 
 bool HalPowerManager::radioOffWhenIdle() { return BoardConfig::powerPolicy().radioOffWhenIdle; }

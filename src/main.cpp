@@ -431,7 +431,7 @@ static void deliverSleepPluginEvents(const bool unattended) {
   // passed (PowerConfig::lowBatteryCutoffMv, awakeCeilingMin, awakeInputCapMin:
   // nobody is at the device), no network work runs on the way down; the events
   // stay queued for the next drain. The drain stops on the same check.
-  if (powerManager.backgroundNetworkMustStop()) return;
+  if (powerManager.backgroundNetworkMustStop(SETTINGS.getSleepTimeoutMs())) return;
   if (WiFi.status() == WL_CONNECTED) {
     pluginevents::drain(&renderer);
     return;
@@ -1243,13 +1243,15 @@ void loop() {
   // Battery awake ceiling (PowerConfig::awakeCeilingMin; 0 on boards without
   // one). On battery, a screen that holds auto-sleep off (network, keyboard,
   // update) or a Never timeout still ends once nothing has pressed a key or
-  // talked to the web server for this long. enterDeepSleep() drops Wi-Fi. A
-  // timeout the user set still governs every other screen.
+  // talked to the web server for this long. The ceiling is never shorter than
+  // the user's timeout (HalPowerManager::awakeCeilingMs()), so Never gets the
+  // profile's minutes. enterDeepSleep() drops Wi-Fi. A timeout the user set
+  // still governs every other screen.
   if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
     const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep();
-    if (!governedByTimeout && powerManager.awakeCeilingPassed()) {
-      LOG_INF("SLP", "No input or client traffic for %u min on battery; sleeping",
-              BoardConfig::powerPolicy().awakeCeilingMin);
+    if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
+      LOG_INF("SLP", "No input or client traffic for %lu min on battery; sleeping",
+              HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
       enterDeepSleep(true);
       return;
     }

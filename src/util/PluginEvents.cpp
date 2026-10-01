@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "CrossPointSettings.h"
 #include "PluginHttp.h"
 #include "PluginLocations.h"
 #include "components/UITheme.h"
@@ -397,8 +398,12 @@ void drain(GfxRenderer* renderer, const size_t maxEvents) {
   // (always false on boards without them): a drain blocks loop(), whose cutoff,
   // ceiling and cap checks cannot run meanwhile, so it stops on them itself. A
   // request in flight aborts and its event stays queued, as on a transport
-  // failure; loop() sleeps once the drain returns.
-  const std::function<bool()> mustStop = [] { return powerManager.backgroundNetworkMustStop(); };
+  // failure; loop() sleeps once the drain returns. The ceiling is never shorter
+  // than the user's sleep timeout.
+  const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+  const std::function<bool()> mustStop = [sleepTimeoutMs] {
+    return powerManager.backgroundNetworkMustStop(sleepTimeoutMs);
+  };
   size_t budget = maxEvents;
   for (const auto& sub : subscribers) {
     if (budget == 0) break;

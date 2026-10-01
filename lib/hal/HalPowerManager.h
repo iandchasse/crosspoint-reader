@@ -54,8 +54,8 @@ class HalPowerManager {
   void startDeepSleepMinimal(HalGPIO& gpio) const;
 
   // A network client talked to the device (web server request or WebSocket
-  // frame). PowerConfig::awakeCeilingMin counts idle time from the later of this
-  // and the last input.
+  // frame). The awake ceiling (awakeCeilingMs()) counts idle time from the later
+  // of this and the last input.
   void noteClientTraffic() { lastClientTrafficMs = millis(); }
   unsigned long msSinceClientTraffic() const { return millis() - lastClientTrafficMs; }
 
@@ -65,19 +65,25 @@ class HalPowerManager {
   void noteInput() { lastInputMs = millis(); }
   unsigned long msSinceInput() const { return millis() - lastInputMs; }
 
-  // PowerConfig::awakeCeilingMin (always false on boards without one): on
-  // battery, no input and no client traffic for the ceiling.
-  bool awakeCeilingPassed() const;
+  // The awake ceiling in ms: the longer of PowerConfig::awakeCeilingMin and the
+  // user's sleep timeout (sleepTimeoutMs, 0 = Never), so it bounds Never and the
+  // screens that hold auto-sleep off without cutting short a timeout the user
+  // chose. 0 on boards without a ceiling.
+  static unsigned long awakeCeilingMs(unsigned long sleepTimeoutMs);
+  // On battery, no input and no client traffic for awakeCeilingMs() (always
+  // false on boards without a ceiling).
+  bool awakeCeilingPassed(unsigned long sleepTimeoutMs) const;
   // PowerConfig::awakeInputCapMin (always false on boards without one): on
   // battery, no input for the cap, whatever the client traffic.
   bool awakeInputCapPassed() const;
 
-  // PowerConfig::lowBatteryCutoffMv, awakeCeilingMin and awakeInputCapMin
+  // PowerConfig::lowBatteryCutoffMv, the awake ceiling and awakeInputCapMin
   // (always false on boards without them): network work nobody is waiting on
   // (the plugin event drains) must stop or not start. Such work blocks loop(),
   // whose cutoff, ceiling and cap checks cannot run meanwhile; loop() sleeps on
-  // them once it returns. Call from the loop task.
-  bool backgroundNetworkMustStop();
+  // them once it returns. sleepTimeoutMs as for awakeCeilingMs(). Call from the
+  // loop task.
+  bool backgroundNetworkMustStop(unsigned long sleepTimeoutMs);
 
   // PowerConfig::lowBatteryCutoffMv (always false on boards without one): true
   // once BatteryMonitor::isBelowCutoff() fires (with the radio allowance while
