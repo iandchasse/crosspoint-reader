@@ -15,6 +15,7 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 - Tags: **[DS]** datasheet figure, **[calc]** Ohm's law on netlist values, **[est]** engineering estimate.
 - Code paths: app paths are relative to this repo, SDK paths to `freeink-sdk/libs/`.
 - Commit hashes name the commit that landed a change (app on `silkscreen`, SDK on the submodule's `silkscreen`).
+- The boot-time probes and the front light's switch-on probe keep to these rules. What each one costs awake is in [MODULARITY.md](MODULARITY.md#battery-cost-of-the-checks).
 
 ## 1. Sleep-current budget
 
@@ -42,7 +43,7 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 | 10 | U11 TP4056 BAT pin, VCC = 0 (P+) | 1.0 [DS] | 2.0 [DS] | CE held at 3V3 by Fix-4 (no datasheet row for that) | TOPPOWER TP4056 p.5 |
 | 11 | BAT_MONIT R12/R10 1M/1M (P+) | 1.85 [calc] | 2.1 | IO8 with no pulls | §3.6 |
 | 12 | USB_STAT R70 1M + R17 2M (3V3) | 1.1 [calc] | 2.1 [calc] | On battery; max assumes the unpowered TP4056 status pins clamp | §3.7 |
-| 13 | LED_MONIT R39/R41 1M/120k from LED_SW via U10's body diode (LDO_IN) | 2.9 [calc/est] | 3.4 | Light off; not in §16 | TI SNVSCN8A §7.3.3 |
+| 13 | LED_MONIT R39/R41 1M/120k from LED_SW via U10's body diode (LDO_IN) | 2.9 [calc/est] | 3.4 | Light off; in §16 since its 2026-09-30 re-itemization | TI SNVSCN8A §7.3.3 |
 | 14 | U10 TPS923610 shutdown (LDO_IN) | 0.13 [DS] | 0.5 [DS, 85 °C] | ADIM LOW for > 2.5 ms (IO42 held LOW) | SNVSCN8A §6.5 |
 | 15 | U12 74LVC1G04 (clone) (3V3) | 0.1 [DS] | 4 [DS Nexperia]; 10 if TI's limit applies | Input at GND (IO40 LOW) | Nexperia Rev 18.1; TI SCES214AF |
 | 16 | U13 DS3231MZ, VBAT-only (3V3) | 2.0 [DS] | 3.0 [DS] | EN32KHZ = 0, I2C idle; conversions already averaged in | Maxim DS3231M Rev 5 p.3 (Note 4) |
@@ -76,15 +77,13 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 
 ### Against HARDWARE.md §16
 
-§16 says "roughly 60 µA typical, up to ~85 µA worst-case".
+§16 was re-itemized on 2026-09-30 from this budget, part by part, and now agrees with it:
 
-- **Typical agrees:** ≈58 µA with the panel, ≈56 µA for the board alone. §16 gives the ESP32 8-13 µA; the datasheet gives 7 µA typ for ext1 with RTC peripherals off.
-- **The worst case is 6-10 µA low.** 85 µA matches only once the high-voltage leakage specs are discounted, and §16 leaves out the panel (2/6 µA) and the LDO load term.
-- **Not itemized in §16:**
-  - DW01A, TPS2116, TP4056, BAT_MONIT, DS3231MZ, U12, the panel.
-  - LED_MONIT (≈3 µA). §16's "sub-µA shutdown" is true of U10, not of the LED_SW node.
-  - The touch (+55), dropout (+200) and GPIO47/48 scenarios.
-- **Double counts to avoid:**
+- ≈58 µA typical (≈56 µA without the panel) and ≈91-95 µA maximum, with the ESP32 at 7 µA typ for ext1. Every row above is in it, the LED_MONIT divider and the panel included.
+- It states the touch-tail case (+55 µA hibernated, ≈220 µA in Monitor, ≈1.1 mA with TP_RST LOW) and the near-empty cell (LDO dropout).
+- Like this budget, its maximum leaves out the LDO's load term (row 4) and the GPIO47/48 back-feed (HW-01), and names both.
+- It has no row for the custom UC8279D panel, whose deep-sleep figure is not in hand (row 17).
+- **Double counts to avoid** (both documents follow them):
   - §3.3's "≈7 µA incl. DW01A" overlaps the Fix-4 figure (R79/R80).
   - DS3231M conversions are already in its IBATT.
   - R77 and Q7 leakage are one current.
@@ -188,7 +187,8 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
   - IO47 at 3.3 V does not rule out back-feed.
 - **GPIO47/48 supply (HW-01):**
   - Read `espefuse.py --port <COM> summary` and look at `PIN_POWER_SELECTION`. It is read-only, and IDF says it covers GPIO33-37 only, so it may not settle the question.
-  - Decisive: sleep current with the J2 flex in and out, then with R5 lifted (flex out). If the flex adds more than ≈6 µA (the panel's deep-sleep maximum), or lifting R5 changes the current at all, back-feed is confirmed.
+  - Quick: in sleep, the voltage across R5 should be ≈0 V. Every 0.1 V is 10 µA flowing into IO47 (§6.1).
+  - Decisive: sleep current with the J2 flex in and out, then with R5 lifted (flex out). If the flex adds more than ≈6 µA (the GDEQ0426T82's deep-sleep maximum), or lifting R5 changes the current at all, back-feed is confirmed. The custom UC8279D panel's own deep-sleep draw is not in hand. With it, the flex in/out difference mixes that draw with any BUSY back-feed, so rely on the R5 test there and record the difference (row 17).
   - Watch for flash boot failures after wake.
 - **Charger on battery (HW-08):** USB_VBUS ≈0 V, D2 dark, USB_STAT (IO9) ≈2.20 V. D2 lit means the TP4056 pins conduct into VCC (≈500 µA).
 - **Touch (tail fitted):**
@@ -237,6 +237,7 @@ After every session the device stays awake until auto-sleep, and this tail outwe
   - The problem: EPD RST (IO47) and BUSY (IO48) are on the SPICLK_P/N pads. S3 DS v2.2 Table 2-1 gives their supply as VDD_SPI/VDD3P3_CPU, chosen by `EFUSE_PIN_POWER_SELECTION`, and IDF 5.5 always powers VDD_SPI off in deep sleep (keeping it on is not an option there).
   - The cost if these pads are unpowered: R5 and the SSD1677's HIGH BUSY output back-feed flash/PSRAM through the ESD diodes, ≈100-300 µA [est].
   - The fix: move RST and BUSY to VDD3P3_RTC or VDD3P3_CPU pads. IO3 is free for RST. BUSY needs a strap-safe pad: not IO45, and IO46 only after checking the boot-mode strap table.
+  - HARDWARE.md §6.1 carries it as a first-article check since 2026-09-30.
 - **HW-02: J4 touch VDD is always on (0 Ω R42).** A hibernated FT6336U still draws ≈55 µA and a GT911 70-120 µA. Only a load switch on J4 VDD reaches the ≈58 µA floor with touch. That switch needs bus isolation, or TP_RST/TP_INT held LOW, because R47/R48 and the control lines back-power an unpowered controller.
 - **HW-03: the U3 TLV75533P is the largest floor term.** Its 25 µA IQ has an uncharacterized light-load term, and it rises to ≈190-260 µA in dropout. The fix: an LDO with flat dropout IQ and nA shutdown, rated for Wi-Fi peaks, with EN driven by a supervisor or load switch that disconnects the system below ≈3.4 V.
 - **HW-04: the LED_MONIT divider (R39/R41) is always fed from LED_SW,** ≈2.9-3.4 µA with the light off. Scale it ×10 or gate it, after checking the ADC and monitor settling.
@@ -251,15 +252,21 @@ After every session the device stays awake until auto-sleep, and this tail outwe
 
 **Follow-ups for HARDWARE.md** (not edited from this repo):
 
-- §9.2 (line 1042) still says `ext0`. The firmware uses ext1 ANY_HIGH, and ext0 would cost the extra 1 µA of RTC_PERIPH.
-- §16 should itemize every contributor in [section 1](#1-sleep-current-budget), use ESP32 7 µA typ, and state the touch and dropout scenarios.
-- §3.3's "years" claim should change (HW-09).
-- §13.1 should list three parts as sleep/wake-critical: R75 (COLOR_SEL pull-down), U10's ADIM pull-down and R5 (EPD RST pull-up). S3 drops digital-pad holds at a deep-sleep wake, so only these parts hold IO40/IO42/IO47 until firmware drives them.
-- R49/R50: a 1-2 LED string on J3 would conduct in sleep through Q6 and R37. The bonded 5-LED strings do not.
+- Done in HARDWARE.md on 2026-09-30:
+  - §9.2 and §13.1 now say ext1 ANY_HIGH, not `ext0`;
+  - §16 is itemized as in [section 1](#1-sleep-current-budget), with ESP32 7 µA typ and the touch and dropout cases;
+  - §6.1 has the GPIO47/48 back-feed as a first-article check (HW-01);
+  - §9.2 forbids R72 with R36 still fitted, and says a board shortened at the cut line needs the UP(2)-as-power option;
+  - §13.1 covers the front light's open-load enable and the 10 s wait before connecting a light.
+- Still open:
+  - §3.3's "years" claim should change (HW-09).
+  - §13.1 should list three parts as sleep/wake-critical: R75 (COLOR_SEL pull-down), U10's ADIM pull-down and R5 (EPD RST pull-up). S3 drops digital-pad holds at a deep-sleep wake, so only these parts hold IO40/IO42/IO47 until firmware drives them.
+  - R49/R50: a 1-2 LED string on J3 would conduct in sleep through Q6 and R37. The bonded 5-LED strings do not.
 
 ## 7. Open questions
 
 - **GPIO47/48 supply on this N16R8,** and whether it back-feeds in sleep (HW-01, bench check in [section 4](#4-measurement-and-bench-checks)).
+- **The custom UC8279D panel in deep sleep:** its current after DSLP (row 17) and the level its `BUSY_N` holds on IO48. A LOW `BUSY_N` would feed the IO48 pad differently from the SSD1677's HIGH `BUSY` (HW-01).
 - **FT6336U behaviour:**
   - the hibernate current at 3.3 V (55 µA is at 2.8 V, no max);
   - whether `0xA5 = 0x03` ACKs in Monitor mode; if not, every sleep entry adds the ≈307 ms reset retry;

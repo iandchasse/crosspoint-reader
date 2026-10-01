@@ -10,7 +10,10 @@ Everything test-only is under `#if CROSSPOINT_TEST_SUITE` or in `src/activities/
 pio run -e silkscreen-test -t upload
 ```
 
-- The env inherits `[silkscreen] frontlight_flags`, so a board with no LED load that drops the light in `platformio.local.ini` drops it here too.
+- The env inherits the `[silkscreen]` hooks from `platformio.local.ini`:
+  - `frontlight_flags`, so a board with no LED load that drops the light drops it here too;
+  - `display_flags`, the controller override;
+  - `touch_flags`, the GT911 fallback for the alternate jumpers.
 - Go back to the reader over USB: `pio run -e silkscreen -t upload`. The two images carry different board tags (`silkscreen-test` and `silkscreen`), so neither accepts the other through OTA or the SD firmware update, and the test image has neither.
 - While a USB data host is attached the test firmware holds auto-sleep off, so esptool can reach it. If the board is asleep, hold POWER to wake it first.
 - CI builds the env and keeps `firmware-silkscreen-test.bin` as a build artifact. It is never a release asset.
@@ -75,6 +78,20 @@ The ids are stable; `results.csv` and the serial log use them. Every test in the
 | T15 | Wi-Fi and NTP | B7, B6 | [Built](#t15-wi-fi-and-ntp), not yet run on a board |
 | P5 | Sleep, wake and sleep current | B3, B10 | [Built](#p5-sleep-wake-and-sleep-current), not yet run on a board |
 | P8 | Reader-data integrity | - (guards the reader's card) | [Built](#p8-reader-data-integrity), not yet run on a board |
+
+### Variant coverage
+
+This table lists the variants the firmware detects ([MODULARITY.md](MODULARITY.md)) and where the test firmware reports each one. Run each check on the variants you have; one board seldom has them all.
+
+| Variant | Found by | Reported in | Cases to try |
+|---|---|---|---|
+| Panel family | The build (board tag) | P1: profile and board tag | — |
+| Display controller: SSD1677 or UC8279D | The SDK probe before `display.begin()` | P1 (`action=panel`); the `panel=` token in P1's boot row and in every T4 row | Each panel, after a cold boot (`source=probed`) and after a wake (`source=cached`) |
+| Touch tail: none, FT6336U, or GT911 (alternate-jumper build) | The probe and its chip-id check | P1 (`touch_id=`), P2, T11 (`touch_id=`, `gt911_fallback=`) | No tail; an FT6336U tail; a `J6` device at 0x38, which must be refused |
+| RTC: U13, U14 or none | The DS3231 pattern at 0x68, then 0x51 | P1 (`rtc_id=`), P2, T13 (`rtc_id=`, `pattern=`) | The fitted part; a `J6` device at 0x68, which must be refused |
+| Key ladders | The presence test at a reset | P1 (`ladders=`, and the readings with each pull); T3 (`ladders=`, and the keys it leaves out) | Both fitted; one built without its pull-up |
+| Power button idle level | `IO18` read on the ADC at a reset | P1 and T3 (`pwr_idle=`, fail `power_idle`) | Normal; `R72` fitted with `R36` (a rework only) |
+| Front-light load and strings | The switch-on probe | T9 (`probe=`, `cool=`, `warm=`, fail `no_light`); T10 (`probe2=`, `probe2_strings=`, `probe2_load=`, `restored_load=`) | A `J3` light; a `J6` pair; a one-colour `J6` strip. No light at all is checked on the reader image ([PORTING.md B8](PORTING.md#bring-up-checklist-real-board)). |
 
 ### P1 System info and boot checks
 

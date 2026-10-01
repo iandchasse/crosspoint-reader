@@ -1,6 +1,6 @@
 # Silkscreen port of CrossPoint Reader
 
-This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md). The sleep-current budget, the pin states in sleep and the battery-drain rules, with where each is implemented, are in [POWER.md](POWER.md).
+This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md). The sleep-current budget, the pin states in sleep and the battery-drain rules, with where each is implemented, are in [POWER.md](POWER.md). How the firmware handles the board's variants is in [MODULARITY.md](MODULARITY.md): the panel family is a build env, parts it can read are probed at boot, the front light is detected when the user switches it on, and the rest needs nothing.
 
 - **Base:** CrossPoint `develop` at `d1509d07`, with freeink-sdk at its pinned `87c4493`. The SDK work is on the submodule's `silkscreen` branch.
   - Upstream `develop` is merged in up to `707625a4`, which keeps the SDK pin at `87c4493`. The next upstream commit, `2600a79e`, moves the pin to `2339226` and its code needs that SDK (`fetchResumable`'s `sameOrigin` callback). It waits for the SDK sync.
@@ -23,6 +23,7 @@ Every step of the commit plan has landed, in these local commits. SDK is `freein
 | Panel controller probe | `0c34a6d` | `feat(silkscreen): probe the panel controller` | SSD1677 (Good Display panels) or UC8279D (the custom panel), probed at every cold boot and kept in RTC memory across deep sleep; any UltraChip answer runs the UC8279 driver (UC8179 not linked); a build override; the BUSY pull by controller; each controller's deep sleep on every path, the driver-free one included; the reader's X4 overlay policy on both panels; `viewableInsets` `{0,0,0,0}`; P1 and T4 show and log the probe. |
 | Front-light load probe | `b7b00c8` | `feat(silkscreen): detect the front-light load at switch-on` | Each switch-on the user asks for (and Restore Light on Wake) reads `LED_MONIT` every 1 ms for 60 ms; a string with no load goes dark at once. A single-colour light keeps to its one string until a cold boot. "No front light detected" with the 10 s advice, the control kept for a retry; the result kept in RTC memory, so a wake never restores into nothing. `COLOR_SEL` waits for the rail after a trip. T9 and T10 report the probe. |
 | Boot checks and probe identity | `3ee11bc` | `feat(silkscreen): check the keys, power button, touch and RTC at boot` | A key ladder built without its pull-up is found at boot and switched off. `IO18` idling between the logic levels (R36 and R72 both fitted) arms no wake, and the reader says why. 0x38 counts as touch only with a FocalTech chip id, and 0x68 is written only once it shows the DS3231 register pattern, so a J6 device there is left alone. The GT911 fallback is built only for the alternate J4 jumpers, and the reset-loop sleep no longer wakes a GT911. P1, P2, T3, T11 and T13 report the checks. |
+| Modularity | `5edb074` (README) | `docs(silkscreen): conclude the modularity research` | [MODULARITY.md](MODULARITY.md): the four tiers (the panel family per env; the controller, touch, RTC and key ladders probed at boot; the front light found on use; the rest invisible), the module table, how it maps onto the SDK, what each check costs awake, the cut board, `J6` caveats and future work. The bring-up checklist gains the UC8279D panel steps, the ladder-probe check and the front-light detection checks. |
 
 `7f2450c4`'s message names its SDK commit by an earlier hash, `ce61aa8`; the pointer it records is `abca595`.
 
@@ -32,6 +33,7 @@ Every step of the commit plan has landed, in these local commits. SDK is `freein
 - the Wi-Fi TX battery gate;
 - staying awake while USB is present (REQUIREMENTS `usb-stay-awake-for-flash`);
 - a lower idle clock ([POWER.md §5](POWER.md#5-the-awake-idle-tail));
+- a board tag per panel family and an OTA source in the fork, both needed before any release channel exists ([MODULARITY.md, Future work](MODULARITY.md#future-work));
 - the items listed under "Deferred until measured on hardware" in the [commit plan](#commit-plan).
 
 ## Architecture: Silkscreen is data
@@ -48,6 +50,7 @@ freeink-sdk describes each board as a `BoardProfile` in `libs/hardware/BoardConf
   - one ADC lock around every SDK ADC read (`SharedAdc.h`). Arduino's oneshot read only try-locks the unit and returns 0 to the loser, so on X4, X3 and de-link a render-task battery read could turn a concurrent key-ladder read into 0 (a phantom RIGHT/DOWN) or a battery sample into 0 mV;
   - touch drivers on the sensor-bus pins start the bus at `SensorsConfig::i2cHz` (`busHz()`), the clock every existing board already used.
 - No `isSilkscreen()` in SDK feature code. The app uses board identity only for policy (OTA board tag, the keep-awake list).
+- Which variations are a build choice, which the SDK probes (patching `BoardConfig::ACTIVE` before a driver reads it), which wait for the user and which are invisible is set out in [MODULARITY.md](MODULARITY.md#how-it-maps-onto-freeink-sdk).
 
 | New generic mechanism | Why Silkscreen needs it (HARDWARE.md) |
 |---|---|
@@ -190,16 +193,60 @@ What only the reader image or bench equipment can check is listed under [Checks 
 
 1. **B0 - Power, no flash.** No panel, no card, `J3` unplugged, current-limited USB. 3V3 present; `IO42` ≈ 0 V; `IO10` HIGH, so `SD_VDD` ≈ 0 V. The USB-Serial-JTAG port enumerates.
 2. **B1 - Boot safety and console.** Flash. The log shows `Device: silkscreen` and about 8 MB PSRAM, and P1 shows the power button idling low and both key ladders fitted. Scope `IO14`/`IO13` from EN release: CS is HIGH before the first SCLK edge. `IO42`, `IO40` LOW; `IO10` HIGH. A power-button press is logged; pressed `IO18` ≈ 3.0 V.
-3. **B2 - Display.** Attach the GDEQ0426T82. FULL/HALF/FAST refreshes and the grayscale anti-aliasing pass are clean at 20 MHz SPI. Check orientation (text upright relative to the bottom keys) and that the `{0,0,0,0}` `viewableInsets` fit the case window. Check night-mode ghosting. Then repeat with the custom UC8279D panel:
-    - The log (and P1) show `Panel controller UC8279 (probed)` with its VER, FLG and LUT_VER; a GDEQ0426T82 shows `SSD1677` with no UltraChip answer. After a sleep and a wake, P1 shows the same verdict kept from the probe before the sleep.
-    - The UC8279 driver's waveforms were tuned for Xteink panels: record the LUT_VER and the MTP header P1 logs, and judge T4/T5 on this panel before tuning anything. It also checks that the panel's charge pump, sized to the SSD1677 reference, runs this controller cleanly.
-    - A UC8279 driven as an SSD1677 (a wrong verdict) shows BUSY waits that end at once or time out, and a blank or garbled panel; the SSD1677 soft reset `0x12` is a UC refresh command. If the probe misbehaves on a unit, force the controller with `display_flags` and report the log.
+3. **B2 - Display.** Attach the GDEQ0426T82. The log and P1 show `Panel controller SSD1677 (probed)`, with no UltraChip answer. FULL/HALF/FAST refreshes and the grayscale anti-aliasing pass are clean at 20 MHz SPI. Check orientation (text upright relative to the bottom keys) and that the `{0,0,0,0}` `viewableInsets` fit the case window. Check night-mode ghosting. Then bring up the custom UC8279D panel, in this order:
+    - **Probe verdict and IDs.** The log and P1 show `Panel controller UC8279 (probed)` with its VER, FLG and LUT_VER (VER byte 2, also the driver variant). Keep P1's `action=panel` row, which carries the 48 MTP bytes.
+      - After a sleep and a wake, P1 shows the same verdict, kept from the probe before the sleep (`source=cached`).
+      - Swap the two panels with the power off: the next cold boot finds the other one.
+      - An inconclusive probe runs as SSD1677, and P1 fails `panel`. Force the controller with `display_flags` and report the log.
+    - **Geometry.** `Uc8279X4Driver` addresses the panel as the X4 Pro's: TRES 800×600 with the 480 visible rows from gate 120, PSR `0x37`/`0x4D`, PLL `0x0E`.
+      - The MTP dump holds the panel's own programmed TRES. Compare it before judging placement in T7.
+      - If it differs, give Silkscreen its own `Uc8279X4Config` (`tresHeight`, `gateOffset`, PSR, PLL) through `-DFREEINK_UC8279_X4_CONFIG`.
+    - **BUSY polarity.** The UC8279's `BUSY_N` is LOW while busy and idles HIGH, with the internal pull-up while awake.
+      - T4's refresh times must be real waits (hundreds of ms for FULL), not 0 ms (BUSY read the wrong way) and not a hang.
+      - Scope `IO48`: LOW through a FULL refresh.
+      - With the flex unplugged, the boot must not hang.
+      - A UC8279 driven as an SSD1677 (a wrong verdict) shows waits that end at once or time out, and a blank or garbled panel. The SSD1677 soft reset `0x12` is a UC refresh command.
+    - **Charge pump.** Silkscreen's pump (L1 47 µH, R14 2.2 Ω) is sized to the SSD1677 reference. T4 and T5 must be clean in every mode, with no fading or speckle.
+    - **Deep-sleep current.** The UC8279 sleeps with power-off, then DSLP `0x07`/`0xA5`. Its sleep current and its `BUSY_N` level in sleep are not in hand: measure both with this panel in B3 and B10.
+    - **Waveforms.** The UC8279 driver's waveforms and LUTs were tuned for Xteink panels. Its variant picks the gray tables:
+      - `0x02`/`0x03`: the QY tables;
+      - `0x67`: OTP only, no gray;
+      - anything else: the default `0x68` tables, logged as unknown.
+
+      Judge T4, T5 and T6 on this panel before tuning anything. Keep its T4 times as this panel's baseline, since T4's references are the SSD1677's.
 4. **B3 - Sleep and wake.** Sleep and wake from `IO18` repeatedly. No false wakes over 30 minutes. In sleep: `IO47` ≈ 3.3 V (RST not held LOW), `IO14` 3.3 V, `IO12`/`IO13`/`IO21` 0 V, `IO48` ≈ 3.3 V with an SSD1677 panel (`BUSY`, no pull; with the UC8279D panel note the level, which is not in hand), `IO11` 3.3 V (TP_RST HIGH), `IO38`/`IO39` 3.3 V, `IO42`/`IO40` 0 V (including after sleeping with the light on, warm and cool), `IO5`-`IO7`/`IO15`-`IO17` 0 V and `IO10` 3.3 V. Scope `IO47` across a ghost wake: no LOW excursion. `esptool chip_id` works after wake and after an SW11 reset. On a current logger with a release build (the dev env adds a 250 ms USB-serial wait), a short tap (ghost wake) stays awake for about 0.3 s or less, with and without a card. Tape the power button down and trigger a sleep: the current falls to the floor + ~30 µA within ~5 s, and the release gives one short wake before sleeping again.
 5. **B4 - SD card.** Scope `SD_VDD` at cold boot: below 0.5 V for at least 20 ms with the bus LOW before power-on. Mount within 3 attempts. Copy 200 MB and verify SHA-256. With no card, a clean "SD card error" and the bus left parked. In sleep, `SD_VDD` < 0.5 V and no bus pin HIGH. USB Drive mode in and out.
 6. **B5 - Buttons.** T3's boot-checks row shows both ladders fitted; P1 shows their readings with each pull (a fitted ladder reads above about 2.2 V pulled down). Build with `-DFREEINK_ADC_LADDER_TRACE=1` and log mV for every key on USB and on battery. Tune the windows, especially BACK, UP(2) and the released threshold, which sit near the ADC's 2.9 V ceiling. 50 presses each give 50 events, including with Wi-Fi on. Chords decode as §9.1 says or are ignored.
+
+    Then check the ladder probe. Its thresholds (at most 400 mV pulled down, at least 2600 mV pulled up) are derived. Use a board built without one ladder's pull-up (`R28`/`C28` off, no side keys), or a spare board with `R28` lifted:
+    - P1 shows that ladder `off`, with both floating readings;
+    - the log says `Key ladder IO4 has no pull-up`;
+    - T3 leaves its keys out;
+    - the board sleeps on its timeouts with no phantom keys.
+
+    Report both pairs of readings, fitted and floating, so the thresholds can be set from them.
 7. **B6 - Battery and USB_STAT.** Log `IO9`/`IO8` in each state: on battery (~2.20 V), charging (~1.11 V), complete (~0.55 V), charger idle (~3.3 V), and cell pulled on USB (0.55/0.41 V blink must never report "charged"). The on-battery level is unverified on real parts (DESIGN_REVIEW), so re-window if needed. Ramp a supply on `J5`: the device sleeps at ~3.40 V with Wi-Fi off, and at ~3.30 V as read on `IO8` with the web server running. Log `IO8` with Wi-Fi on and off at one supply voltage to check the 100 mV allowance. Below 3.6 V on battery, OTA and SD flashing refuse. Pull the USB cable during USB Drive on battery: the session ends within ~5 s and the device returns to Home. Leave the web-server screen idle on battery: it sleeps after 15 min.
 8. **B7 - RTC.** Probe 0x68: T13 shows the identity check passed and the dump matching the DS3231 pattern. OSF is set after a cell insert and cleared once time is set over NTP. Register `0x0F` bit 3 = 0. Check I2C edges at 400 kHz before raising the bus from 100 kHz.
-9. **B8 - Front light** (lit builds only, load connected first). Scope `IO42`: at least 3 ms LOW, then about 150 µs HIGH, then the 25 kHz carrier. COLOR_SEL changes only with ADIM LOW (at least 3 ms after it fell). `LED_MONIT` × 9.33 ≈ 15 V lit. Force a trip with the test firmware's T10, which lowers the trip level in RAM for one run and also exercises the switch-on probe, or by building with a temporarily lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` (for example 12000), rather than by unplugging the load while lit: the light goes off, the log shows the trip, and it stays off until switched on again, including across a sleep and wake and a Wi-Fi screen's restart. With no light connected (`J3` unplugged, `J6` empty: a safe open-load enable), switching the light on logs `load probe: ... no load` for each string, shows "No front light detected", and leaves `IO42` LOW; scope `LED_MONIT` against the enable to see the trip crossing fall inside the 60 ms window. For the restore path, leave the light on with Restore Light on Wake on, sleep, unplug the light, and wake: the restore tries once and finds no light (logged, no message); the next wake does not enable the boost (`Frontlight not restored`), and a power cycle tries once again. Wait 10 s after an open-load enable before connecting a light. A cool-only `J6` strip at the default warmth lights cool after the rail wait, and the warmth row says "Cool light only". A ghost wake (short tap) must not light the LEDs. Scope `IO42`/`IO40` across a silent restart with the light on warm: `ADIM` falls at least 3 ms before `COLOR_SEL`. With no touch tail, Settings > Display > Frontlight sets brightness and warm/cool from the keys.
+9. **B8 - Front light** (lit builds only).
+    - **Enable sequence** (load connected). Scope `IO42`: at least 3 ms LOW, then about 150 µs HIGH, then the 25 kHz carrier. COLOR_SEL changes only with ADIM LOW, at least 3 ms after it fell. `LED_MONIT` × 9.33 ≈ 15 V lit.
+    - **Trip.** Force a trip with the test firmware's T10, which lowers the trip level in RAM for one run and also exercises the switch-on probe. Or build with a temporarily lower `SILKSCREEN_FRONTLIGHT_TRIP_MV` (for example 12000). Do not force it by unplugging the load while lit. Then:
+      - the light goes off and the log shows the trip;
+      - it stays off until switched on again, including across a sleep and wake and a Wi-Fi screen's restart.
+    - **Detection with no light** (`J3` unplugged, `J6` empty: a safe open-load enable). Switch the light on:
+      - the log shows `load probe: ... no load` for each string;
+      - the reader shows "No front light detected" with the 10 s advice, and `IO42` stays LOW;
+      - the light control stays, and switching on again retries.
+
+      Scope `LED_MONIT` against the enable: the trip crossing must fall inside the 60 ms window (the TPS923610's soft-start with no load is not in hand). The log's `LED rail down to 15 V after ... ms` times `C9`'s decay after a trip, which the 4 s rail-wait bound and the 10 s connect advice assume to be about its nameplate value. Wait 10 s after an open-load enable before connecting a light.
+    - **Restore path.** Leave the light on with Restore Light on Wake on, sleep, unplug the light, and wake:
+      - the restore tries once and finds no light (logged, no message);
+      - the next wake does not enable the boost (`Frontlight not restored`);
+      - a power cycle tries once again.
+    - **Single-colour strip.** A cool-only `J6` strip at the default warmth lights cool after the rail wait (about 1-3 s), and the warmth row says "Cool light only". The warm string is not selected again until a cold boot.
+    - **Trip margin.** With a `J6` 6+6 strip, cold and at full brightness, T9's lit readings and `probe_peak=` must stay clear of the 23 V trip. A strip near 22.3-22.9 V can read as "no load" or as a missing string: report its reading.
+    - **Never by itself.** A ghost wake (short tap) must not light the LEDs, and a boot with Restore Light on Wake off never enables the boost (scope `IO42`).
+    - **Restart.** Scope `IO42`/`IO40` across a silent restart with the light on warm: `ADIM` falls at least 3 ms before `COLOR_SEL`.
+    - **Keys.** With no touch tail, Settings > Display > Frontlight sets brightness and warm/cool from the keys.
 10. **B9 - Touch** (-T01C/-FT01C only). An I2C scan shows 0x38 (FT6336U) next to the RTC, and T11 shows its chip id (expect 0x64) accepted. A GT911 tail (0x5D/0x14) needs the alternate jumpers and a build with `-DSILKSCREEN_TOUCH_ALT_JUMPERS=1`. Build with `-DTOUCH_PROBE_DEBUG` and log the probe (controller, address, cached result); a cold boot without the tail must boot touchless, with the keys, hints and remap. Map the corners and set `swapXY`/`flipX`/`flipY` and the raw ranges (the test firmware's T11 fits and logs them; T12 checks the sleep command). The keys still work with touch fitted. Sleep with the tail fitted:
     - `TP_RST` (`IO11`) is held HIGH (3.3 V), never LOW.
     - `IO41` is unheld for an FT6336U, and 0 V for a GT911.
@@ -209,7 +256,8 @@ What only the reader image or bench equipment can check is listed under [Checks 
     Unplug the tail while asleep and check that a cold boot finds it absent.
 11. **B10 - Sleep current.** Follow [POWER.md §4](POWER.md#4-measurement-and-bench-checks) (MEAS-01) with a release build: a µA meter or logger in series with the cell at 3.8 V, USB and UART adapters off, card fitted, light off, panel asleep. Average 60 s, starting 60 s after sleep entry.
     - Expect ≈58-73 µA without touch and ≈113-130 µA with an FT6336U hibernated.
-    - Above ≈150 µA, work through the A/B list in POWER.md. It includes the J2-flex / R5 test for GPIO47/48 back-feed and the `espefuse` summary.
+    - Measure with each panel. The GDEQ0426T82 sleeps at 2-6 µA. The UC8279D panel's figure is not in hand. Take it as the difference with the `J2` flex in and out, once the `R5` test below has ruled out back-feed, and record it in POWER.md (budget row 17).
+    - Above ≈150 µA, work through the A/B list in POWER.md. It includes the J2-flex / R5 test for GPIO47/48 back-feed and the `espefuse` summary. In sleep the voltage across `R5` should be ≈0 V; every 0.1 V is 10 µA into `IO47` (§6.1).
     - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (a test build). All should agree within about 2 µA.
     - On battery, also check that `D2` is dark and `USB_VBUS` ≈ 0 V.
 
@@ -255,34 +303,43 @@ Deferred until measured on hardware: the touch orientation (B9); wake from ladde
 
 Queued work, in this order.
 
-1. **Port CrossInk.** [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk) is an MIT-licensed fork of crosspoint-reader, also built on freeink-sdk.
-   - Its board support should come from the same SDK `silkscreen` branch; the board stays data, with no device checks.
+1. **Port CrossInk, after bring-up.** [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk) is an MIT-licensed fork of crosspoint-reader, also built on freeink-sdk. It goes in its own folder, `silkscreen-firmware/crossink`. Start once the board has passed the [bring-up checklist](#bring-up-checklist-real-board) on this reader, so a failure there points at the port rather than the board.
+   - Its board support should come from the same SDK `silkscreen` branch; the board stays data, with no device checks. The probes and the front-light detection come with the SDK ([MODULARITY.md](MODULARITY.md#how-it-maps-onto-freeink-sdk)); CrossInk adds only their UI.
    - The app side to carry over is what this branch changed against `d1509d07`:
-     - `src/main.cpp`: the boot order (release wake, reset loop with the driver-free panel and touch sleep, early wake decision, boot cutoff), the loop cutoff, the awake ceiling and input cap, the wake and SD-error timeouts, the light-trip handling, and `Frontlight.begin()` after the wake decision.
+     - `src/main.cpp`:
+       - the boot order: release wake, the power button's idle check, the reset loop with the driver-free panel and touch sleep, the early wake decision, the boot cutoff, and the panel controller before `display.begin()`;
+       - the loop cutoff, the awake ceiling and input cap, and the wake and SD-error timeouts;
+       - the light-trip and no-light handling (`handleFrontlightNotFound()`) and `Frontlight.begin()` after the wake decision;
+       - the power-button fault screen (`haltOnPowerButtonFault()`) and `logPanelController()`.
      - `lib/hal`: `HalPowerManager`, `HalGPIO`, `HalFrontlight`, `HalClock`.
-     - The `hasFrontButtons()` UI sites.
+     - UI:
+       - the `hasFrontButtons()` UI sites;
+       - the `x4ClassPanel` term of `xteinkClassPanel()` in `EpubReaderActivity`;
+       - `BaseTheme::drawWrappedPopup()`;
+       - the light panel's no-light and single-colour notes (`FrontlightPanelActivity`).
      - `OtaUpdateActivity`, `ClockSyncActivity`, `FontDownloadActivity`, `KOReaderAuthActivity`, `KOReaderSyncActivity`, `ClearCacheActivity`, `SdFirmwareUpdateActivity`, `UsbDriveActivity`, the cutoff checks in the upload and download callbacks, the Frontlight row in `SettingsActivity`, and the traffic hook in `CrossPointWebServer`.
-     - `FirmwareBoardTag`, the `[silkscreen]` envs in `platformio.ini`, `STR_BATTERY_TOO_LOW_FOR_UPDATE`, and `scripts/check_sleep_wake_sources.sh`.
+     - `FirmwareBoardTag`.
+     - The `[silkscreen]` envs in `platformio.ini`, with their `frontlight_flags`, `display_flags` and `touch_flags` hooks.
+     - The strings `STR_BATTERY_TOO_LOW_FOR_UPDATE`, `STR_FRONTLIGHT_NOT_DETECTED`, `STR_FRONTLIGHT_COOL_ONLY`, `STR_FRONTLIGHT_WARM_ONLY` and `STR_POWER_BUTTON_FAULT`.
+     - `scripts/check_sleep_wake_sources.sh`.
    - Re-check every rule in [POWER.md §3](POWER.md#3-firmware-rules-and-where-they-live) against CrossInk's own sleep paths and network screens.
-2. **Hardware test-suite firmware.** A separate build that boots into discrete tests, each logging its raw readings and a result:
-   - battery (`BAT_MONIT`) and charge status (`USB_STAT` states);
-   - every key, including power (ladder mV and decoded key);
-   - the e-ink refresh modes (full, half, fast, grayscale);
-   - the front light: warm, cool and brightness steps, with the `LED_MONIT` reading;
-   - touch: probe, corners and the sleep command;
-   - the RTC: probe, EN32KHZ, and time kept across a sleep;
-   - Wi-Fi, checked by an NTP sync.
+2. **Hardware test-suite firmware. Done** (not yet run on a board). `[env:silkscreen-test]` boots into discrete tests, each logging its raw readings and a result. It covers the firmware side of the bring-up checklist (B1-B10) with the same SDK managers as the reader, so a failure there points at the board rather than the reader. The tests:
+   - system info and the boot checks, and an I2C scan;
+   - battery, charge status and USB;
+   - the keys;
+   - the display tests T4-T8 (B2);
+   - the front light T9-T10 (B8);
+   - touch T11-T12 (B9);
+   - the RTC T13-T14 and Wi-Fi/NTP T15 (B7);
+   - the SD card P3 (B4);
+   - the sleep paths and current P5 (B3, B10);
+   - the reader-data check P8.
 
-   It covers the firmware side of the bring-up checklist (B1-B10) and uses the same SDK managers as the reader, so a failure there points at the board rather than the reader.
-
-   Built as `[env:silkscreen-test]`, not yet run on a board: the menu, the result log, the safety rules and every test of the plan: system info, I2C scan, battery, charge status, USB, keys, the display tests T4-T8 (B2), the front light T9-T10 (B8), touch T11-T12 (B9), the RTC T13-T14 and Wi-Fi/NTP T15 (B7), the SD card P3 (B4), the sleep paths and current P5 (B3, B10) and the reader-data check P8. Forced panics (P6) and the low-battery ramp (P7) were left out; they run on the reader image with a bench supply. See [TEST-SUITE.md](TEST-SUITE.md) and the table at the head of the [bring-up checklist](#bring-up-checklist-real-board).
-3. **Research: Silkscreen modularity against the freeink-sdk ecosystem.** Which Silkscreen blocks the SDK's board-data model can describe as optional or swappable:
-   - the J3 panel light or a J6 strip;
-   - the J4 touch tail;
-   - U13 or U14 RTC;
-   - the UP(2)-as-power variant;
-   - J6 accessories.
-
-   Also: where runtime probing (as for touch) beats a build flag, and what a future board revision should change to fit the other freeink-sdk boards ([POWER.md §6](POWER.md#6-hardware-notes-for-a-future-revision)).
-
-   **Partly done 2026-09-30.** The runtime checks it recommended have landed: the panel controller probe, the front-light load probe at switch-on, key-ladder presence, the power button's idle level, the touch and RTC identity checks, and the GT911 fallback as an alternate-jumper build option. Still open: one env and board tag per panel family, the OTA source, and designated initializers for the `SILKSCREEN` profile before the next upstream SDK sync.
+   Forced panics (P6) and the low-battery ramp (P7) were left out; they run on the reader image with a bench supply. See [TEST-SUITE.md](TEST-SUITE.md) and the table at the head of the [bring-up checklist](#bring-up-checklist-real-board).
+3. **Modularity. Done 2026-09-30:** see [MODULARITY.md](MODULARITY.md).
+   - **Panel family.** The panel family is the only build choice, with one env, profile and board tag each: 4.26" now, the 3.68" x3 and 5.76" (SSD2677) panels later.
+   - **Probed at runtime.** The display controller (SSD1677 or UC8279D), the touch tail (FT6336U; a GT911 only with the alternate-jumper flag), the RTC (U13, U14 or none) and each ladder's pull-up are probed at boot and kept for deep-sleep wakes.
+   - **Detected on use.** The front-light load and its strings are found when the user switches the light on.
+   - **Invisible.** The rest needs nothing: individual and front-mounted keys, UP(2)-as-power, the J4 jumper mux, `R37` and the U10 variant, the battery, the SD socket.
+   - **The cut board** needs the UP(2)-as-power option to wake.
+   - **Still open** ([Future work](MODULARITY.md#future-work)): the 3.68" and 5.76" envs, a board tag per panel family and an OTA source in the fork before any release channel, designated initializers for the `SILKSCREEN` profile before the upstream SDK sync, and an identity check at 0x51.
