@@ -13,8 +13,11 @@ class HalFrontlight {
   bool present() const { return manager.present(); }
   bool hasColorTemperature() const { return manager.hasColorTemperature(); }
   // Warmth picks one string (warm at >= 50%) instead of blending two
-  // (FrontlightConfig::colorSelectGpio).
+  // (FrontlightConfig::colorSelectGpio without colorBlendHz, or a string missing).
   bool warmthIsSelection() const;
+  // Both strings sit behind one colour select (FrontlightConfig::colorSelectGpio),
+  // blended or not.
+  bool hasColourSelect() const;
 
   void setBrightness(uint8_t percent);
   void setWarmth(uint8_t warmPercent);

@@ -49,7 +49,11 @@ FrontlightManager::ProbeDiagnostics probe() { return TestSuiteAccess::frontlight
 
 bool selectsWarm() { return TestSuiteAccess::frontlight(Frontlight).warmSelected(); }
 
-unsigned long switchOnBoundMs() { return 2UL * BoardConfig::ACTIVE.frontlight.loadProbeWindowMs + 5000UL; }
+bool blends() { return TestSuiteAccess::frontlight(Frontlight).blendsColour(); }
+
+bool blending() { return TestSuiteAccess::frontlight(Frontlight).blending(); }
+
+unsigned long switchOnBoundMs() { return 3UL * BoardConfig::ACTIVE.frontlight.loadProbeWindowMs + 5000UL; }
 
 bool awaitSwitchOn() {
   const unsigned long boundMs = switchOnBoundMs();

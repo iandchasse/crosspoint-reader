@@ -9,6 +9,8 @@
 // screen waits for it to decide, then shows and records its result (a load or
 // none, and which strings answered). The record carries each string's LED_SW at
 // full and about 10 % duty and their difference (dVf, BRING_UP section 7.2).
+// Where the SDK blends (FrontlightConfig::colorBlendHz), Left also offers Mix: a
+// 50 % warmth on COLOR_SEL's blend carrier, read through the same steps.
 // While lit, the switch run (BRING_UP section 7.3) repeats the reader's colour
 // change at about 100, 50 and 10 % duty for a scope on TP3 and COLOR_SEL, and
 // fails on any trip or a light that goes out.
@@ -75,11 +77,17 @@ constexpr char SWITCH_BODY[] =
     "at most) and stays below 23 V.";
 
 constexpr char INTRO[] =
-    "Confirm lights the boost once you name the load. Up/Down: brightness 10-100 %. Left: cool/warm. Right, lit: "
-    "30 colour switches for a scope. Take both strings through every step, switch off, then Record (Right).";
+    "Confirm lights the boost once you name the load. Up/Down: brightness 10-100 %. Left: cool/warm (and mix). "
+    "Right, lit: 30 colour switches for a scope. Take both strings through every step, switch off, then Record "
+    "(Right).";
 constexpr char SCOPE_NOTE[] =
     "Scope (optional): IO42 LOW for at least 3 ms, HIGH for the enable pulse, then the carrier. IO40 (HIGH = warm) "
-    "moves only while IO42 is LOW, at least 3 ms after it fell.";
+    "moves only while IO42 is LOW, at least 3 ms after it fell; in Mix it runs its blend carrier while lit.";
+
+// Left cycles these; Mix only where the SDK blends.
+enum Colour : int { COOL = 0, WARM = 1, MIX = 2 };
+constexpr uint8_t COLOUR_WARMTH[] = {0, 100, 50};
+constexpr const char* COLOUR_NAMES[] = {"cool", "warm", "mix"};
 constexpr char SWITCH_NOTE[] =
     "Switch run: CH1 TP3 (LED_SW), CH2 COLOR_SEL (U12.2), 10x probes. One colour change a second, 10 at each duty. "
     "Back stops.";
@@ -151,13 +159,20 @@ class FrontlightTest final : public TestScreen {
         if (!present) return "Record";
         return lit ? "Off" : "Light on";
       case Slot::Left:
-        if (!present || !Frontlight.warmthIsSelection()) return nullptr;
-        return warm ? "Cool" : "Warm";
+        if (!present || !Frontlight.hasColourSelect()) return nullptr;
+        switch (nextColour()) {
+          case WARM:
+            return "Warm";
+          case MIX:
+            return "Mix";
+          default:
+            return "Cool";
+        }
       case Slot::Right:
         // Lit: the switch run, which needs both strings behind a colour select.
         // Dark: Record.
         if (!present) return nullptr;
-        if (lit) return Frontlight.warmthIsSelection() ? "Switch run" : nullptr;
+        if (lit) return Frontlight.hasColourSelect() ? "Switch run" : nullptr;
         return "Record";
       default:
         return nullptr;
@@ -178,8 +193,10 @@ class FrontlightTest final : public TestScreen {
         }
         break;
       case Slot::Left:
-        warm = !warm;
-        Frontlight.setWarmth(warm ? 100 : 0);  // lit: the probe runs on the new string
+        colour = nextColour();
+        // Lit: the probe runs on the new string; Mix blends at once once both strings
+        // have lit since the reset, and first lights the one that has not.
+        Frontlight.setWarmth(COLOUR_WARMTH[colour]);
         if (lit && !light::awaitSwitchOn()) {
           abortUndecided();
           break;
@@ -257,9 +274,22 @@ class FrontlightTest final : public TestScreen {
     confirmLightLoad();
   }
 
+  // Cool, warm, then Mix where the SDK blends.
+  int nextColour() const {
+    if (colour == COOL) return WARM;
+    if (colour == WARM && light::blends()) return MIX;
+    return COOL;
+  }
+
+  // The column a lit reading belongs to: the blend, or the string the SDK lit.
+  static int litColour() {
+    if (light::blending()) return MIX;
+    return light::selectsWarm() ? WARM : COOL;
+  }
+
   void lightUp() {
     Frontlight.setBrightness(STEPS[step]);
-    Frontlight.setWarmth(warm ? 100 : 0);
+    Frontlight.setWarmth(COLOUR_WARMTH[colour]);
     Frontlight.setOn(true);  // the SDK's load probe runs on its timer
     const bool decided = light::awaitSwitchOn();
     lit = true;
@@ -281,8 +311,7 @@ class FrontlightTest final : public TestScreen {
         return;
       }
     }
-    LOG_INF("TEST", "T9: lit %s at %u %% (asked %s)", light::selectsWarm() ? "warm" : "cool", STEPS[step],
-            warm ? "warm" : "cool");
+    LOG_INF("TEST", "T9: lit %s at %u %% (asked %s)", COLOUR_NAMES[litColour()], STEPS[step], COLOUR_NAMES[colour]);
     redraw();
   }
 
@@ -377,6 +406,8 @@ class FrontlightTest final : public TestScreen {
     sw.trips0 = light::monitor().trips;
     sw.probeTrips0 = light::probe().trips;
     sw.warmNow = light::selectsWarm();
+    // From Mix: the run switches whole strings, so hold the dominant one (lit, no probe).
+    if (light::blending()) Frontlight.setWarmth(sw.warmNow ? 100 : 0);
     Frontlight.setBrightness(SWITCH_BRIGHTNESS[0]);  // lit: applies at once, no probe
     // A settled reading at the first duty, then the first switch a period later.
     sw.switchedAt = millis();
@@ -476,7 +507,7 @@ class FrontlightTest final : public TestScreen {
     offAt = millis();
     afterOffPending = true;
     Frontlight.setBrightness(STEPS[step]);
-    Frontlight.setWarmth(warm ? 100 : 0);
+    Frontlight.setWarmth(COLOUR_WARMTH[colour]);
     redraw();
   }
 
@@ -549,8 +580,7 @@ class FrontlightTest final : public TestScreen {
   void sample() {
     sampledAt = millis();
     current = light::readMonitor();
-    const int colour = light::selectsWarm() ? 1 : 0;  // the string lit, which a missing one changes
-    table[colour][step] = current.pinMv;
+    table[litColour()][step] = current.pinMv;  // the string lit (a missing one changes it), or the blend
     if (current.ledMv > maxLitLedMv) maxLitLedMv = current.ledMv;
     if (current.ledMv > light::LIT_MAX_LED_MV) {
       abortOverVoltage(current, millis() - changedAt);
@@ -569,7 +599,7 @@ class FrontlightTest final : public TestScreen {
 
   // Pulls (fl-adim-no-pullup, fl-color-drive, fl-monit-pin) and the pads' drive
   // as the light is: dark, ADIM held inactive and COLOR_SEL at cool; lit, ADIM on
-  // its carrier and COLOR_SEL at the chosen string.
+  // its carrier and COLOR_SEL at the chosen string, or on its blend carrier.
   void checkPads(const bool asLit) {
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     if (adim.valid && adim.pullUp) padFails |= PAD_ADIM_PULL;
@@ -580,7 +610,9 @@ class FrontlightTest final : public TestScreen {
     if (adim.valid && (asLit ? adim.fromGpioOut : !light::padHeldAt(adim, darkLevel))) {
       padFails |= PAD_ADIM_STATE;
     }
-    if (colorSel.valid && fl.colorSelectGpio != BoardConfig::PIN_UNASSIGNED) {
+    if (asLit && light::blending()) {
+      if (!colorSel.valid || !colorSel.outputEnabled || colorSel.fromGpioOut) padFails |= PAD_COLOR_STATE;
+    } else if (colorSel.valid && fl.colorSelectGpio != BoardConfig::PIN_UNASSIGNED) {
       // Lit: the string the SDK picked. Dark: cool, unless a trip's charge on the
       // boost output still keeps it where it was (FrontlightConfig::railSafeV).
       const bool tripSeen = tripped || noLight || probeNow.trips != probeTripsAtOpen;
@@ -640,7 +672,7 @@ class FrontlightTest final : public TestScreen {
       const bool coolMissing = probe.record.cool == freeink::frontlight::StringState::Missing;
       const bool warmMissing = probe.record.warm == freeink::frontlight::StringState::Missing;
       if (!colourMeasured(0) && !(oneColourOk && coolMissing)) addFailure(fails, sizeof(fails), "cool_missing");
-      if (Frontlight.warmthIsSelection() && !colourMeasured(1) && !(oneColourOk && warmMissing)) {
+      if (Frontlight.hasColourSelect() && !colourMeasured(1) && !(oneColourOk && warmMissing)) {
         addFailure(fails, sizeof(fails), "warm_missing");
       }
     }
@@ -655,6 +687,8 @@ class FrontlightTest final : public TestScreen {
     char warmSteps[40];
     formatSteps(cool, sizeof(cool), 0);
     formatSteps(warmSteps, sizeof(warmSteps), 1);
+    char mixSteps[40];
+    formatSteps(mixSteps, sizeof(mixSteps), MIX);
     char vf[48];
     char dvf[24];
     formatVf(vf, sizeof(vf), dvf, sizeof(dvf));
@@ -663,14 +697,14 @@ class FrontlightTest final : public TestScreen {
     const Verdict verdict = fails[0] != '\0' ? Verdict::Fail : answer == 0 ? Verdict::Pass : Verdict::Info;
     record(verdict,
            "load=%s probe=%s cool=%s warm=%s probe_trips=%u probe_peak=%u dark_pin=%u cool_pin=%s warm_pin=%s "
-           "max_led=%u after_off_pin=%u trips=%u skipped=%u vf=%s dvf=%s seen=%s j6=%s fails=%s",
+           "mix_pin=%s max_led=%u after_off_pin=%u trips=%u skipped=%u vf=%s dvf=%s seen=%s j6=%s fails=%s",
            !loadKnown                   ? "none"
            : load == LightLoad::J3Panel ? "J3"
                                         : "J6",
            light::loadToken(probe.record.load), light::stringToken(probe.record.cool),
            light::stringToken(probe.record.warm), static_cast<unsigned>(probe.trips - probeTripsAtOpen),
            static_cast<unsigned>(probe.lastPeakLedMv), static_cast<unsigned>(dark.pinMv), cool, warmSteps,
-           static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
+           colourMeasured(MIX) ? mixSteps : "n/a", static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
            static_cast<unsigned>(monitor.skippedSamples), vf, dvf, answer >= 0 ? SEEN_CODES[answer] : "not_lit",
            options::cutDown() ? "n/a" : "ok", fails[0] != '\0' ? fails : "none");
   }
@@ -697,7 +731,7 @@ class FrontlightTest final : public TestScreen {
     page.row("Load", !loadKnown ? "not named yet" : load == LightLoad::J3Panel ? "J3 panel light" : "J6 LED strip");
     if (options::cutDown()) page.row("J6 LED strip", "N/A: cut-down board (OPT)");
     page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off",
-              lit ? (light::selectsWarm() ? "warm" : "cool") : (warm ? "warm" : "cool"),
+              COLOUR_NAMES[lit ? litColour() : colour],
               static_cast<unsigned>(STEPS[step]), static_cast<unsigned>(STEPS[step]) * 255U / 100U);
     const auto& probe = probeNow;
     page.rowf("Switch-on probe found", "load %s; cool %s, warm %s", light::loadToken(probe.record.load),
@@ -734,9 +768,13 @@ class FrontlightTest final : public TestScreen {
     char steps[40];
     formatSteps(steps, sizeof(steps), 0);
     page.row("Cool 10/25/50/75/100 %, pin mV", steps);
-    if (Frontlight.warmthIsSelection()) {
+    if (Frontlight.hasColourSelect()) {
       formatSteps(steps, sizeof(steps), 1);
       page.row("Warm 10/25/50/75/100 %, pin mV", steps);
+      if (light::blends() || colourMeasured(MIX)) {
+        formatSteps(steps, sizeof(steps), MIX);
+        page.row("Mix 10/25/50/75/100 %, pin mV", steps);
+      }
       char vf[48];
       char dvf[24];
       formatVf(vf, sizeof(vf), dvf, sizeof(dvf));
@@ -748,6 +786,11 @@ class FrontlightTest final : public TestScreen {
               (padFails & (PAD_ADIM_PULL | PAD_COLOR_PULL | PAD_MONIT_PULL)) != 0 ? "WRONG" : "none");
     page.rowf("Enable pulse / dwell / carrier", "%u us / %u ms / %lu Hz", fl.enablePulseUs, fl.offDwellMs,
               static_cast<unsigned long>(fl.pwmFrequency));
+    if (light::blends()) {
+      page.rowf("Blend carrier (IO40)", "%lu Hz", static_cast<unsigned long>(fl.colorBlendHz));
+    } else if (Frontlight.hasColourSelect()) {
+      page.row("Blend carrier (IO40)", fl.colorBlendHz != 0 ? "off: a string is missing" : "off: fixed selection");
+    }
     page.setCompact(false);
     page.gap(4);
     if (darkTaken && dark.pinMv < light::DARK_MIN_PIN_MV) {
@@ -813,7 +856,7 @@ class FrontlightTest final : public TestScreen {
   LightLoad load = LightLoad::J3Panel;
   bool lit = false;
   bool everLit = false;
-  bool warm = false;
+  int colour = COOL;  // asked for: COOL, WARM or MIX
   bool tripped = false;
   bool noLight = false;  // a switch-on's probe found no load
   bool overVoltage = false;
@@ -833,7 +876,7 @@ class FrontlightTest final : public TestScreen {
   light::Reading afterOff;
   FrontlightManager::MonitorDiagnostics monitorNow;  // the SDK record as of the last repaint request
   FrontlightManager::ProbeDiagnostics probeNow;      // the load-probe record, likewise
-  uint32_t table[2][STEP_COUNT] = {};                // [cool, warm][step]: pin mV after settling, 0 = not measured
+  uint32_t table[3][STEP_COUNT] = {};  // [cool, warm, mix][step]: pin mV after settling, 0 = not measured
   light::PadState adim;
   light::PadState colorSel;
   light::PadState monit;

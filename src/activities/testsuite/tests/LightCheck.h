@@ -49,12 +49,17 @@ FrontlightManager::ProbeDiagnostics probe();
 // and the other string's window) and the HAL has settled it, as the main loop
 // would. False if it had not decided within switchOnBoundMs().
 bool awaitSwitchOn();
-// The longest a switch-on may take to decide: two probe windows and the longest
-// rail wait between them (4 s), with a margin.
+// The longest a switch-on may take to decide: three probe windows (a blend's
+// first switch-on lights each string, and a missing second one sends it back to
+// the first) and the longest rail wait (4 s), with a margin.
 unsigned long switchOnBoundMs();
 // The string the SDK's colour select picks now. It differs from the warmth asked
-// for when the probe found that string missing.
+// for when the probe found that string missing. While blending: the dominant one.
 bool selectsWarm();
+// A warmth between the ends blends the strings (FrontlightConfig::colorBlendHz,
+// neither string missing), and the colour select runs its blend carrier now.
+bool blends();
+bool blending();
 // Record tokens.
 const char* loadToken(freeink::frontlight::Load load);            // unknown, present, absent
 const char* stringToken(freeink::frontlight::StringState state);  // unknown, present, missing

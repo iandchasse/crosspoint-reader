@@ -10,9 +10,11 @@ namespace {
 void darkBeforeRestart() { Frontlight.prepareForSleep(); }
 }  // namespace
 
-bool HalFrontlight::warmthIsSelection() const {
+bool HalFrontlight::hasColourSelect() const {
   return present() && BoardConfig::ACTIVE.frontlight.colorSelectGpio != BoardConfig::PIN_UNASSIGNED;
 }
+
+bool HalFrontlight::warmthIsSelection() const { return hasColourSelect() && !manager.blendsColour(); }
 
 void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const bool on) {
   if (!manager.present()) return;
