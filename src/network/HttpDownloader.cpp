@@ -1,6 +1,7 @@
 #include "HttpDownloader.h"
 
 #include <Arduino.h>
+#include <HalPowerManager.h>
 #include <Logging.h>
 #include <ResumableFetch.h>
 
@@ -47,7 +48,13 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
         LOG_DBG("HTTP", "wolfSSL GET: %s (heap %u, max block %u)", url.c_str(), (unsigned)ESP.getFreeHeap(),
                 (unsigned)ESP.getMaxAllocHeap());
       },
-      sink, [cancelFlag] { return cancelFlag && *cancelFlag; });
+      sink,
+      // The write callback (and the caller's progress callback, which sets
+      // cancelFlag on the cutoff) only runs when bytes arrive, and
+      // fetchResumable retries a stalled body. shouldAbort is polled in every
+      // wait loop: abort on the loop's low-battery cutoff here too (never on
+      // boards without one), and the next loop pass sleeps.
+      [cancelFlag] { return (cancelFlag && *cancelFlag) || powerManager.lowBatteryCutoffTripped(); });
   if (bytesOut) *bytesOut = result.bytes;
 
   if (result.aborted) return HttpDownloader::ABORTED;

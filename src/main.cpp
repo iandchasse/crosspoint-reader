@@ -398,11 +398,20 @@ static bool loadSleepFrameBuffer() {
 // sleeps with the previous image and the queued events retry on the next
 // drain (at-least-once). The caller's WiFi shutdown tears the radio down
 // either way. Deferrable events already queued (reader.exit) ride along in
-// the same drain.
-static void deliverSleepPluginEvents() {
+// the same drain. An unattended sleep (a wake that got no input,
+// PowerConfig::wakeNoInputTimeoutS) emits and delivers nothing.
+static void deliverSleepPluginEvents(const bool unattended) {
   // Activity-owned state must be queued before sleep.enter and before this
   // same-sleep drain. The hook is idempotent with ordinary activity teardown.
   activityManager.prepareForSleep();
+
+  // Nobody is at the device and nothing changed since the last sleep entry: no
+  // stale sleep.enter fills the outbox, and no join or drain runs; events
+  // already queued wait for the next drain.
+  if (unattended) {
+    LOG_DBG("MAIN", "Unattended wake sleep; plugin delivery deferred");
+    return;
+  }
 
   // Sleeping straight out of a book is the common flow, but the reader's own
   // reader.exit only fires later, inside goToSleep() — after this drain. Carry
@@ -451,18 +460,26 @@ static void deliverSleepPluginEvents() {
 }
 #endif
 
-// Enter deep sleep mode
-void enterDeepSleep(bool fromTimeout = false) {
+// Enter deep sleep mode. unattended: a power-button wake that got no input
+// (PowerConfig::wakeNoInputTimeoutS) is going back to sleep.
+void enterDeepSleep(bool fromTimeout = false, bool unattended = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   handleFrontlightTrip();
+  // An enable-gated front light goes dark now, not in sleepImpl(): the plugin
+  // delivery below may join Wi-Fi and run handlers, and nothing on the way down
+  // needs the light. sleepImpl()'s call then returns early; the saved light
+  // preference (Restore Light on Wake) is unchanged. No-op on other lights.
+  Frontlight.prepareForSleep();
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
-#if !CROSSPOINT_TEST_SUITE  // no plugins or loan clock in the hardware test firmware
+#if CROSSPOINT_TEST_SUITE  // no plugins or loan clock in the hardware test firmware
+  (void)unattended;
+#else
   // Sleep may end in a power-off (battery death, latch); persist the clock
   // floor now so a later cold boot resumes from it.
   trustedtime::note();
 
-  deliverSleepPluginEvents();
+  deliverSleepPluginEvents(unattended);
 #endif
 
   const bool isQuickResumeSleep =
@@ -1253,7 +1270,7 @@ void loop() {
       wakeNoInputArmed && wakeMs > 0 && powerManager.msSinceInput() >= wakeMs && !activityManager.preventAutoSleep() &&
       !gpio.isUsbConnected()) {
     LOG_INF("SLP", "No input for %lu s after the wake on battery; sleeping", wakeMs / 1000UL);
-    enterDeepSleep(true);
+    enterDeepSleep(true, /*unattended=*/true);
     return;
   }
 
