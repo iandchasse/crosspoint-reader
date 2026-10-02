@@ -213,13 +213,16 @@ What the merges changed for Silkscreen:
   - CrossPoint has no Metalio env, and `src/network/FirmwareBoardTag.cpp` names no Metalio board, so the reader cannot be built for it, here or upstream. A scratch env that builds every SDK source for Metalio compiles; its only error is that missing board tag.
 - **The "Links and footnotes" label** is upstream's and needs nothing for Silkscreen. The Silkscreen strings in `english.yaml` merged unchanged.
 
-The next merge:
+The next merge follows [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md), which covers every Silkscreen repo in order and the checks;
+`scripts/silkscreen/upstream_status.sh` reports what is due, and `scripts/silkscreen/build_matrix.sh` builds and checks in the
+right order. A Claude Code session in `silkscreen-firmware/` runs the whole page as the saved workflow `silkscreen-upstream-sync`.
+In short:
 
 1. `git fetch upstream`, then `git ls-tree upstream/develop freeink-sdk` gives the SDK commit upstream pins.
 2. If the pin moved, merge that commit into the SDK `silkscreen` branch (`git fetch fk-upstream` first). Keep upstream's new struct fields where upstream appends them, ahead of the Silkscreen fields, and keep upstream's board code gated to its board. `SILKSCREEN` needs a change only if it must set a new field.
 3. Merge `upstream/develop` into the parent's `silkscreen`, and resolve `freeink-sdk` to the SDK merge.
 4. Check every new path that blocks the loop, adds a wake source or a timer, or touches SD near sleep against [POWER.md §3](POWER.md#3-firmware-rules-and-where-they-live). Keep new reader, network and plugin code out of the test image (`check_test_firmware.sh` fails on it).
-5. Build `silkscreen`, `silkscreen-gh_release`, `silkscreen-test`, `x4pro`, `x4c` and `papermono`, plus the C3 and Sticky checks (last: they wipe .pio/build). Then run `scripts/check_test_firmware.sh silkscreen-test` and `scripts/check_sleep_wake_sources.sh`, and the host tests where a host C++ compiler exists.
+5. `scripts/silkscreen/build_matrix.sh --full`: `silkscreen`, `silkscreen-gh_release`, `silkscreen-test`, `x4pro`, `x4c` and `papermono`, the sleep-wake guard and `check_test_firmware.sh silkscreen-test`, then the C3 and Sticky checks last (they wipe .pio/build). Compile the host tests where no host C++ compiler exists.
 
 ## What this port does differently
 

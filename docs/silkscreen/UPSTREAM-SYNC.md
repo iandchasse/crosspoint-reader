@@ -1,0 +1,104 @@
+# Silkscreen upstream sync
+
+How to bring every Silkscreen firmware repo up to its upstream, in one order, with the same checks every
+time. It collects the steps from [PORTING.md, "Upstream merges"](PORTING.md#upstream-merges) and CrossInk's
+`docs/silkscreen/PORTING.md`, plus the lessons of the 2026-10-01 rounds. Those two sections keep the per-repo
+detail (what each past merge changed, the CrossInk drain checklist); this page is the procedure.
+
+From a Claude Code session opened in `silkscreen-firmware/`, the saved workflow
+`.claude/workflows/silkscreen-upstream-sync.js` runs this whole page: status, merges, builds, an adversarial
+review with a fix pass, and the records. Ask for "the silkscreen-upstream-sync workflow".
+
+## The repos
+
+| Repo (under `silkscreen-firmware/`) | Branch | Upstream remote | Takes |
+|---|---|---|---|
+| `crosspoint-reader` | `silkscreen` | `upstream` = crosspoint-reader/crosspoint-reader | `upstream/develop` |
+| `crosspoint-reader/freeink-sdk`: **the one shared Silkscreen SDK line** | `silkscreen` | `fk-upstream` = Free-Ink/freeink-sdk (`origin` = iandchasse/freeink-sdk) | the SDK commit upstream CrossPoint pins |
+| `crossink` | `silkscreen` | `crossink` = uxjulia/CrossInk (`crosspoint` = the local CrossPoint, `cpupstream`) | `crossink/development` |
+| `crossink/freeink-sdk` | detached at the gitlink | `silkscreen-sdk` = the local shared line | nothing of its own: always the shared head |
+| `../de-link_pcb` | `master` | `pcb` | not part of a sync; the user's repo |
+
+Pins:
+
+- The shared SDK line follows the commit **upstream CrossPoint pins** (`git ls-tree upstream/develop freeink-sdk`),
+  not Free-Ink `main`, which runs ahead of it.
+- CrossPoint's gitlink is the shared line's head.
+- CrossInk's gitlink is **always** the shared line's head, never CrossInk's own pin
+  (CrossInk's PORTING.md, "SDK pin", has the three cases).
+
+## Before starting
+
+- Nobody is building or flashing from these checkouts. The build matrix wipes `.pio/build` (below), and a
+  build running at the same time hits `firmware.map` locks or loses its outputs.
+- No other job (a Claude workflow, an editor's auto-save, a formatter) is writing to the repos. A job that
+  commits with `git add -A` sweeps in whatever new files it finds.
+- Working trees are clean. Commits stay local: never push, open a PR or retag without the user's approval.
+- Tools on the Windows bench host: Git Bash, `pio` (PlatformIO Core), clang-format 21 at `~/.local/bin`,
+  the xtensa g++ for syntax-only checks (`~/.platformio/packages/toolchain-xtensa-esp-elf/bin`). There is no
+  host C++ compiler, so host tests can only be compiled, not run.
+- `git config core.longpaths true` in every repo (the scripts also set it per call).
+
+## The steps
+
+0. **Status.** `scripts/silkscreen/upstream_status.sh` (from `crosspoint-reader`) fetches every upstream and
+   prints what a sync would take, marking each needed action with `!`. Exit 0 means nothing to do.
+1. **SDK line.** If upstream CrossPoint's pin is not yet on the shared line, in `crosspoint-reader/freeink-sdk`:
+   `git fetch fk-upstream`, then `git merge <pin>` on `silkscreen`.
+   - Upstream appends struct fields: keep upstream's fields first, in upstream's order, and the Silkscreen
+     fields after them. `SILKSCREEN` uses designated initializers, so it needs a change only when it must set
+     a new field. Keep upstream's board code gated to its board.
+   - **No clang-format in the SDK.** It has no `.clang-format`, so clang-format picks up the app's config and
+     re-wraps hundreds of unrelated lines. Format SDK edits by hand.
+   - Syntax-check touched host tests with the xtensa g++ (`-std=gnu++17 -fsyntax-only`), and use
+     `static_assert`s on `constexpr` rules where a test cannot run.
+   - Commit message: `Merge <pin> (Free-Ink main) into silkscreen`, the body listing the commits taken and
+     every conflict resolution.
+2. **CrossPoint.** `git merge upstream/develop` on `silkscreen`.
+   - For each conflict, find the upstream PR in the commit message and read it before resolving: keep
+     upstream's intent, then re-apply the Silkscreen hunk on top.
+   - Conflict hotspots: `src/main.cpp`, `lib/hal/HalGPIO.*`, `lib/hal/HalPowerManager.*`, `src/SettingsList.h`,
+     `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`, `src/activities/ActivityManager.cpp`,
+     `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on the awake ceiling), `platformio.ini`
+     (the `[silkscreen]` section), `lib/I18n/translations/english.yaml`, `docs/` and `USER_GUIDE.md`.
+   - Resolve `freeink-sdk` to the step-1 merge (or the unchanged shared head).
+   - Run clang-format 21 on the app files you touched (the app has a `.clang-format`), not on the SDK.
+   - Settings are stored by index: append new enum values, never renumber. A list that differs by board maps
+     positions to values (`SettingInfo::DynamicEnum`, saved by value in `CrossPointSettings::toJson`/`fromJson`).
+   - Silkscreen-only behaviour stays gated on the board (`BoardConfig::isSilkscreen()` or profile data), so every
+     other board builds and behaves as upstream's.
+   - Keep new reader, network and plugin code out of the test image (`check_test_firmware.sh` fails on it).
+   - Commit message: `Merge upstream develop (<sha>) into silkscreen`, the body listing the commits taken and
+     every conflict resolution.
+3. **CrossInk.** `git merge crossink/development` on `silkscreen`, following CrossInk's PORTING.md
+   "Upstream merges": the SDK pin cases, `CHANGELOG.md` (move every "Silkscreen:" line back under
+   `## [Unreleased]`), and its drain checklist. CrossInk has no plugin system; when it takes upstream CrossPoint
+   features that carry Silkscreen rules (its PORTING.md lists them), port the rules in the same merge.
+4. **Pins.** CrossInk's gitlink = the shared head = CrossPoint's gitlink. `upstream_status.sh --no-fetch`
+   must report no `!` for pins.
+5. **Drain and safety review of what came in.** Against POWER.md §3 and the CrossInk drain checklist: every new
+   path that blocks the loop, adds a timer or a wake source, keeps the radio or the CPU up, touches the SD card
+   near sleep, or lights the front light. The front light is only ever lit by a user action or Restore Light on
+   Wake; nothing new may add sleep current.
+6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release).
+   It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
+   different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`.
+7. **Review.** Independent reviewers per lens (drain and sleep; Silkscreen behaviour kept through the
+   conflicts; upstream intent kept; other boards unchanged; docs), then a skeptic who tries to refute each
+   finding, then a fix pass for the confirmed ones and a rebuild. Every round so far has found real defects.
+8. **Record.** A row in PORTING.md's "Upstream merges" table (parent merge, upstream commit, SDK merge, what it
+   brought for Silkscreen), and the same in CrossInk's PORTING.md. Then `upstream_status.sh` must print
+   `STATUS: current`.
+9. **Bench.** The user flashes (`pio run -e silkscreen -t upload`). Measure the sleep current (POWER.md MEAS-01)
+   when a merge changed sleep, boot, `loop()` or network code.
+
+## Rules the history taught
+
+- Merge, never rebase: older parent commits pin SDK commits that must stay reachable, and the
+  `silkscreen-port-1` tags must stay valid.
+- Never repair a bad merge or a formatter run with context-free patches (`git apply --unidiff-zero`): on
+  2026-10-01 they put a struct field outside its struct and a `static_assert` inside an expression. Restore the
+  file and re-apply the edits by hand, then read the full-context diff.
+- Read the diff with context (`git diff -U5`) before every commit, and build every target the change touches.
+- Upstream commits sometimes need the SDK first: `5b1f0605` needed Free-Ink `bbd528c`. Do step 1 before step 2.
+- Commit messages carry no AI co-author or "generated with" trailer (AGENTS.md rule 4).
