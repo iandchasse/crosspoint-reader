@@ -19,10 +19,20 @@
 #      checksum, and PlatformIO then wipes ALL of .pio/build, including any build or upload
 #      the user has running in this checkout.
 #
-# Never run this while the user is building or flashing from this checkout.
+# Never run this while the user is building or flashing from this checkout; it refuses to start while any pio
+# process runs (exit 3).
 set -u
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$0")/../.." || exit 2
 REPO=$(pwd)
+# Refuse to start while any PlatformIO run is going: the user's own build or upload, or a build an earlier job left
+# behind (on Windows, stopping a shell can leave its pio children running). Two runs in one checkout corrupt
+# .pio/build, and the proxy envs below delete it outright.
+if tasklist //FI "IMAGENAME eq pio.exe" 2>/dev/null | grep -qi "pio.exe"; then
+  echo "a pio process is already running (a build or an upload): wait for it, or end it, then retry" >&2
+  tasklist //FI "IMAGENAME eq pio.exe" 2>/dev/null | grep -i "pio.exe" >&2
+  exit 3
+fi
 LOGS="$REPO/.cache/silkscreen-builds"
 mkdir -p "$LOGS"
 export PYTHONIOENCODING=utf-8 PYTHONUTF8=1 CROSSPOINT_RC_HASH="${CROSSPOINT_RC_HASH:-local}"
@@ -35,7 +45,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --full) full=1 ;;
     --label) shift; label="$1" ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$SELF"; exit 0 ;;
     *) envs+=("$1") ;;
   esac
   shift

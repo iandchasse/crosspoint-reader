@@ -80,9 +80,12 @@ Pins:
    path that blocks the loop, adds a timer or a wake source, keeps the radio or the CPU up, touches the SD card
    near sleep, or lights the front light. The front light is only ever lit by a user action or Restore Light on
    Wake; nothing new may add sleep current.
-6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release).
-   It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
-   different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`.
+6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
+   time. It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
+   different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
+   (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
+   call in the same order (CrossPoint: `silkscreen`, `silkscreen-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`,
+   `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 15-25 minutes.
 7. **Review.** Independent reviewers per lens (drain and sleep; Silkscreen behaviour kept through the
    conflicts; upstream intent kept; other boards unchanged; docs), then a skeptic who tries to refute each
    finding, then a fix pass for the confirmed ones and a rebuild. Every round so far has found real defects.
@@ -101,4 +104,11 @@ Pins:
   file and re-apply the edits by hand, then read the full-context diff.
 - Read the diff with context (`git diff -U5`) before every commit, and build every target the change touches.
 - Upstream commits sometimes need the SDK first: `5b1f0605` needed Free-Ink `bbd528c`. Do step 1 before step 2.
+- On Windows, stopping a shell or ending an agent can leave its `pio` children running, and a later build in the same
+  checkout then fails on missing `.pio/build` paths. Before a build, check nothing is left
+  (`tasklist //FI "IMAGENAME eq pio.exe"`; `build_matrix.sh` does this), and end leftovers with `taskkill /PID <pid> /T /F`.
+- Never run `pio check` or any other `pio` command next to a build: on 2026-10-02 that broke PlatformIO's package
+  install (esptool, urllib3 and charset-normalizer had to be restored).
+- A file appended to with `>>` must end in a newline first: CrossInk's `.gitattributes` did not, and the new rule was
+  glued onto its last line.
 - Commit messages carry no AI co-author or "generated with" trailer (AGENTS.md rule 4).
