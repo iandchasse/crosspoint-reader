@@ -46,8 +46,8 @@ class MappedInputManager {
   // current action remains available for immediate Home cancellation.
   void update(bool deferHomeButtonAction = false) const;
 #if FREEINK_CAP_TOUCH
-  // X4 Pro delays a single power click until its frontlight double-click window
-  // expires. The main loop supplies that one-frame event here.
+  // The double-click boards (X4 Pro, Silkscreen) delay a single power click until the
+  // frontlight double-click window expires. The main loop supplies that one-frame event here.
   void setPowerConfirmClickFrame(const bool clicked) { powerConfirmClickFrame = clicked; }
 #endif
   bool wasPressed(Button button) const;

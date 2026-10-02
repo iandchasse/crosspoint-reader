@@ -146,7 +146,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   };
 
   // Short power button press actions. PWR_CONFIRM is only offered on touch
-  // boards (see SettingsList.h).
+  // boards, and TOGGLE_FRONTLIGHT on Silkscreen with a front light
+  // (keyFrontlightAvailable() in SettingsList.h); it replaces the power double-click,
+  // which it would undo.
   enum SHORT_PWRBTN {
     IGNORE = 0,
     SLEEP = 1,
@@ -154,19 +156,21 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     FORCE_REFRESH = 3,
     FOOTNOTES = 4,
     PWR_CONFIRM = 5,
+    TOGGLE_FRONTLIGHT = 6,
     SHORT_PWRBTN_COUNT
   };
 
-  // Long-press Confirm action while reading an EPUB. The setting cycles through these values.
-  // Persisted in settings.json by index: any new function (e.g. dictionary, bookmark) MUST use a
-  // value >= 2 and be appended at the END of the enumValues array in SettingsList.h, otherwise the
-  // stored indices shift and existing saves are silently misinterpreted.
+  // Long-press Confirm action while reading an EPUB. Persisted in settings.json by value:
+  // new functions are appended here and never renumbered. A board offers a subset
+  // (longPressMenuValues() in SettingsList.h), so the setting maps its list positions to these
+  // values: READER_MENU only with a Home key, FRONTLIGHT_PANEL only with a light and no Home key.
   enum LONG_PRESS_MENU_FUNCTION {
     LP_MENU_KOSYNC = 0,
     LP_MENU_DISABLED = 1,
     LP_MENU_BOOKMARK = 2,
     LP_MENU_DICTIONARY = 3,
     LP_MENU_READER_MENU = 4,
+    LP_MENU_FRONTLIGHT_PANEL = 5,
     LONG_PRESS_MENU_FUNCTION_COUNT
   };
 
@@ -266,9 +270,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t textAntiAliasing = 1;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
-  // X4 Pro: double-click power toggles the frontlight. Disabling frees the
+  // X4 Pro and Silkscreen: double-click power toggles the frontlight. Disabling frees the
   // power button for shortPwrBtn actions without the double-click wait.
   uint8_t doubleClickPwrLight = 1;
+  // The board has the power double-click for the front light (X4 Pro, Silkscreen).
+  static bool boardHasPowerDoubleClickLight();
+  // The double-click is live: such a board, the setting on, and Short Power not already
+  // toggling the light with a single press (a double-click would then toggle it twice).
+  bool powerDoubleClickLight() const;
   uint8_t homeButtonTapAction = static_cast<uint8_t>(HomeButtonAction::Home);
   uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
   uint8_t homeButtonLongPressAction = static_cast<uint8_t>(HomeButtonAction::ReaderMenu);

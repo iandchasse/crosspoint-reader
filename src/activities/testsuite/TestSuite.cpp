@@ -36,6 +36,9 @@ void pinSettings() {
   // A power-button click does nothing and a hold longer than 400 ms sleeps, so
   // every sleep entry leaves the hold-to-wake rule.
   s.shortPwrBtn = CrossPointSettings::IGNORE;
+  // No power double-click: it would light the boost with no load confirmed, and it
+  // swallows the second release of a quick POWER pair (T3 counts every one).
+  s.doubleClickPwrLight = 0;
   // The light stays off until a front-light test has the load confirmed.
   s.frontlightOn = 0;
   s.frontlightRestoreOnWake = 0;

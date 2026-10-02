@@ -46,6 +46,7 @@
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/settings/TextSettingsActivity.h"
+#include "activities/util/FrontlightPanelActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/BookmarkUtil.h"
@@ -587,6 +588,14 @@ void EpubReaderActivity::loop() {
       case CrossPointSettings::LP_MENU_DICTIONARY:
         openDictionaryWordSelect();
         return;
+      case CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL:
+        // The panel saves its own changes on the way out.
+        if (auto panel = makeUniqueNoThrow<FrontlightPanelActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(panel), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("ERS", "OOM: FrontlightPanelActivity");
+        }
+        return;
       case CrossPointSettings::LP_MENU_READER_MENU:
       case CrossPointSettings::LP_MENU_DISABLED:
       default:
@@ -985,6 +994,8 @@ unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
       return ReaderUtils::BOOKMARK_HOLD_MS;
     case CrossPointSettings::LP_MENU_KOSYNC:
       return KOREADER_STORE.hasCredentials() ? ReaderUtils::GO_HOME_MS : 0;
+    case CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL:
+      return Frontlight.present() ? ReaderUtils::BOOKMARK_HOLD_MS : 0;
     case CrossPointSettings::LP_MENU_READER_MENU:
     case CrossPointSettings::LP_MENU_DISABLED:
     default:

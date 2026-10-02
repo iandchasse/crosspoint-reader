@@ -78,7 +78,12 @@ void SettingsActivity::rebuildSettingsLists() {
       if (setting.inTextSettings) continue;
       readerSettings.push_back(setting);
     } else if (setting.category == StrId::STR_CAT_CONTROLS) {
-      if (BoardConfig::hasHomeKey() && setting.valuePtr == &CrossPointSettings::longPressMenuFunction) continue;
+      if (BoardConfig::hasHomeKey() && setting.nameId == StrId::STR_LONG_PRESS_MENU) continue;
+      // A single press toggles the light then, so the double-click is off.
+      if (setting.valuePtr == &CrossPointSettings::doubleClickPwrLight &&
+          SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::TOGGLE_FRONTLIGHT) {
+        continue;
+      }
       if (setting.valuePtr == &CrossPointSettings::pwrBtnFootnoteBack &&
           SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::FOOTNOTES) {
         continue;

@@ -244,6 +244,7 @@ void FrontlightPanelActivity::noteSwitchOnResult() {
   if (Frontlight.takeNoLightNotice()) {
     noLightNote = true;
     lightOn = false;
+    lightOnChanged = true;  // onExit() saves the light as off, as main.cpp would
   } else if (Frontlight.isOn()) {
     noLightNote = false;
   }
@@ -254,12 +255,21 @@ void FrontlightPanelActivity::noteSwitchOnResult() {
 }
 
 void FrontlightPanelActivity::syncLightState() {
+  // A switch-on started elsewhere while the panel is open (the power-button toggle):
+  // the panel owns its notice (showsFrontlightNotice()), so it takes the result here.
+  if (!awaitingSwitchOnResult && Frontlight.switchOnPending()) {
+    awaitingSwitchOnResult = true;
+    lightOn = true;
+    requestUpdate();
+  }
   if (awaitingSwitchOnResult) {
     if (!Frontlight.switchOnPending()) noteSwitchOnResult();
     return;
   }
-  if (lightOn && !Frontlight.isOn()) {
-    lightOn = false;
+  // Follow the live light both ways: a trip turns it off, and the power-button
+  // toggle can switch it either way while the panel is open.
+  if (lightOn != Frontlight.isOn()) {
+    lightOn = Frontlight.isOn();
     requestUpdate();
   }
 }

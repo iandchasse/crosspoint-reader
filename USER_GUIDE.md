@@ -77,6 +77,7 @@ The X4 Pro has a built-in frontlight with adjustable brightness and warmth. It i
 
 * **Open the frontlight panel:** Swipe down from the top edge of the screen, from almost any screen (Home, Browse Files, Reading Mode, etc.). Drag the brightness and warmth sliders to adjust the light live, or tap the sun icon to turn it on or off.
 * **Quick toggle:** Double-click the **Power** button to turn the frontlight on or off instantly, without opening the panel.
+* **Silkscreen:** double-click **Power** to toggle the light, as on the X4 Pro. Settings > Display > Frontlight opens the panel (Left/Right brightness, Up/Down warmth, Confirm on/off). Set **Short Power Button** to *Toggle Frontlight* for a one-press toggle (the double-click is then off), or **Long-press Confirm** to *Frontlight* to open the panel from a book page.
 
 > [!NOTE]
 > Frontlight brightness and warmth are intentionally not listed in **[Display Settings](#361-display)** — the swipe panel is the only place to adjust them. The on/off state can also be toggled with the Power-button double-click above.
@@ -315,6 +316,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "KOSync" - Hold Confirm (~1 second) to launch KOReader sync directly.
   - "Dictionary" - Hold Confirm (~0.4 second) to start dictionary word selection on the current page (see [docs/dictionary.md](docs/dictionary.md)).
   - "Disabled" - Long-press is ignored; only short-press opens the reader menu.
+  - "Frontlight" (Silkscreen) - Hold Confirm (~0.4 second) to open the frontlight panel.
 
 - **Short Power Button Click**: Controls the effect of a short click of the power button:
   
@@ -323,6 +325,8 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Page Turn" - A short press in reading mode turns to the next page; a long press turns the device off
   - "Links and footnotes" - A short press in reading mode opens link selection. If the page has only one link, it opens directly. After following a link, a short press returns to the previous location.
   - "Refresh" - A short press triggers a manual full-screen refresh, useful for clearing ghosting
+  - "Toggle Frontlight" (Silkscreen) - A short press turns the frontlight on or off; a long press turns the device off
+- **Double-Click Power for Light** (X4 Pro, Silkscreen): Double-clicking the power button turns the frontlight on or off. While it is on, "Sleep" and "Confirm" above wait about half a second for a possible second click. Hidden while the short click is "Toggle Frontlight", which already toggles the light.
 - **Quick return from links**: Controls whether a short press of the power button acts as Back after following a link or footnote.
 
 #### 3.6.4 System

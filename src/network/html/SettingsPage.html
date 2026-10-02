@@ -501,6 +501,11 @@
         pwrBtnFootnoteBackRow.style.display = 'none';
       }
     }
+    // Toggle Frontlight (6) toggles on a single press, so the double-click is off.
+    const doubleClickRow = document.getElementById('row-setting-doubleClickPwrLight');
+    if (doubleClickRow) {
+      doubleClickRow.style.display = shortPwrBtnVal === 6 ? 'none' : '';
+    }
   }
 
   function handleSettingChanged(key) {

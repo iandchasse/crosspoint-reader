@@ -62,6 +62,19 @@ uint8_t CrossPointSettings::sleepTimeoutEnumToMinutes(const uint8_t legacyValue)
   }
 }
 
+bool CrossPointSettings::boardHasPowerDoubleClickLight() {
+#if FREEINK_CAP_FRONTLIGHT
+  // Silkscreen only when its build has the light (frontlight_flags may drop it).
+  return BoardConfig::isX4Pro() || (BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight());
+#else
+  return BoardConfig::isX4Pro();
+#endif
+}
+
+bool CrossPointSettings::powerDoubleClickLight() const {
+  return doubleClickPwrLight && shortPwrBtn != TOGGLE_FRONTLIGHT && boardHasPowerDoubleClickLight();
+}
+
 void CrossPointSettings::toJson(JsonDocument& doc) const {
   const CrossPointSettings& s = *this;
 
@@ -93,6 +106,9 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   // option lists depend on the SD font registry), so the generic loop skips them.
   doc["fontFamily"] = fontFamily;
   doc["fontSize"] = fontPointSize;
+  // Long-press Confirm — a dynamic getter/setter in SettingsList (its list positions map
+  // to LONG_PRESS_MENU_FUNCTION values), so the generic loop skips it.
+  doc["longPressMenuFunction"] = longPressMenuFunction;
   // SD card font family name — not in SettingsList, save manually
   if (sdFontFamilyName[0] != '\0') {
     doc["sdFontFamilyName"] = sdFontFamilyName;
@@ -230,6 +246,10 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   // Font family — uses dynamic getter/setter in SettingsList so the generic loop skips it.
   const uint8_t storedFontFamily = doc["fontFamily"] | (uint8_t)0;
   fontFamily = clamp(storedFontFamily, BUILTIN_FONT_COUNT, 0);
+  // Long-press Confirm — saved by value (toJson); one this board does not offer falls back
+  // to the default, Disabled.
+  const uint8_t storedLongPress = doc["longPressMenuFunction"] | static_cast<uint8_t>(LP_MENU_DISABLED);
+  longPressMenuFunction = longPressMenuValueOffered(storedLongPress) ? storedLongPress : LP_MENU_DISABLED;
   if (BoardConfig::hasHomeKey() && doc["homeButtonLongPressAction"].isNull() &&
       !doc["longPressMenuFunction"].isNull()) {
     static constexpr HomeButtonAction LEGACY[] = {HomeButtonAction::Sync, HomeButtonAction::Ignore,

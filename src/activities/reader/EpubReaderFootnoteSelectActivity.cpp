@@ -1,5 +1,6 @@
 #include "EpubReaderFootnoteSelectActivity.h"
 
+#include <BoardConfig.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 
@@ -60,8 +61,16 @@ void EpubReaderFootnoteSelectActivity::loop() {
     return;
   }
 
+  // Power confirms too, unless it is the light's toggle (Short Power: Toggle Frontlight),
+  // or Silkscreen's power double-click defers its Sleep or Confirm by 500 ms: that click
+  // then acts later, so jumping on its release would act twice.
+  const auto pwr = SETTINGS.shortPwrBtn;
+  const bool powerDeferred = BoardConfig::isSilkscreen() && SETTINGS.powerDoubleClickLight() &&
+                             (pwr == CrossPointSettings::SHORT_PWRBTN::SLEEP ||
+                              (pwr == CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM && mappedInput.hasTouch()));
+  const bool powerConfirms = pwr != CrossPointSettings::SHORT_PWRBTN::TOGGLE_FRONTLIGHT && !powerDeferred;
   if ((mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
-       mappedInput.wasReleased(MappedInputManager::Button::Power)) &&
+       (powerConfirms && mappedInput.wasReleased(MappedInputManager::Button::Power))) &&
       !footnoteLinks.empty()) {
     performJump();
     return;

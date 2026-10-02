@@ -180,11 +180,85 @@ inline SettingInfo buildDictionarySetting(const std::vector<DictionaryEntry>& di
   return s;
 }
 
+// The key shortcuts for the front light (Short Power: Toggle Frontlight, Long-press
+// Confirm: Frontlight) are Silkscreen's, so every other board keeps its option lists.
+// Read from the board profile: the settings list is built before Frontlight.begin().
+inline bool keyFrontlightAvailable() {
+#if FREEINK_CAP_FRONTLIGHT
+  return BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight();
+#else
+  return false;
+#endif
+}
+
+// The long-press Confirm values this board offers, in list order. Reader Menu only with a
+// Home key; the front-light panel only with a light and no Home key (a Home-key board
+// reaches the light through its Home actions).
+struct LongPressMenuValues {
+  uint8_t value[5];
+  uint8_t count;
+};
+
+inline LongPressMenuValues longPressMenuValues() {
+  LongPressMenuValues v = {{CrossPointSettings::LP_MENU_KOSYNC, CrossPointSettings::LP_MENU_DISABLED,
+                            CrossPointSettings::LP_MENU_BOOKMARK, CrossPointSettings::LP_MENU_DICTIONARY},
+                           4};
+  if (BoardConfig::hasHomeKey()) {
+    v.value[v.count++] = CrossPointSettings::LP_MENU_READER_MENU;
+  } else if (keyFrontlightAvailable()) {
+    v.value[v.count++] = CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL;
+  }
+  return v;
+}
+
+inline bool longPressMenuValueOffered(const uint8_t value) {
+  const auto v = longPressMenuValues();
+  return std::find(v.value, v.value + v.count, value) != v.value + v.count;
+}
+
 inline std::vector<StrId> buildLongPressMenuValues() {
-  static constexpr StrId VALUES[] = {StrId::STR_KOSYNC, StrId::STR_DISABLED, StrId::STR_BOOKMARK_OPTION,
-                                     StrId::STR_DICTIONARY, StrId::STR_READER_MENU};
-  const size_t count = BoardConfig::hasHomeKey() ? std::size(VALUES) : std::size(VALUES) - 1;
-  return {VALUES, VALUES + count};
+  const auto v = longPressMenuValues();
+  std::vector<StrId> labels;
+  labels.reserve(v.count);
+  for (uint8_t i = 0; i < v.count; ++i) {
+    switch (v.value[i]) {
+      case CrossPointSettings::LP_MENU_KOSYNC:
+        labels.push_back(StrId::STR_KOSYNC);
+        break;
+      case CrossPointSettings::LP_MENU_BOOKMARK:
+        labels.push_back(StrId::STR_BOOKMARK_OPTION);
+        break;
+      case CrossPointSettings::LP_MENU_DICTIONARY:
+        labels.push_back(StrId::STR_DICTIONARY);
+        break;
+      case CrossPointSettings::LP_MENU_READER_MENU:
+        labels.push_back(StrId::STR_READER_MENU);
+        break;
+      case CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL:
+        labels.push_back(StrId::STR_FRONTLIGHT);
+        break;
+      case CrossPointSettings::LP_MENU_DISABLED:
+      default:
+        labels.push_back(StrId::STR_DISABLED);
+        break;
+    }
+  }
+  return labels;
+}
+
+// Short power button labels, indexed by SHORT_PWRBTN value. TOGGLE_FRONTLIGHT (6) follows
+// PWR_CONFIRM (5), so only touch builds, which list Confirm, can offer it (Silkscreen:
+// keyFrontlightAvailable()). Choosing it turns the power double-click off
+// (CrossPointSettings::powerDoubleClickLight()), which would otherwise toggle twice.
+inline std::vector<StrId> buildShortPwrBtnValues() {
+#if FREEINK_CAP_TOUCH
+  std::vector<StrId> labels = {StrId::STR_IGNORE,        StrId::STR_SLEEP,     StrId::STR_PAGE_TURN,
+                               StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES, StrId::STR_CONFIRM};
+  if (keyFrontlightAvailable()) labels.push_back(StrId::STR_TOGGLE_FRONTLIGHT);
+  return labels;
+#else
+  return {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES};
+#endif
 }
 
 inline std::vector<StrId> homeThemeValues() {
@@ -344,22 +418,28 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           {StrId::STR_LONG_PRESS_BEHAVIOR_OFF, StrId::STR_LONG_PRESS_BEHAVIOR_SKIP,
                            StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
-        SettingInfo::Enum(StrId::STR_LONG_PRESS_MENU, &CrossPointSettings::longPressMenuFunction,
-                          buildLongPressMenuValues(), "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
-        // Erased below unless the board is an X4 Pro.
+        // List positions map to LONG_PRESS_MENU_FUNCTION values (longPressMenuValues()), so
+        // CrossPointSettings saves and loads this one itself.
+        SettingInfo::DynamicEnum(
+            StrId::STR_LONG_PRESS_MENU, buildLongPressMenuValues(),
+            [] {
+              const auto v = longPressMenuValues();
+              const auto* it = std::find(v.value, v.value + v.count, SETTINGS.longPressMenuFunction);
+              if (it == v.value + v.count) {
+                it = std::find(v.value, v.value + v.count, static_cast<uint8_t>(CrossPointSettings::LP_MENU_DISABLED));
+              }
+              return static_cast<uint8_t>(it - v.value);
+            },
+            [](const uint8_t index) {
+              const auto v = longPressMenuValues();
+              if (index < v.count) SETTINGS.longPressMenuFunction = v.value[index];
+            },
+            "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
+        // Erased below unless the board has the power double-click (X4 Pro, Silkscreen).
         SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
                             "doubleClickPwrLight", StrId::STR_CAT_CONTROLS),
-#if FREEINK_CAP_TOUCH
-        SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
-                          {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH,
-                           StrId::STR_FOOTNOTES, StrId::STR_CONFIRM},
+        SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn, buildShortPwrBtnValues(),
                           "shortPwrBtn", StrId::STR_CAT_CONTROLS),
-#else
-        SettingInfo::Enum(
-            StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn,
-            {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES},
-            "shortPwrBtn", StrId::STR_CAT_CONTROLS),
-#endif
         // Erased below unless the QMI8658 IMU is present (X3).
         SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
                           {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED}, "tiltPageTurn",
@@ -497,8 +577,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     const auto eraseEntry = [&v](const StrId nameId) {
       v.erase(std::find_if(v.begin(), v.end(), [nameId](const SettingInfo& s) { return s.nameId == nameId; }));
     };
-    // Double-click power frontlight shortcut only exists on the X4 Pro.
-    if (!BoardConfig::isX4Pro()) eraseEntry(StrId::STR_DBL_CLICK_PWR_LIGHT);
+    // Double-click power frontlight shortcut: X4 Pro and Silkscreen.
+    if (!CrossPointSettings::boardHasPowerDoubleClickLight()) eraseEntry(StrId::STR_DBL_CLICK_PWR_LIGHT);
     // Tilt page turn needs the QMI8658 IMU (X3).
     if (!halTiltSensor.isAvailable()) eraseEntry(StrId::STR_TILT_PAGE_TURN);
     return v;
