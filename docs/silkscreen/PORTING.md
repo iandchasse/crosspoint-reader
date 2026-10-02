@@ -3,7 +3,7 @@
 This branch (`silkscreen`) ports CrossPoint Reader to **Silkscreen**, an open-hardware ESP32-S3 e-paper reader base board and the successor of de-link. The hardware is described in `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)). The firmware-facing facts taken from it, with verification notes, are in [REQUIREMENTS.md](REQUIREMENTS.md). The sleep-current budget, the pin states in sleep and the battery-drain rules, with where each is implemented, are in [POWER.md](POWER.md). How the firmware handles the board's variants is in [MODULARITY.md](MODULARITY.md): the panel family is a build env, parts it can read are probed at boot, the front light is detected when the user switches it on, and the rest needs nothing.
 
 - **Base:** CrossPoint `develop` at `d1509d07`, with freeink-sdk at its pinned `87c4493`. The SDK work is on the submodule's `silkscreen` branch.
-  - Upstream `develop` is merged in up to its tip on 2026-10-01, `664528b2`. The SDK `silkscreen` branch merges freeink-sdk `2339226`, the commit that tip pins (merge `7384790`), and the parent's pointer is that merge. What the merges changed for Silkscreen, and how to take the next one, is under [Upstream merges](#upstream-merges).
+  - Upstream `develop` is merged in up to its tip on 2026-10-02, `5b1f0605` (merge `ad1b5ce8`). The SDK `silkscreen` branch merges freeink-sdk `bbd528c`, the commit that tip pins (merge `3d1c39a`), and the parent's pointer is that merge. What the merges changed for Silkscreen, and how to take the next one, is under [Upstream merges](#upstream-merges).
 - **Earlier attempt:** the first port (Sep 20-21, 2026) is archived in `EPD_Hub_ESP32/silkscreen-firmware-archive/` as git bundles plus `.patch` files. It is a reference only. Its pin map was right, but several behaviours contradict the hardware spec. They are listed under [What this port does differently](#what-this-port-does-differently).
 
 ## Status
@@ -54,7 +54,7 @@ Behaviour 4, a `P+` trend check for a `USB_STAT` ladder that the unpowered charg
 - a lower idle clock ([POWER.md §5](POWER.md#5-the-awake-idle-tail));
 - a board tag per panel family and an OTA source in the fork, both needed before any release channel exists ([MODULARITY.md, Future work](MODULARITY.md#future-work));
 - the `P+` trend check for a clamped `USB_STAT` ladder (POWER.md HW-08), a contingency only if T2 stage 1 fails `hw08_clamp` on real boards;
-- a run of the host tests since the [upstream merges](#upstream-merges). The port's host has no C++ compiler, so the SDK suites were only compiled, with the xtensa g++: InputManager `run.sh` and `run_metalio.sh`, HapticManager, Imu, AudioManager, BatteryMonitor, both XteinkDetect suites, BoardConfig `test_probe_checks` and FrontlightManager `test_load_policy`. Upstream's `test/plugin_manifest_classification`, `test/reader_session` and `test/test_trusted_time.py` were not run at all;
+- a run of the host tests since the [upstream merges](#upstream-merges). The port's host has no C++ compiler, so the SDK suites were only compiled, with the xtensa g++: InputManager `run.sh` and `run_metalio.sh`, HapticManager, Imu, AudioManager, BatteryMonitor, both XteinkDetect suites, BoardConfig `test_probe_checks` and FrontlightManager `test_load_policy`. Upstream's `test/plugin_manifest_classification`, `test/protected_paths`, `test/reader_session` and `test/test_trusted_time.py` were not run at all;
 - the items listed under "Deferred until measured on hardware" in the [commit plan](#commit-plan).
 
 ## Architecture: Silkscreen is data
@@ -188,6 +188,7 @@ The branch takes upstream by merge, never by rebase: older parent commits pin SD
 | `63f7edf6` | `707625a4` | No SDK merge; upstream still pinned `87c4493` | Paragraph indentation, a second 512-byte SdFat sector cache kept for the FAT, dead code removed. `.gitattributes` keeps `scripts/sdfat_patches/*.patch` LF, so `patch_sdfat.py` still applies them on a Windows checkout with `core.autocrlf`. |
 | `a5e8fb00` | `e2dfdeaf` | `7384790`, merging `2339226` | The SD-card plugin system, reopen on the viewed page after a link, X3 USB detection through `BatteryMonitor`. From the SDK: Metalio E-Ink 4, the BLE keyboard host, compact and DE/FR keyboard layouts, same-origin `ResumableFetch`, relative URLs in `XmlListParser`, and a fixed-array ZIP index in content protection. |
 | `70004a64` | `664528b2` | Unchanged | The "Links and footnotes" label. |
+| `ad1b5ce8` | `5b1f0605` | `3d1c39a`, merging `bbd528c` | Per-book content keys and plugin isolation (#3824). A `<book>.key` sidecar, wrapped with a key derived from a per-device secret in NVS and checked for expiry when the book opens, written by a plugin through `POST /api/book-key`: 57 bytes, staged to `<book>.key.tmp` and swapped in with `replaceFile`. The credential-store guard (`ProtectedPaths.h`), and a per-plugin `deviceId` in place of the factory MAC (`HalGPIO::getFactoryMac()` dropped). From the SDK: `ProtectedBook::setContentKey()` in place of the credential and rights parsing, and OPDS feed pagination and inline metadata (parsing only). |
 
 What the merges changed for Silkscreen:
 
