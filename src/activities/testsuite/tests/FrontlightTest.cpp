@@ -704,7 +704,8 @@ class FrontlightTest final : public TestScreen {
            light::loadToken(probe.record.load), light::stringToken(probe.record.cool),
            light::stringToken(probe.record.warm), static_cast<unsigned>(probe.trips - probeTripsAtOpen),
            static_cast<unsigned>(probe.lastPeakLedMv), static_cast<unsigned>(dark.pinMv), cool, warmSteps,
-           colourMeasured(MIX) ? mixSteps : "n/a", static_cast<unsigned>(maxLitLedMv), static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
+           colourMeasured(MIX) ? mixSteps : "n/a", static_cast<unsigned>(maxLitLedMv),
+           static_cast<unsigned>(afterOff.pinMv), static_cast<unsigned>(trips),
            static_cast<unsigned>(monitor.skippedSamples), vf, dvf, answer >= 0 ? SEEN_CODES[answer] : "not_lit",
            options::cutDown() ? "n/a" : "ok", fails[0] != '\0' ? fails : "none");
   }
@@ -730,8 +731,7 @@ class FrontlightTest final : public TestScreen {
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     page.row("Load", !loadKnown ? "not named yet" : load == LightLoad::J3Panel ? "J3 panel light" : "J6 LED strip");
     if (options::cutDown()) page.row("J6 LED strip", "N/A: cut-down board (OPT)");
-    page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off",
-              COLOUR_NAMES[lit ? litColour() : colour],
+    page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off", COLOUR_NAMES[lit ? litColour() : colour],
               static_cast<unsigned>(STEPS[step]), static_cast<unsigned>(STEPS[step]) * 255U / 100U);
     const auto& probe = probeNow;
     page.rowf("Switch-on probe found", "load %s; cool %s, warm %s", light::loadToken(probe.record.load),
@@ -876,7 +876,7 @@ class FrontlightTest final : public TestScreen {
   light::Reading afterOff;
   FrontlightManager::MonitorDiagnostics monitorNow;  // the SDK record as of the last repaint request
   FrontlightManager::ProbeDiagnostics probeNow;      // the load-probe record, likewise
-  uint32_t table[3][STEP_COUNT] = {};  // [cool, warm, mix][step]: pin mV after settling, 0 = not measured
+  uint32_t table[3][STEP_COUNT] = {};                // [cool, warm, mix][step]: pin mV after settling, 0 = not measured
   light::PadState adim;
   light::PadState colorSel;
   light::PadState monit;
