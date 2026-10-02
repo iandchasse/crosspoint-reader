@@ -74,7 +74,6 @@ class HalGPIO {
   void begin(bool deferTouch = false);
   // Probe and start the touch panel after begin(true). No-op once started.
   void startTouch();
-  bool getFactoryMac(char (&address)[18]) const;
 
   // Button input methods
   void update();
