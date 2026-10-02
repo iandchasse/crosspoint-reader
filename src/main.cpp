@@ -1161,6 +1161,74 @@ void loop() {
     }
   }
 
+  // Battery awake limits (BoardConfig::powerPolicy(); every value is 0 on boards
+  // without one). They run before anything below can return early (the wake
+  // release, the screenshot chord, the double-click), so a held key cannot keep
+  // the device awake on battery. They count from HalPowerManager's input and
+  // client-traffic clocks, not lastActivityTime, which a screen holding
+  // auto-sleep off resets on every pass. Each applies on battery only.
+  const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+
+  // Low-battery cutoff (PowerConfig::lowBatteryCutoffMv), at most one reading a
+  // second. The divider reads low under the radio's load, so with Wi-Fi on the
+  // reading is allowed PowerConfig::cutoffRadioAllowanceMv below the cutoff.
+  // BatteryMonitor needs several consecutive readings at or below it and never
+  // fires while external power carries the load. A blocking transfer checks the
+  // same latch from its callbacks and aborts, so this pass sleeps.
+  if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
+    enterDeepSleep();
+    return;
+  }
+
+  // Battery awake ceiling (PowerConfig::awakeCeilingMin). On battery, a screen
+  // that holds auto-sleep off (network, keyboard, update), a Never timeout or a
+  // held key still ends once nothing has pressed a key or talked to the web
+  // server for this long. The ceiling is never shorter than the user's timeout
+  // (HalPowerManager::awakeCeilingMs()), so Never gets the profile's minutes.
+  // enterDeepSleep() drops Wi-Fi. Where the user's timeout is reached later this
+  // pass (one is set, no screen holds auto-sleep off and no key is held), that
+  // timeout governs alone.
+  if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
+    bool keyHeld = false;
+    for (uint8_t button = HalGPIO::BTN_BACK; button <= HalGPIO::BTN_POWER; ++button) {
+      if (gpio.isPressed(button)) keyHeld = true;
+    }
+    const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep() && !keyHeld;
+    if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
+      LOG_INF("SLP", "No input or client traffic for %lu min on battery; sleeping",
+              HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
+      enterDeepSleep(true);
+      return;
+    }
+  }
+
+  // Input-only cap on battery (PowerConfig::awakeInputCapMin): client traffic
+  // cannot extend it, since a desktop that keeps a WebDAV share mounted polls
+  // without anyone at the device.
+  if (powerManager.awakeInputCapPassed()) {
+    LOG_INF("SLP", "No input for %u min on battery; sleeping", BoardConfig::powerPolicy().awakeInputCapMin);
+    enterDeepSleep(true);
+    return;
+  }
+
+  // A power-button wake that gets no input (a press in a pocket that passed the
+  // hold check) sleeps again on battery (PowerConfig::wakeNoInputTimeoutS).
+  if (const unsigned long wakeMs = BoardConfig::powerPolicy().wakeNoInputTimeoutS * 1000UL;
+      wakeNoInputArmed && wakeMs > 0 && powerManager.msSinceInput() >= wakeMs && !activityManager.preventAutoSleep() &&
+      !gpio.isUsbConnected()) {
+    LOG_INF("SLP", "No input for %lu s after the wake on battery; sleeping", wakeMs / 1000UL);
+    enterDeepSleep(true, /*unattended=*/true);
+    return;
+  }
+
+  // Nothing can be done on the SD-card error screen (PowerConfig::storageErrorSleepS).
+  if (const unsigned long errorMs = BoardConfig::powerPolicy().storageErrorSleepS * 1000UL;
+      storageErrorScreen && errorMs > 0 && powerManager.msSinceInput() >= errorMs && !gpio.isUsbConnected()) {
+    LOG_INF("SLP", "SD card error screen idle for %lu s on battery; sleeping", errorMs / 1000UL);
+    enterDeepSleep(true);
+    return;
+  }
+
   // Let wake continue as soon as its hold has been verified. The release can
   // arrive after setup, so consume that one input frame rather than making it
   // a page turn, refresh, or other short power-button action.
@@ -1169,6 +1237,12 @@ void loop() {
     return;
   }
 
+  // The chord returns below skip the idle wait at the end of loop(). On boards
+  // with a battery policy, pause while the keys stay down so a held chord does
+  // not spin the core at full clock (the awake limits above still end it).
+  const auto pauseWhileChordHeld = [] {
+    if (BoardConfig::powerPolicy().awakeCeilingMin > 0) delay(10);
+  };
   static bool screenshotButtonsReleased = true;
   static bool screenshotComboActive = false;
   if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.isPressed(HalGPIO::BTN_DOWN)) {
@@ -1180,10 +1254,14 @@ void loop() {
         ScreenshotUtil::takeScreenshot(renderer);
       }
     }
+    pauseWhileChordHeld();
     return;
   }
   if (screenshotComboActive) {
-    if (gpio.isPressed(HalGPIO::BTN_POWER)) return;
+    if (gpio.isPressed(HalGPIO::BTN_POWER)) {
+      pauseWhileChordHeld();
+      return;
+    }
     if (gpio.wasReleased(HalGPIO::BTN_POWER)) {
       screenshotButtonsReleased = true;
       screenshotComboActive = false;
@@ -1239,67 +1317,10 @@ void loop() {
     return;
   }
 
-  const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
   if (sleepTimeoutMs > 0 && millis() - lastActivityTime >= sleepTimeoutMs) {
     LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
     enterDeepSleep(true);
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
-    return;
-  }
-
-  // Battery awake ceiling (PowerConfig::awakeCeilingMin; 0 on boards without
-  // one). On battery, a screen that holds auto-sleep off (network, keyboard,
-  // update) or a Never timeout still ends once nothing has pressed a key or
-  // talked to the web server for this long. The ceiling is never shorter than
-  // the user's timeout (HalPowerManager::awakeCeilingMs()), so Never gets the
-  // profile's minutes. enterDeepSleep() drops Wi-Fi. A timeout the user set
-  // still governs every other screen.
-  if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
-    const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep();
-    if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
-      LOG_INF("SLP", "No input or client traffic for %lu min on battery; sleeping",
-              HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
-      enterDeepSleep(true);
-      return;
-    }
-  }
-
-  // Input-only cap on battery (PowerConfig::awakeInputCapMin; 0 on boards
-  // without one): client traffic cannot extend it, since a desktop that keeps a
-  // WebDAV share mounted polls without anyone at the device.
-  if (powerManager.awakeInputCapPassed()) {
-    LOG_INF("SLP", "No input for %u min on battery; sleeping", BoardConfig::powerPolicy().awakeInputCapMin);
-    enterDeepSleep(true);
-    return;
-  }
-
-  // A power-button wake that gets no input (a press in a pocket that passed the
-  // hold check) sleeps again on battery (PowerConfig::wakeNoInputTimeoutS).
-  if (const unsigned long wakeMs = BoardConfig::powerPolicy().wakeNoInputTimeoutS * 1000UL;
-      wakeNoInputArmed && wakeMs > 0 && powerManager.msSinceInput() >= wakeMs && !activityManager.preventAutoSleep() &&
-      !gpio.isUsbConnected()) {
-    LOG_INF("SLP", "No input for %lu s after the wake on battery; sleeping", wakeMs / 1000UL);
-    enterDeepSleep(true, /*unattended=*/true);
-    return;
-  }
-
-  // Nothing can be done on the SD-card error screen (PowerConfig::storageErrorSleepS).
-  if (const unsigned long errorMs = BoardConfig::powerPolicy().storageErrorSleepS * 1000UL;
-      storageErrorScreen && errorMs > 0 && powerManager.msSinceInput() >= errorMs && !gpio.isUsbConnected()) {
-    LOG_INF("SLP", "SD card error screen idle for %lu s on battery; sleeping", errorMs / 1000UL);
-    enterDeepSleep(true);
-    return;
-  }
-
-  // Low-battery cutoff (PowerConfig::lowBatteryCutoffMv; 0 on boards without
-  // one), at most one reading a second. The divider reads low under the radio's
-  // load, so with Wi-Fi on the reading is allowed
-  // PowerConfig::cutoffRadioAllowanceMv below the cutoff. BatteryMonitor needs
-  // several consecutive readings at or below it and never fires while external
-  // power carries the load. A blocking transfer checks the same latch from its
-  // callbacks and aborts, so this pass sleeps.
-  if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
-    enterDeepSleep();
     return;
   }
 
