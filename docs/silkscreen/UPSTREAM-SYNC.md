@@ -90,7 +90,9 @@ Pins:
    conflicts; upstream intent kept; other boards unchanged; docs), then a skeptic who tries to refute each
    finding, then a fix pass for the confirmed ones and a rebuild. Every round so far has found real defects.
 8. **Record.** A row in PORTING.md's "Upstream merges" table (parent merge, upstream commit, SDK merge, what it
-   brought for Silkscreen), and the same in CrossInk's PORTING.md. Then `upstream_status.sh` must print
+   brought for Silkscreen), and the same in CrossInk's PORTING.md. Write them after the fix pass: quote the sizes of
+   the final rebuild, list the review-fix commits, and move CrossInk's "last CrossPoint commit ported" marker and the
+   `git log` base in its "Keeping up with CrossPoint" to CrossPoint's head. Then `upstream_status.sh` must print
    `STATUS: current`.
 9. **Bench.** The user flashes (`pio run -e silkscreen -t upload`). Measure the sleep current (POWER.md MEAS-01)
    when a merge changed sleep, boot, `loop()` or network code.
