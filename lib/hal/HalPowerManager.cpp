@@ -280,6 +280,12 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
   }
   if (_batteryCachedPercent == 0) {
     _batteryCachedPercent = sampleTenths;
+  } else if (BoardConfig::isSilkscreen()) {
+    // The same one-tenth-of-the-gap average, rounded to nearest in both directions:
+    // the truncating form below stops up to 0.9% short of a rising target (a full cell
+    // would settle at 99%).
+    const int delta = sampleTenths - _batteryCachedPercent;
+    _batteryCachedPercent += (delta + (delta >= 0 ? 5 : -5)) / 10;
   } else {
     _batteryCachedPercent = (_batteryCachedPercent * 9 + sampleTenths) / 10;
   }
