@@ -261,13 +261,27 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     return _batteryCachedPercent;
   }
 
-  // smooth the battery %.
-  if (_batteryCachedPercent == 0) {
-    _batteryCachedPercent = 10 * battery.readPercentage();
+  // smooth the battery %, in tenths of a percent.
+  int sampleTenths;
+  if (BoardConfig::isSilkscreen()) {
+    // No fuel gauge: the percentage is read off the divider's voltage. 16 conversions
+    // averaged (a quarter of one reading's noise), then read linearly between the
+    // curve's 10% notches, so the figure moves in 1% steps instead of snapping to a
+    // notch. The step size is as fine as the hardware resolves (about 3 mV per percent
+    // in the 20-40% band, 8-14 mV above 80%); how accurate it is depends on the ADC's
+    // calibration and the load at that moment (a lit light or a busy CPU reads lower).
+    sampleTenths = BatteryMonitor::percentTenthsFromMillivolts(battery.readMillivoltsAveraged(16));
   } else {
-    _batteryCachedPercent = (_batteryCachedPercent * 9 + battery.readPercentage() * 10) / 10;
+    sampleTenths = battery.readPercentage() * 10;
   }
-  return _batteryCachedPercent / 10;
+  if (_batteryCachedPercent == 0) {
+    _batteryCachedPercent = sampleTenths;
+  } else {
+    _batteryCachedPercent = (_batteryCachedPercent * 9 + sampleTenths) / 10;
+  }
+  // Silkscreen rounds to the nearest percent, so a cell resting just under 4.20 V off
+  // the charger still reads 100%; the other boards floor, as before.
+  return BoardConfig::isSilkscreen() ? (_batteryCachedPercent + 5) / 10 : _batteryCachedPercent / 10;
 }
 
 HalPowerManager::Lock::Lock() {
