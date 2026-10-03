@@ -1271,6 +1271,12 @@ void loop() {
     screenshotComboActive = false;
   }
 
+  // A click already past its window is noted before the double-click handler below can
+  // re-arm lastPowerClickAt with this pass's own release (a second tap that lands in the
+  // first pass after the window): the first click is then still handed back.
+  const unsigned long armedClickAt = lastPowerClickAt;
+  const bool pendingClickExpired = armedClickAt != 0 && millis() - armedClickAt > POWER_DOUBLE_CLICK_MS;
+
   // Consume the second power-button release of a front-light double-click (X4 Pro,
   // Silkscreen) so it does not also run a configured short-power action.
   if (handlePowerDoubleClickLight()) {
@@ -1278,11 +1284,29 @@ void loop() {
   }
 
   const bool powerDoubleClickLight = SETTINGS.powerDoubleClickLight();
-  // Expire a click no deferral below will consume (every mode but the double-click's
-  // Sleep and Confirm), so a later switch to Sleep or Confirm cannot act on it.
-  if (lastPowerClickAt != 0 && millis() - lastPowerClickAt > POWER_DOUBLE_CLICK_MS &&
-      !(powerDoubleClickLight && (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ||
-                                  SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM))) {
+  const auto shortPwr = SETTINGS.shortPwrBtn;
+  const bool clickWindowPassed = lastPowerClickAt != 0 && millis() - lastPowerClickAt > POWER_DOUBLE_CLICK_MS;
+  // Silkscreen: with the double-click live, every other short-click action (Page Turn,
+  // Refresh, Footnotes, Ignore) also waits out the window. Acting on the first release
+  // made a double-click run that action, and when the action's refresh held the loop past
+  // the window, run it twice and never toggle the light. The click's release is hidden
+  // and handed back once the window passes with no second click. Sleep and, with a touch
+  // panel, Confirm keep their own deferrals below (the X4 Pro's, unchanged); without a
+  // panel Confirm has none, so it takes this one.
+  const bool deferClickActions = powerDoubleClickLight && BoardConfig::isSilkscreen() &&
+                                 shortPwr != CrossPointSettings::SHORT_PWRBTN::SLEEP &&
+                                 !(shortPwr == CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM && gpio.hasTouch());
+  if (deferClickActions) {
+    const bool clickReleased =
+        gpio.wasReleased(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() <= POWER_CLICK_MAX_HOLD_MS;
+    // This pass's own release re-armed the timer for the click it hides: keep that one armed.
+    if (pendingClickExpired && lastPowerClickAt == armedClickAt) lastPowerClickAt = 0;
+    mappedInputManager.setPowerClickDeferral(clickReleased, pendingClickExpired);
+  } else if (clickWindowPassed &&
+             !(powerDoubleClickLight && (shortPwr == CrossPointSettings::SHORT_PWRBTN::SLEEP ||
+                                         shortPwr == CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM))) {
+    // Expire a click no deferral below will consume, so a later switch to Sleep or
+    // Confirm cannot act on it.
     lastPowerClickAt = 0;
   }
 

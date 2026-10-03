@@ -16,6 +16,8 @@ namespace fui = freeink::ui;
 
 void MappedInputManager::update(const bool deferHomeButtonAction) const {
   gpio.update();
+  powerReleaseHidden = false;
+  powerClickFrame = false;
   homeAction = HomeButtonAction::Ignore;
   if (gpio.hasHomeKey()) {
     homeAction = homeButtonInput.update(millis(), gpio.wasHomeKeyTapped(), gpio.wasHomeKeyLongPressed(),
@@ -368,6 +370,10 @@ bool MappedInputManager::wasReleased(const Button button) const {
 #if FREEINK_CAP_TOUCH
   if (button == Button::Confirm && wasPowerConfirmClick()) return true;
 #endif
+  if (button == Button::Power) {
+    if (powerClickFrame) return true;  // a deferred single click, handed back once
+    if (powerReleaseHidden) return false;
+  }
   return mapButton(button, &HalGPIO::wasReleased);
 }
 

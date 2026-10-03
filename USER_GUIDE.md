@@ -326,7 +326,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Links and footnotes" - A short press in reading mode opens link selection. If the page has only one link, it opens directly. After following a link, a short press returns to the previous location.
   - "Refresh" - A short press triggers a manual full-screen refresh, useful for clearing ghosting
   - "Toggle Frontlight" (Silkscreen) - A short press turns the frontlight on or off; a long press turns the device off
-- **Double-Click Power for Light** (X4 Pro, Silkscreen): Double-clicking the power button turns the frontlight on or off. While it is on, "Sleep" and "Confirm" above wait about half a second for a possible second click. Hidden while the short click is "Toggle Frontlight", which already toggles the light.
+- **Double-Click Power for Light** (X4 Pro, Silkscreen): Double-clicking the power button turns the frontlight on or off. While it is on, a short click waits about half a second for a possible second click before it acts: on Silkscreen every short-click action does, on the X4 Pro "Sleep" and "Confirm". Turn it off for instant short clicks. Hidden while the short click is "Toggle Frontlight", which already toggles the light.
 - **Quick return from links**: Controls whether a short press of the power button acts as Back after following a link or footnote.
 
 #### 3.6.4 System

@@ -45,6 +45,14 @@ class MappedInputManager {
   // Home-key actions so the next main-loop pass can dispatch them, while the
   // current action remains available for immediate Home cancellation.
   void update(bool deferHomeButtonAction = false) const;
+  // Silkscreen's power double-click (CrossPointSettings::powerDoubleClickLight()): the main
+  // loop hides a click's Power release while the double-click window is open, and hands it
+  // back once, as one release, when the window passes with no second click. update()
+  // clears both every pass.
+  void setPowerClickDeferral(const bool hideRelease, const bool deliverClick) const {
+    powerReleaseHidden = hideRelease;
+    powerClickFrame = deliverClick;
+  }
 #if FREEINK_CAP_TOUCH
   // The double-click boards (X4 Pro, Silkscreen) delay a single power click until the
   // frontlight double-click window expires. The main loop supplies that one-frame event here.
@@ -158,6 +166,8 @@ class MappedInputManager {
   mutable unsigned long touchHeldOverrideAt = 0;
   mutable uint16_t longPressFiredButtons = 0;
   mutable uint16_t suppressedReleaseButtons = 0;
+  mutable bool powerReleaseHidden = false;  // setPowerClickDeferral()
+  mutable bool powerClickFrame = false;
 #if FREEINK_CAP_TOUCH
   bool powerConfirmClickFrame = false;
 #endif
