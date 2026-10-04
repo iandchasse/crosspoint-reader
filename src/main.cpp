@@ -48,6 +48,11 @@
 #if CROSSPOINT_TEST_SUITE
 #include "activities/testsuite/TestSuite.h"
 #endif
+#if SILKSCREEN_BATLOG
+#include <BatteryLog.h>
+
+#include "util/BatteryLogWriter.h"
+#endif
 
 #if CROSSPOINT_VECTOR_FONTS
 // Rendering (incl. FreeType TTF rasterization) runs on the Arduino loop task.
@@ -281,6 +286,9 @@ static bool deepSleepInProgress = false;
 // carry the live state across the reboot instead of re-deriving it from
 // settings. Cleared with the magic in setup().
 static void armSilentReboot(const uint32_t target) {
+#if SILKSCREEN_BATLOG
+  freeink::batterylog::carry();
+#endif
   silentRebootTarget = target;
   silentRebootPayload = Frontlight.isOn() ? SILENT_REBOOT_LIGHT_ON : 0;
   silentRebootMagic = SILENT_REBOOT_MAGIC;
@@ -460,9 +468,56 @@ static void deliverSleepPluginEvents(const bool unattended) {
 }
 #endif
 
+#if SILKSCREEN_BATLOG
+// The battery log's two reads of live state. Both only read: nothing here drives the light, a pin, the radio or the
+// card.
+//
+// What the sleep entry knows at the trigger, staged in RAM for the SDK's tail at the head of
+// PowerManager::deepSleep(). The path is the default one; a tagPath() call from the call site overrides it.
+static void stageBatteryLogEntry(const bool fromTimeout, const bool unattended) {
+  using freeink::batterylog::Path;
+  freeink::batterylog::Intent intent;
+  intent.path = unattended ? Path::Unattended : (fromTimeout ? Path::Auto : Path::Manual);
+  intent.usb = BatteryLogWriter::usbPresent();
+  intent.chg = BatteryLogWriter::chargeState();
+  intent.uiTenths = static_cast<uint16_t>(powerManager.batteryCachedTenths());
+  intent.idleMs = powerManager.msSinceInput();
+  intent.lightOn = Frontlight.isOn();
+  intent.radioOn = WiFi.getMode() != WIFI_MODE_NULL;
+  intent.settingsLoaded = settingsLoaded;  // not on the SD-error boot: SETTINGS then holds struct defaults
+  if (settingsLoaded) {
+    // cfg: bit 0 Restore Light on Wake, 1 the click-wake rule, 2 touch fitted, 3 front light present, 4 Fading Fix.
+    uint8_t cfg = 0;
+    if (SETTINGS.frontlightRestoreOnWake != 0) cfg |= 1U << 0;
+    if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) cfg |= 1U << 1;
+    if (BoardConfig::hasTouch()) cfg |= 1U << 2;
+    if (Frontlight.present()) cfg |= 1U << 3;
+    if (SETTINGS.fadingFix != 0) cfg |= 1U << 4;
+    intent.cfg = cfg;
+    const unsigned long timeoutMin = SETTINGS.getSleepTimeoutMs() / 60000UL;  // 0 for Never
+    intent.tmoMin = static_cast<uint8_t>(timeoutMin > 255UL ? 255UL : timeoutMin);
+  }
+  freeink::batterylog::beginEntry(intent);
+}
+
+// One loop pass of the session ledger.
+static void tickBatteryLog() {
+  freeink::batterylog::TickIn in;
+  in.lit = Frontlight.isOn();
+  in.litPct = Frontlight.brightness();
+  in.radioOn = WiFi.getMode() != WIFI_MODE_NULL;
+  in.fullClock = powerManager.atFullClock();
+  in.usb = gpio.isUsbConnected();
+  freeink::batterylog::tick(in);
+}
+#endif
+
 // Enter deep sleep mode. unattended: a power-button wake that got no input
 // (PowerConfig::wakeNoInputTimeoutS) is going back to sleep.
 void enterDeepSleep(bool fromTimeout = false, bool unattended = false) {
+#if SILKSCREEN_BATLOG
+  stageBatteryLogEntry(fromTimeout, unattended);
+#endif
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   handleFrontlightTrip();
   // An enable-gated front light goes dark now, not in sleepImpl(): the plugin
@@ -506,6 +561,10 @@ void enterDeepSleep(bool fromTimeout = false, bool unattended = false) {
     // A stale Quick Resume frame must not replace the selected sleep screen during wake.
     Storage.remove(SLEEP_FRAME_FILE);
   }
+#endif
+
+#if SILKSCREEN_BATLOG
+  BatteryLogWriter::flushAtEntry();  // a row the loop never flushed, with the card still mounted
 #endif
 
   // Tear down WiFi so the modem power domain isn't held alive across deep sleep.
@@ -718,6 +777,9 @@ void sleepIfBatteryEmptyAtBoot() {
     display.begin(/*seamless=*/true);
     display.deepSleep();
   }
+#if SILKSCREEN_BATLOG
+  freeink::batterylog::early(freeink::batterylog::EarlyKind::Cutoff, millis());
+#endif
   Storage.prepareForDeepSleep();
   powerManager.startDeepSleep(gpio);
 }
@@ -817,8 +879,15 @@ void setup() {
     // settings below, as on other boards.
     if (unverifiedWake && sleepWakePolicy == WAKE_POLICY_HOLD) {
       LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
+#if SILKSCREEN_BATLOG
+      freeink::batterylog::early(freeink::batterylog::EarlyKind::Ghost, millis());
+#endif
       powerManager.startDeepSleep(gpio);
     }
+#if SILKSCREEN_BATLOG
+    // A wake that goes on: an unverified one has passed under the click-wake rule.
+    freeink::batterylog::onWake({wakeHoldVerified, unverifiedWake});
+#endif
     gpio.startTouch();
   }
 
@@ -852,6 +921,9 @@ void setup() {
       // No settings can show that a click wakes this device, so an unverified
       // wake is a ghost wake, SD card or not.
       LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
+#if SILKSCREEN_BATLOG
+      freeink::batterylog::early(freeink::batterylog::EarlyKind::Ghost, millis());
+#endif
       Storage.prepareForDeepSleep();
       powerManager.startDeepSleep(gpio);
     }
@@ -916,6 +988,9 @@ void setup() {
       // device; otherwise the button must still be held (ghost-wake debounce).
       if (!wakeHoldVerified && SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::SLEEP) {
         LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
+#if SILKSCREEN_BATLOG
+        freeink::batterylog::early(freeink::batterylog::EarlyKind::Ghost, millis());
+#endif
         Storage.prepareForDeepSleep();
         powerManager.startDeepSleep(gpio);
       }
@@ -1080,6 +1155,10 @@ void loop() {
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   mappedInputManager.update();
 
+#if SILKSCREEN_BATLOG
+  tickBatteryLog();  // before the exclusive-storage branch, so USB Drive time counts
+#endif
+
   if (activityManager.requiresExclusiveStorageLoop()) {
     // USB Drive handed the raw SD card to the host. Do not run screenshots,
     // sleep, shortcuts, or normal navigation while its filesystem is detached.
@@ -1147,6 +1226,9 @@ void loop() {
     powerManager.noteInput();
     inputClockStarted = true;
   }
+#if SILKSCREEN_BATLOG
+  if (userInput) freeink::batterylog::noteInput();
+#endif
   // The release of the press that woke the device is not the user's first input.
   if (userInput && !wakePowerReleasePending) wakeNoInputArmed = false;
   if (userInput || activityManager.preventAutoSleep()) {
@@ -1177,6 +1259,9 @@ void loop() {
   // fires while external power carries the load. A blocking transfer checks the
   // same latch from its callbacks and aborts, so this pass sleeps.
   if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
+#if SILKSCREEN_BATLOG
+    freeink::batterylog::tagPath(freeink::batterylog::Path::Cutoff);
+#endif
     enterDeepSleep();
     return;
   }
@@ -1198,6 +1283,9 @@ void loop() {
     if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
       LOG_INF("SLP", "No input or client traffic for %lu min on battery; sleeping",
               HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
+#if SILKSCREEN_BATLOG
+      freeink::batterylog::tagPath(freeink::batterylog::Path::Ceiling);
+#endif
       enterDeepSleep(true);
       return;
     }
@@ -1208,6 +1296,9 @@ void loop() {
   // without anyone at the device.
   if (powerManager.awakeInputCapPassed()) {
     LOG_INF("SLP", "No input for %u min on battery; sleeping", BoardConfig::powerPolicy().awakeInputCapMin);
+#if SILKSCREEN_BATLOG
+    freeink::batterylog::tagPath(freeink::batterylog::Path::InputCap);
+#endif
     enterDeepSleep(true);
     return;
   }
@@ -1226,6 +1317,9 @@ void loop() {
   if (const unsigned long errorMs = BoardConfig::powerPolicy().storageErrorSleepS * 1000UL;
       storageErrorScreen && errorMs > 0 && powerManager.msSinceInput() >= errorMs && !gpio.isUsbConnected()) {
     LOG_INF("SLP", "SD card error screen idle for %lu s on battery; sleeping", errorMs / 1000UL);
+#if SILKSCREEN_BATLOG
+    freeink::batterylog::tagPath(freeink::batterylog::Path::SdError);
+#endif
     enterDeepSleep(true);
     return;
   }
@@ -1434,6 +1528,11 @@ void loop() {
     }
     skipLoopDelay = activityManager.skipLoopDelay();
   }
+
+#if SILKSCREEN_BATLOG
+  // The render task is idle: the first such pass after the first paint writes the wake's row.
+  if (!deepSleepInProgress) BatteryLogWriter::flushIfDue();
+#endif
 
   // Add delay at the end of the loop to prevent tight spinning
   // When an activity requests skip loop delay (e.g., webserver running), use yield() for faster response
