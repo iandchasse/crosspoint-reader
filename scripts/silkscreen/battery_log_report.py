@@ -111,7 +111,9 @@ OPTIMISTIC_BLOCKS = 15                  # under this many day blocks the band is
 B_MIN_AFTER_ENTRY_MS = 2 * 3600 * 1000  # estimator B: both points at least this long after the entry
 B_MIN_SPAN_MS = 3 * 3600 * 1000         # and at least this far apart
 C_MIN_SLEEP_MS = 6 * 3600 * 1000        # estimator C: a sleep of at least 6 h ...
-C_SESSION_MS = (10 * 1000, 5 * 60 * 1000)  # ... preceded by a session of 10 s to 5 min
+# ... preceded by a session of 2 s to 5 min. awake_ms runs to the entry stamp, which is taken after the sleep-screen
+# refresh, so even a quick bookend (wake, paint, sleep within 10 s) counts 5 s or more.
+C_SESSION_MS = (2 * 1000, 5 * 60 * 1000)
 FADE_GAMMA = 1.6554                     # percent to duty of the front light (FrontlightManager.cpp)
 AWAKE_CEILING_MIN = 15                  # on battery the ceiling is the longer of this and the sleep timeout
 LONG_TAIL_MS = 20 * 60 * 1000           # an idle tail this long is a runaway tail whatever the timeout says
@@ -1152,8 +1154,8 @@ def estimator_c(rows: List[Row], opts: Options, rates: Rates, touch: bool) -> Es
         sel.append(r)
     est.n = len(sel)
     if not sel:
-        est.lines.append("no overnight pair: it needs a sleep of 6 h or more after a session of 10 s to 5 min with no "
-                         "light and no radio")
+        est.lines.append("no overnight pair: it needs a sleep of 6 h or more after a session of 2 s to 5 min (counted "
+                         "to the end of the sleep-screen refresh) with no light and no radio")
         return est
     est.status = "ok"
     dpct = sum(r.pair_dpct for r in sel)
@@ -1895,7 +1897,8 @@ def next_steps(a: Analysis) -> List[str]:
         steps.append("keep logging: estimator A needs %d eligible cycles over %d days" % (MIN_A_CYCLES, MIN_A_BLOCKS))
     elif not a_est.resolved_zero:
         steps.append("keep logging for 30 to 90 days in ordinary use, or run one deliberate bookend: wake, let the page "
-                     "paint, sleep within 10 s, leave it untouched for 3 days at 80-90 %")
+                     "paint, sleep within 10 s (the session is counted to the end of the sleep-screen refresh), leave it "
+                     "untouched for 3 days at 80-90 %")
     if a_est.status == "ok" and not a_est.resolved_floor:
         steps.append("an excess over the expected floor smaller than about 130-210 uA is invisible to the log until "
                      "one meter run (MEAS-01) anchors the scale term: use the DMM recipe in BATTERY-LOG.md on a spare "

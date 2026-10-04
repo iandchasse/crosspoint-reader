@@ -961,6 +961,30 @@ class Estimators(TempCase):
         self.assertNotIn("vs the expected floor", line)
         self.assertIn("a ceiling only", ba.render_report(a))
 
+    def test_estimator_c_takes_a_quick_bookend(self):
+        # The bookend of the report's own recipe: wake, let the page paint, sleep within 10 s. awake_ms runs to the entry
+        # stamp, after the sleep-screen refresh, so it is 5 to 10 s, and the 72 h sleep after it is the pair.
+        for session_s in (6.0, 9.0):
+            sim = Sim(soc=85.0)
+            sim.cycle(sleep_h=8.0)
+            sim.cycle(sleep_h=72.0, awake_min=session_s / 60.0, sleep_ua=113.0)
+            a = self.analyze(csv_text(sim.rows))
+            c = a.estimates[2]
+            self.assertEqual(c.status, "ok", session_s)
+            self.assertEqual(c.n, 1)
+            self.assertAlmostEqual(c.est_ua, 113.0, delta=40.0)
+        # under 2 s is not a session that booted, painted and entered sleep
+        sim = Sim(soc=85.0)
+        sim.cycle(sleep_h=8.0)
+        sim.cycle(sleep_h=72.0, awake_min=1.5 / 60.0, sleep_ua=113.0)
+        self.assertEqual(self.analyze(csv_text(sim.rows)).estimates[2].status, "no data")
+
+    def test_the_bookend_recipe_says_what_the_session_counts_to(self):
+        sim = Sim(noise_mv=0.3)
+        campaign(sim, days=6, sleep_ua=113.0)  # estimator A has cycles but no band yet: the report suggests a bookend
+        steps = ba.next_steps(self.analyze(csv_text(sim.rows)))
+        self.assertTrue(any("bookend" in st and "sleep-screen refresh" in st for st in steps), steps)
+
     def test_estimator_c_skips_a_lit_or_radio_session(self):
         sim = Sim()
         sim.cycle(sleep_h=8.0)
