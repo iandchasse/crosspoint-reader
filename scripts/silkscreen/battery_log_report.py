@@ -13,7 +13,9 @@ freeink-sdk/libs/hardware/PowerManager/include). This script is stdlib only and 
      files (a file moved aside at the 2 MiB cap) and drops exact duplicates.
   2. Segments the rows at every orphan boot (k = B), backwards rtc_ms or restarted row number; reports row gaps.
   3. Builds the timeline: wall time is back-filled from the rows that carry a utc (written only after a sync, so
-     utc - rtc_ms/1000 is constant between two syncs) and the step of that offset between syncs is the RC clock drift.
+     utc - rtc_ms/1000 is constant between two syncs, except over the awake sessions, where time() follows the crystal
+     and the counter the RC clock: a new epoch needs a step beyond a tolerance that grows with the awake time) and the
+     step of that offset between syncs is the RC clock's drift over that whole span, sessions included.
   4. Prints a per-cycle table (and writes battery_cycles.csv with --out): sleep and awake length, how the session
      ended, how the unit woke, light/radio/full-clock time, USB, the wake-to-wake charge, an exclusion reason per row.
   5. Compares what the screen showed with the volts (the 83-to-82 question) and measures the display noise floor.
@@ -101,7 +103,10 @@ CUTOFF_MV = 3400.0                      # below: the LDO dropout region
 LATE_MS = 2000                          # a wake sample taken later than this is not a wake sample
 CHG_RISE_MV = 15.0                      # a rise of the wake sample over the previous one with no USB: charged unseen
 CHG_LOADED_STEP_MV = 45.0               # or this much from the loaded entry reading to the wake sample
-OFFSET_TOL_S = 2.0                      # utc - rtc_ms/1000 steps by more than this at a sync
+OFFSET_TOL_S = 2.0                      # utc - rtc_ms/1000 steps by more than this at a sync, plus ...
+OFFSET_AWAKE_FRAC = 0.003               # ... this share of the awake time since the epoch began (the offset moves a little
+#                                         over every session: time() runs on the crystal while awake). Unmeasured: re-derive
+MAX_CLOCK_STEP_LINES = 5                # clock steps printed per segment
 NOTCH_SCALE_ERRORS = (0.3, 0.5)         # the generic notch table's error against this cell
 PAIR_SIGMA_MV = 2.5                     # assumed scatter of a wake-to-wake pair difference
 MIN_A_CYCLES = 12
@@ -591,6 +596,9 @@ def fill_wall_time(seg: Segment) -> None:
     base = next((r.rtc_s for r in rows if r.rtc_s is not None), 0.0)
     for r in rows:
         r.rel_s = (r.rtc_s - base) if r.rtc_s is not None else 0.0
+    cum = [0.0]  # cum[i + 1]: the awake seconds of rows 0..i
+    for r in rows:
+        cum.append(cum[-1] + (r.g("awake_ms") or 0) / 1000.0)
     utc_rows: List[Tuple[int, Row, float]] = []
     for pos, r in enumerate(rows):
         utc = r.g("utc")
@@ -606,7 +614,9 @@ def fill_wall_time(seg: Segment) -> None:
     epochs: List[Tuple[int, float]] = []
     members: List[List[float]] = []
     for pos, _, off in utc_rows:
-        if not epochs or abs(off - members[-1][0]) > OFFSET_TOL_S:
+        # the sessions since the epoch's first row (rows start + 1 .. pos) move the offset a little: allow for them
+        tol = OFFSET_TOL_S + (OFFSET_AWAKE_FRAC * (cum[pos + 1] - cum[epochs[-1][0] + 1]) if epochs else 0.0)
+        if not epochs or abs(off - members[-1][0]) > tol:
             epochs.append((pos, off))
             members.append([off])
         else:
@@ -628,7 +638,7 @@ def fill_wall_time(seg: Segment) -> None:
         ra, rb = rows[a[0]], rows[b[0]]
         if ra.rtc_s is None or rb.rtc_s is None or rb.rtc_s <= ra.rtc_s:
             continue
-        step = b[1] - a[1]
+        step = members[k][0] - members[k - 1][-1]  # across the boundary: the creep inside an epoch is not part of it
         elapsed = rb.rtc_s - ra.rtc_s
         seg.drift.append((step, elapsed / 3600.0, step / elapsed * 1e6))
 
@@ -1774,9 +1784,13 @@ def render_report(a: Analysis) -> str:
         w("segment %d: %d rows, began at row %s (%s), %.1f h on the RTC axis%s%s"
           % (s.id, len(s.rows), r0.g("row"), kind, span, walls,
              "" if s.synced else ", no utc: relative times only"))
-        for step, between_h, ppm in s.drift:
-            w("  clock step %+.0f s between syncs %.1f h apart: the RC clock ran %s by about %.0f ppm (%.1f %%)"
-              % (step, between_h, "slow" if step > 0 else "fast", abs(ppm), abs(ppm) / 1e4))
+        for step, between_h, ppm in s.drift[:MAX_CLOCK_STEP_LINES]:
+            w("  clock step %+.0f s between syncs %.1f h apart: the RC clock ran %s by about %.0f ppm (%.1f %%) over "
+              "that span, the awake sessions in it included" % (step, between_h, "slow" if step > 0 else "fast",
+                                                                abs(ppm), abs(ppm) / 1e4))
+        if len(s.drift) > MAX_CLOCK_STEP_LINES:
+            more = [d[0] for d in s.drift[MAX_CLOCK_STEP_LINES:]]
+            w("  and %d more clock steps (median %+.0f s)" % (len(more), statistics.median(more)))
         if s.bad_utc:
             w("  %d utc value(s) ignored (before 2025 or no rtc_ms)" % s.bad_utc)
     gaps = sum(1 for r in rows if "GAP" in r.excl)

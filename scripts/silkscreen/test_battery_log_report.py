@@ -568,6 +568,42 @@ class Timeline(TempCase):
         self.assertIn("ran slow", ba.render_report(a))
         self.assertGreater(t_first, 0)
 
+    def test_the_offset_creeping_over_the_sessions_is_not_a_clock_step(self):
+        # time() runs on the crystal while awake and the counter on the RC clock, so utc - rtc moves a little over every
+        # session: 4 s over a 25 minute one is 0.27 %. That is one epoch, not a clock step per row.
+        sim = Sim(utc_base=1791000000)
+        for _ in range(12):
+            sim.utc_base += 4
+            sim.cycle(sleep_h=9.0, awake_min=25.0)
+        a = self.analyze(csv_text(sim.rows))
+        self.assertEqual(len(a.segs[0].epochs), 1)
+        self.assertEqual(a.segs[0].drift, [])
+        self.assertNotIn("clock step", ba.render_report(a))
+
+    def test_a_real_step_after_creep_is_still_found(self):
+        sim = Sim(utc_base=1791000000)
+        for _ in range(6):
+            sim.utc_base += 4
+            sim.cycle(sleep_h=9.0, awake_min=25.0)
+        sim.utc_base += 90  # an NTP sync that found the RC clock 90 s off
+        for _ in range(3):
+            sim.cycle(sleep_h=9.0, awake_min=25.0)
+        seg = self.analyze(csv_text(sim.rows)).segs[0]
+        self.assertEqual(len(seg.epochs), 2)
+        self.assertAlmostEqual(seg.drift[0][0], 90.0, delta=6.0)
+
+    def test_clock_step_lines_are_capped(self):
+        sim = Sim(utc_base=1791000000)
+        for _ in range(10):
+            sim.utc_base += 60
+            for _ in range(2):
+                sim.cycle(sleep_h=24.0, awake_min=1.0)
+        a = self.analyze(csv_text(sim.rows))
+        self.assertEqual(len(a.segs[0].drift), 9)
+        text = ba.render_report(a)
+        self.assertEqual(text.count("clock step "), ba.MAX_CLOCK_STEP_LINES)
+        self.assertIn("and 4 more clock steps", text)
+
     def test_utc_before_2025_is_not_a_clock(self):
         sim = Sim(utc_base=100)  # a floor-less epoch time
         for _ in range(3):
