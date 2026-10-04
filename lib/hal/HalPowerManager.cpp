@@ -158,6 +158,15 @@ void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
     delay(1000);  // allow the PMIC firmware time to drop power
   }
 #endif
+#if FREEINK_DEVICE_METALIO_EINK4
+  // ESP deep sleep leaves the whole board powered (main and screen/SD rails,
+  // 4G modem, audio module). Pulse the power-switch chip the way the vendor
+  // firmware does; the power button then cold-boots. USB can keep the board
+  // alive, so fall through to deep sleep if power is still on.
+  for (int i = 0; i < 3; i++) {
+    freeink::metalio::powerOff();
+  }
+#endif
 
   // PowerConfig::releaseWaitMaxMs: the bounded release wait below may last
   // seconds, and nothing from here on needs full speed.

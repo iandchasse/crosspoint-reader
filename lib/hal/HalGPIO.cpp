@@ -160,6 +160,9 @@ void HalGPIO::update() {
   // Boards with an analog charge-status ladder sample it here, rate-limited by
   // the SDK; every other caller (setup, render task) only reads its cache.
   if (BoardConfig::hasChargeStatusLadder()) BatteryMonitor::pollChargeStatus();
+  const uint8_t pageButtons = inputMgr.capacitivePageButtonMask();
+  capacitivePagePressed = (pageButtons & ~previousCapacitivePageButtons) != 0;
+  previousCapacitivePageButtons = pageButtons;
   const bool connected = isUsbConnected();
   usbStateChanged = (connected != lastUsbConnected);
   lastUsbConnected = connected;
