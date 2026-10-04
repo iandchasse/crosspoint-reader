@@ -60,6 +60,15 @@ bool putLine(HalFile& file, const size_t len, size_t& written) {
   return true;
 }
 
+// The header again, after a LF, in front of the "# fw" line of a file that already holds rows: columns are only ever
+// appended, and a row of a longer schema under an old header would read as torn. The analyzer takes the latest
+// header; a duplicate of the same one is harmless.
+bool putLaterHeader(HalFile& file, size_t& written) {
+  lineBuf[0] = '\n';
+  const size_t len = bl::formatHeader(lineBuf + 1, sizeof(lineBuf) - 1);
+  return putLine(file, len == 0 ? 0 : len + 1, written);
+}
+
 // One open, the lines, one close. Every line starts with its own LF, so a torn one never glues to the next. False when
 // anything failed.
 bool append(const bool orphan, const bool earlierBad) {
@@ -86,7 +95,10 @@ bool append(const bool orphan, const bool earlierBad) {
   bool ok = true;
   if (size == 0) ok = putLine(file, bl::formatHeader(lineBuf, sizeof(lineBuf)), written);
   // After a new file, an orphan row (a new image or a lost record) or an earlier loss, which may have cost the line.
-  if (ok && (size == 0 || orphan || earlierBad)) {
+  const bool fwLine = size == 0 || orphan || earlierBad;
+  // A file that already holds rows gets the header again first, in case this build's columns differ.
+  if (ok && size != 0 && fwLine) ok = putLaterHeader(file, written);
+  if (ok && fwLine) {
     ok = putLine(file, bl::formatFwLine(lineBuf, sizeof(lineBuf), CROSSPOINT_VERSION, BOOT_WAIT_MS, SERIAL_LOG),
                  written);
   }

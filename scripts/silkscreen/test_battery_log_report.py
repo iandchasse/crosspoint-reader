@@ -430,6 +430,23 @@ class Damage(TempCase):
         self.assertEqual(len(res.fw_lines), 2)
         self.assertEqual(res.fw_lines[1].wait_ms, 250)
 
+    def test_the_header_block_the_writer_puts_before_a_new_build(self):
+        # In front of an orphan row of a build with one more column the writer appends: a LF, the header, a LF, the
+        # "# fw" line. The rows after it are read by the later header; under the old one they would all read as torn.
+        names = list(ba.COLUMNS[:-1]) + ["newcol", "crc"]
+        fields = ["1", "9", "S", FW, "1", "1000"] + [""] * (len(names) - 7) + ["X"]
+        fields[names.index("newcol")] = "42"
+        body = ",".join(fields[:-1]) + ","
+        wide = body + "%04x" % ba.crc16(body.encode("ascii"))
+        old = csv_text(self.rows(3))
+        under_old = ba.parse_bytes((old + "\n" + wide).encode("ascii"))
+        self.assertEqual((under_old.stats.good, under_old.stats.torn_tail), (3, 1))
+        text = old + "\n" + ",".join(names) + "\n# fw f3a9c01d3 1.7.0-batlog m1 w0 ser0" + "\n" + wide
+        res = ba.parse_bytes(text.encode("ascii"))
+        self.assertEqual((res.stats.good, res.stats.headers, res.stats.comment), (4, 2, 2))
+        self.assertEqual(res.rows[3].g("newcol"), "42")
+        self.assertEqual([f.sha for f in res.fw_lines], [FW, "f3a9c01d3"])
+
     def test_header_with_an_appended_column_is_read_by_name(self):
         names = list(ba.COLUMNS[:-1]) + ["newcol", "crc"]
         fields = ["1", "5", "S", FW, "1", "1000"] + [""] * (len(names) - 7) + ["X"]
