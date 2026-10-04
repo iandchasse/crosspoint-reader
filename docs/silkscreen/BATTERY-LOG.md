@@ -72,9 +72,25 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
 - **Sleep current:** expected zero, not measured. No pin, pull, hold, timer, task, wake source, I2C or light call is
   added, and RTC memory is retained in sleep anyway. The one thing the code review cannot settle is how the S3's sleep code
   treats the SAR ADC block after a burst a few milliseconds before `esp_deep_sleep_start`. M1 settles it.
-- **RTC memory:** the record is 184 B (a `static_assert` caps it at 192). Free RTC slow memory before the log, read from
-  `firmware.map`: 2048 B on CrossPoint `silkscreen-gh_release`, 1648 B on CrossInk `silkscreen`.
-- **Flash and RAM:** [PORTING.md](PORTING.md#upstream-merges) records the sizes of every build.
+- **RTC memory:** the record is 184 B (a `static_assert` caps it at 192). Free RTC slow memory, read from `firmware.map`:
+  CrossPoint 2048 B on `silkscreen-gh_release` before the log and 1864 B on `silkscreen-batlog`; CrossInk 1648 B on
+  `silkscreen` and 1464 B on `silkscreen-batlog`.
+- **Flash and RAM** (the final build matrix, 2026-10-04, in bytes; [PORTING.md](PORTING.md#upstream-merges) records every
+  build):
+
+  | Image | Release env | `silkscreen-batlog` | The log adds |
+  |---|---|---|---|
+  | CrossPoint flash / static RAM | 5795154 / 103904 (`silkscreen-gh_release`) | 5804178 / 104440 | 9024 / 536 |
+  | CrossPoint `firmware.bin` | 5800272 | 5809296 | 9024 |
+  | CrossInk flash / static RAM | 5613605 / 115536 (`silkscreen`) | 5622425 / 116080 | 8820 / 544 |
+  | CrossInk `firmware.bin` | 5618800 | 5627616 | 8816 |
+
+  About 9 kB of flash and half a kB of RAM, all in the batlog image: every other env is the size it was before the log, to
+  the byte.
+- **OTA slot headroom** (the 6553600 B app slot less `firmware.bin`): CrossPoint `silkscreen` 709584 B,
+  `silkscreen-gh_release` 753328 B, `silkscreen-batlog` 744304 B, `c3check` 754672 B; CrossInk `silkscreen` 934800 B,
+  `silkscreen-batlog` 925984 B, `c3check` 224560 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
+  the tight one, and the log does not touch it.
 - **The SD card:** one file, 2 MiB cap, about 230 B a row (about 9000 rows, about 15 months at 20 cycles a day). Eight
   weeks of use writes 0.15-0.2 MB.
 
