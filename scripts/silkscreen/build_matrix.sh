@@ -2,14 +2,14 @@
 # Silkscreen build matrix for crosspoint-reader (docs/silkscreen/UPSTREAM-SYNC.md).
 #
 # Usage: scripts/silkscreen/build_matrix.sh [--full] [--label NAME] [env ...]
-#   no envs : silkscreen silkscreen-test x4pro c3check
+#   no envs : silkscreen silkscreen-batlog silkscreen-test x4pro c3check
 #   --full  : adds silkscreen-gh_release, x4c, papermono and stickycheck
 # Prints one line per env (exit code, flash and RAM bytes, log path) and exits non-zero if any
 # env or check failed. Logs go to .cache/silkscreen-builds/ (gitignored).
 #
 # Order matters:
 #   1. scripts/check_sleep_wake_sources.sh (static guard).
-#   2. The real envs, from platformio.ini.
+#   2. The real envs, from platformio.ini (silkscreen-batlog is the battery log's image).
 #   3. scripts/check_test_firmware.sh silkscreen-test, if that env was built: it reads
 #      .pio/build/silkscreen-test, which step 4 deletes.
 #   4. The proxy envs, LAST. `default` and `sticky` extend [firmware_tuned], whose custom
@@ -51,8 +51,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ ${#envs[@]} -eq 0 ]; then
-  envs=(silkscreen silkscreen-test x4pro c3check)
-  [ $full = 1 ] && envs=(silkscreen silkscreen-gh_release silkscreen-test x4pro x4c papermono c3check stickycheck)
+  envs=(silkscreen silkscreen-batlog silkscreen-test x4pro c3check)
+  [ $full = 1 ] && envs=(silkscreen silkscreen-gh_release silkscreen-batlog silkscreen-test x4pro x4c papermono c3check stickycheck)
 fi
 
 real=()
