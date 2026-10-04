@@ -7,6 +7,10 @@
 #include <XteinkDetect.h>
 #include <esp_sleep.h>
 
+#if SILKSCREEN_BATLOG
+#include <BatteryLog.h>
+#endif
+
 // Global HalGPIO instance
 HalGPIO gpio;
 
@@ -215,6 +219,9 @@ void HalGPIO::prepareForSleep() {
       // tail that may not be fitted.
       if (hasTouch()) {
         LOG_ERR("HW", "Touch controller did not accept its sleep command");
+#if SILKSCREEN_BATLOG
+        freeink::batterylog::noteFlag(freeink::batterylog::Flag::TouchNotAsleep);
+#endif
       } else {
         LOG_DBG("HW", "No touch controller answered the sleep command");
       }

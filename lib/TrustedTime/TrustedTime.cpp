@@ -9,6 +9,10 @@
 #include <cstdlib>
 #include <ctime>
 
+#if SILKSCREEN_BATLOG
+#include <BatteryLog.h>
+#endif
+
 namespace trustedtime {
 
 namespace {
@@ -53,7 +57,12 @@ void writeFloor(const int64_t value) {
 }
 
 // SNTP sync callback (lwIP task context; Preferences/NVS is mutex-guarded).
-void onTimeSynced(struct timeval*) { note(); }
+void onTimeSynced(struct timeval*) {
+  note();
+#if SILKSCREEN_BATLOG
+  freeink::batterylog::noteClockSynced();
+#endif
+}
 
 void configureSntp() {
   // SNTP uses UTC epochs regardless of the display timezone. Copy TZ before

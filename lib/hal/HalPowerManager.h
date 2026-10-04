@@ -109,6 +109,13 @@ class HalPowerManager {
   // Get battery percentage (range 0-100)
   uint16_t getBatteryPercentage() const;
 
+#if SILKSCREEN_BATLOG
+  // The battery log's reads of state this class keeps: the smoothed battery value in tenths of a percent (0 before
+  // the first read) and whether the CPU is at its normal clock.
+  int batteryCachedTenths() const { return _batteryCachedPercent; }
+  bool atFullClock() const { return !isLowPower; }
+#endif
+
   // PowerConfig::noChargeableCellNotice: the charge-status ladder shows the
   // charger's no-battery blink, or external power runs the board and the battery
   // reads below BatteryMonitor::CELL_PRESENT_MIN_MV (until it reads

@@ -14,6 +14,10 @@
 #include "HalFrontlight.h"
 #include "HalGPIO.h"
 
+#if SILKSCREEN_BATLOG
+#include <BatteryLog.h>
+#endif
+
 #if FREEINK_DEVICE_PAPERMONO
 #include <M5Pm1.h>
 #endif
@@ -91,6 +95,9 @@ void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
   }
   if (!freeink::i2c::releaseSensorBusForSleep()) {
     LOG_ERR("PWR", "I2C SDA still held LOW after bus recovery");
+#if SILKSCREEN_BATLOG
+    freeink::batterylog::noteFlag(freeink::batterylog::Flag::SdaStuck);
+#endif
   }
 
 #ifdef ENABLE_SERIAL_LOG
@@ -289,6 +296,9 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
   }
   if (_batteryCachedPercent == 0) {
     _batteryCachedPercent = sampleTenths;
+#if SILKSCREEN_BATLOG
+    freeink::batterylog::noteUiSeed(static_cast<uint16_t>(sampleTenths));
+#endif
   } else if (BoardConfig::isSilkscreen()) {
     // The same one-tenth-of-the-gap average, rounded to nearest in both directions:
     // the truncating form below stops up to 0.9% short of a rising target (a full cell
