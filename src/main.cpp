@@ -1519,9 +1519,17 @@ void loop() {
   }
 
   bool skipLoopDelay = false;
+#if SILKSCREEN_BATLOG
+  // Set once the render task has been seen holding the lock. The first paint of a wake is only queued in the pass
+  // that starts it, and the render task cannot run until the loop yields, so a free lock in that pass proves nothing.
+  static bool sawRenderBusy = false;
+#endif
   {
     RenderLock lock(RenderLock::Mode::Try);
     if (!lock.ownsLock()) {
+#if SILKSCREEN_BATLOG
+      sawRenderBusy = true;
+#endif
       // Let rendering advance without treating lock contention as idle.
       delay(10);
       return;
@@ -1530,8 +1538,9 @@ void loop() {
   }
 
 #if SILKSCREEN_BATLOG
-  // The render task is idle: the first such pass after the first paint writes the wake's row.
-  if (!deepSleepInProgress) BatteryLogWriter::flushIfDue();
+  // The render task is idle again after a paint: the first such pass writes the wake's row. A wake that never shows
+  // the render task busy is left to the flush at sleep entry.
+  if (!deepSleepInProgress && sawRenderBusy) BatteryLogWriter::flushIfDue();
 #endif
 
   // Add delay at the end of the loop to prevent tight spinning
