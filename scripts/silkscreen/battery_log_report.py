@@ -19,8 +19,9 @@ freeink-sdk/libs/hardware/PowerManager/include). This script is stdlib only and 
   5. Compares what the screen showed with the volts (the 83-to-82 question) and measures the display noise floor.
   6. Checks the quality of the ADC bursts.
   7. Estimates the sleep drain from wake-to-wake pairs (A: pooled non-negative regression with a day-block bootstrap,
-     B: two wake samples inside one sleep, C: overnight pairs after a short session), each with a 95 % band and the
-     smallest current it could have resolved, against zero and against the expected floor. The loaded entry to wake
+     B: two wake samples inside one sleep, C: overnight pairs after a short session, which is only a ceiling because
+     the session's own cost is inside the pair), each with a 95 % band and the smallest current it could have
+     resolved, against zero and against the expected floor (not C). The loaded entry to wake
      sample step is shown as a diagnostic (D) with the smallest current an entry-to-wake pair could resolve, and never
      as a drain estimate.
   8. Counts what needs no voltage inference (wake storms, long tails, abnormal resets, pocket relights, ghost wakes).
@@ -911,6 +912,7 @@ class Estimate:
     terms: Dict[str, Tuple[float, float, float]] = field(default_factory=dict)
     residual_mv: Optional[float] = None
     head: str = ""
+    ceiling: bool = False             # an upper bound only: never compared with zero or the floor, never a flag
 
 
 A_TERMS = ("sleep_h", "full_h", "low_h", "lit_h", "wifi_h", "cycle", "early")
@@ -1054,7 +1056,17 @@ def _finish_rate(est: Estimate, rates: Rates, opts: Options, touch: bool) -> Non
     est.est_ua = rates.ua(est.pct_h) if est.pct_h is not None else None
     if est.lo is not None:
         est.lo_ua, est.hi_ua = rates.ua(est.lo), rates.ua(est.hi)
-        est.resolved_zero = est.lo > 0.0
+        est.resolved_zero = est.lo > 0.0 and not est.ceiling
+    if est.ceiling and est.lo is not None:
+        # The short session's own boot, paint and tail are inside every pair, so even the lower end says nothing about
+        # the sleep current: shown as a ceiling, never compared with zero or the floor, and no flag comes from it.
+        head = "sleep drain is at most %s (upper end of the 95%% band; the mean %s has the short sessions inside it)" % (
+            rates.fmt(est.hi), rates.fmt(est.pct_h))
+        est.head = head
+        est.lines.append(head)
+        est.lines.append("a ceiling only: it is not compared with zero or with the expected floor, and no flag is raised "
+                         "from it")
+        return
     head = "sleep drain %s" % rates.fmt(est.pct_h)
     if est.lo is not None:
         head += ", 95%% band [%s .. %s]" % (rates.fmt(est.lo), rates.fmt(est.hi))
@@ -1125,7 +1137,7 @@ def estimator_b(rows: List[Row], opts: Options, rates: Rates, touch: bool) -> Es
 def estimator_c(rows: List[Row], opts: Options, rates: Rates, touch: bool) -> Estimate:
     """Overnight pairs: a sleep of 6 h or more after a short, dark, radio-off session. An upper bound, because the
     short session's own cost is inside the pair."""
-    est = Estimate("C", "C. Bookend and overnight pairs (a sanity check on A)")
+    est = Estimate("C", "C. Bookend and overnight pairs (a ceiling on the sleep drain)", ceiling=True)
     sel = []
     for r in rows:
         if r.pair_prev is None or "PARTIAL" in r.excl:
@@ -1626,8 +1638,8 @@ def voltage_flags(estimates: List[Estimate], opts: Options, touch: bool) -> List
         return out
     watch = watch_threshold_ua(cap, touch)
     for est in estimates:
-        if est.lo_ua is None:
-            continue
+        if est.lo_ua is None or est.ceiling:
+            continue  # a ceiling's lower end is no evidence of a sleep current
         name = est.key
         if est.lo_ua > 1000.0:
             out.append("HIGH: estimator %s's lower bound is %s, above 1 mA" % (name, fmt_ua(est.lo_ua)))
@@ -1673,7 +1685,7 @@ def summary_lines(a: Analysis) -> List[str]:
             out.append("estimator %s: no estimate (%s)" % (est.key, est.lines[0] if est.lines else "no data"))
             continue
         line = "estimator %s: %s" % (est.key, est.head)
-        if est.lo is not None:
+        if est.lo is not None and not est.ceiling:
             line += "; vs zero %s" % ("resolved" if est.resolved_zero else "not resolved")
             if a.opts.capacity_mah > 0:
                 line += ", vs the expected floor %s" % ("resolved" if est.resolved_floor else "not resolved")

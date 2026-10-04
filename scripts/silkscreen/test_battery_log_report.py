@@ -933,6 +933,34 @@ class Estimators(TempCase):
         self.assertLess(c.est_ua, 1000.0 + 120.0)
         self.assertIn("upper bound", " ".join(c.lines))
 
+    def test_estimator_c_is_a_ceiling_and_raises_no_flag(self):
+        # A healthy cell (113 uA of sleep current), a dark 3 minute session before each 9 h night: the session's own
+        # cost is inside every pair, so C reads about 300 uA. It is shown as a ceiling, never compared with the expected
+        # floor, and the run-the-meter flag does not come from it.
+        sim = Sim(noise_mv=0.3, soc=90.0)
+        rng = random.Random(11)
+        sim.cycle(sleep_h=8.0)
+        for _ in range(45):
+            if sim.soc < 50:
+                sim.cycle(sleep_h=8.0, charge_to=88.0)
+            sim.cycle(sleep_h=rng.uniform(3.0, 6.0), awake_min=rng.uniform(10, 40), sleep_ua=113.0,
+                      full_frac=rng.uniform(0.1, 0.5))
+            sim.cycle(sleep_h=9.0, awake_min=3.0, sleep_ua=113.0)
+        a = self.analyze(csv_text(sim.rows), resamples=300)
+        c = a.estimates[2]
+        self.assertEqual(c.status, "ok")
+        self.assertGreater(c.est_ua, 250.0)  # nothing like the true 113 uA: the sessions are in it
+        self.assertTrue(c.ceiling)
+        self.assertFalse(c.resolved_floor)
+        self.assertFalse(c.resolved_zero)
+        self.assertEqual(a.voltage_flags, [])
+        self.assertIn("sleep drain is at most", c.head)
+        self.assertNotIn("RESOLVE an excess", "\n".join(c.lines))
+        line = [ln for ln in ba.summary_lines(a) if ln.startswith("estimator C")][0]
+        self.assertIn("is at most", line)
+        self.assertNotIn("vs the expected floor", line)
+        self.assertIn("a ceiling only", ba.render_report(a))
+
     def test_estimator_c_skips_a_lit_or_radio_session(self):
         sim = Sim()
         sim.cycle(sleep_h=8.0)
