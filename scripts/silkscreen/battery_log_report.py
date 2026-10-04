@@ -34,6 +34,12 @@ states, back-feed or a release wake. The estimates carry the notch table's scale
 curve is not this cell's curve). Only a microammeter in series on J5 sees the floor itself (MEAS-01, POWER.md).
 The loaded entry reading (e_mv) is never used as a drain input: it sits under the render load and relaxes upward.
 
+Opening battery.csv by hand: copy it off the card first and run this script on the copy. The columns fw, fl_e, fl_w,
+cfg and crc are lowercase hex with no quoting, and a spreadsheet reads one of the form 12e4 as a number in scientific
+notation (it turns into 120000), which breaks that row's CRC if the file is saved back. To look at it in a spreadsheet
+or in pandas, import every column as text (pandas: dtype=str, comment='#'), treat the "#" lines as comments, and never
+save it back.
+
 No third-party modules are needed. Exit status: 0 with a report, 1 when no valid row was found, 2 on bad arguments.
 """
 
