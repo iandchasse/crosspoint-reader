@@ -8,6 +8,8 @@
 #                                    SDK commit upstream CrossPoint pins and Free-Ink main
 #   ../crossink                    : branch silkscreen vs crossink/development; its SDK gitlink must
 #                                    be the shared head, and CrossInk's own pin is classified
+#   battery log                    : the silkscreen-batlog env, the SDK's BatteryLog files and every app hook (CrossPoint
+#                                    and CrossInk) must still be there: a merge can drop a hook without breaking a build
 #   ../../de-link_pcb              : informational only (the PCB repo is the user's)
 # Exit status: 0 nothing to do, 1 a merge or a pin fix is needed (lines marked "!"), 2 error.
 # Read-only apart from `git fetch`.
@@ -84,6 +86,56 @@ if [ -e "$CI/.git" ]; then
 else
   echo "crossink: not found at $CI"
 fi
+
+# The battery log (the silkscreen-batlog env): a build passes with a hook dropped, and the log just stops recording, so
+# look for the env, the SDK files and each hook by name. The minimums are the counts of call sites there today.
+echo "battery log (silkscreen-batlog: the env, the SDK files and the hooks must survive every merge)"
+blmiss=0
+batlog_need() {  # dir file pattern min: the file holds at least min lines matching the pattern
+  local n
+  n=$(grep -c -- "$3" "$1/$2" 2>/dev/null)
+  if [ "${n:-0}" -lt "$4" ]; then
+    flag "battery log: $2 in $(basename "$1") has ${n:-0} line(s) matching '$3', expected at least $4"
+    blmiss=$((blmiss + 1))
+  fi
+}
+batlog_file() {  # dir file
+  if [ ! -f "$1/$2" ]; then
+    flag "battery log: $2 is missing from $(basename "$1")"
+    blmiss=$((blmiss + 1))
+  fi
+}
+SDKPM=libs/hardware/PowerManager
+for f in include/BatteryLogCore.h include/BatteryLog.h src/BatteryLog.cpp test/host/test_batterylog_core.cpp; do
+  batlog_file "$SDK" "$SDKPM/$f"
+done
+batlog_need "$SDK" "$SDKPM/src/PowerManager.cpp" 'batterylog::tail' 1
+batlog_file "$CP" scripts/silkscreen/battery_log_report.py
+batlog_file "$CP" scripts/silkscreen/test_battery_log_report.py
+batlog_app() {  # dir clock-sync-file early-calls tag-calls
+  local dir=$1 sym
+  batlog_need "$dir" platformio.ini '^\[env:silkscreen-batlog\]' 1
+  batlog_need "$dir" platformio.ini 'DSILKSCREEN_BATLOG=1' 1
+  batlog_need "$dir" scripts/silkscreen/build_matrix.sh 'silkscreen-batlog' 1
+  batlog_file "$dir" src/util/BatteryLogWriter.h
+  batlog_file "$dir" src/util/BatteryLogWriter.cpp
+  for sym in 'batterylog::beginEntry' 'batterylog::onWake' 'batterylog::carry' 'batterylog::noteInput' \
+             'batterylog::tick(' 'BatteryLogWriter::flushIfDue' 'BatteryLogWriter::flushAtEntry'; do
+    batlog_need "$dir" src/main.cpp "$sym" 1
+  done
+  batlog_need "$dir" src/main.cpp 'batterylog::early' "$3"
+  batlog_need "$dir" src/main.cpp 'batterylog::tagPath' "$4"
+  batlog_need "$dir" lib/hal/HalPowerManager.cpp 'batterylog::noteUiSeed' 1
+  batlog_need "$dir" lib/hal/HalPowerManager.cpp 'batterylog::noteFlag' 1
+  batlog_need "$dir" lib/hal/HalGPIO.cpp 'batterylog::noteFlag' 1
+  batlog_need "$dir" "$2" 'batterylog::noteClockSynced' 1
+}
+batlog_app "$CP" lib/TrustedTime/TrustedTime.cpp 4 4
+if [ -e "$CI/.git" ]; then
+  batlog_app "$CI" lib/hal/HalClock.cpp 2 6
+  batlog_need "$CI" scripts/git_branch.py "'silkscreen-batlog'" 2
+fi
+[ $blmiss = 0 ] && info "the env, the SDK files, both writers and every hook are present"
 
 if [ -e "$PCB/.git" ]; then
   up=$(git -C "$PCB" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)

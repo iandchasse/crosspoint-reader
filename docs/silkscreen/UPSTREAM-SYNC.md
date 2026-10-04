@@ -84,18 +84,45 @@ Pins:
    time. It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
    different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
    (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
-   call in the same order (CrossPoint: `silkscreen`, `silkscreen-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`,
-   `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 15-25 minutes.
+   call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `x4pro`, then `c3check`;
+   CrossInk: `silkscreen`, `silkscreen-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 20-30 minutes.
+   `silkscreen-batlog` is the battery log's own env ([BATTERY-LOG.md](BATTERY-LOG.md)): the release env's sources and flags
+   plus `-DSILKSCREEN_BATLOG=1`. It must still build in both repos, and its size next to the release env's is the log's
+   footprint. A hook that a conflict resolution left outside its `#if SILKSCREEN_BATLOG` blocker fails every env that lacks
+   the macro, but a hook that was dropped fails nothing: step 7 and `upstream_status.sh` look for those.
 7. **Review.** Independent reviewers per lens (drain and sleep; Silkscreen behaviour kept through the
-   conflicts; upstream intent kept; other boards unchanged; docs), then a skeptic who tries to refute each
-   finding, then a fix pass for the confirmed ones and a rebuild. Every round so far has found real defects.
+   conflicts; upstream intent kept; other boards unchanged; docs; the battery log, below), then a skeptic who tries to
+   refute each finding, then a fix pass for the confirmed ones and a rebuild. Every round so far has found real defects.
+   **The battery log lens runs after every sync, whether or not the merge touched the log: the SDK's BatteryLog files and
+   the apps' hooks must be re-checked.**
+   - *SDK* (`libs/hardware/PowerManager`): `include/BatteryLogCore.h`, `include/BatteryLog.h`, `src/BatteryLog.cpp` and
+     `test/host/` are intact and wholly inside `#if SILKSCREEN_BATLOG`; the hook is still the first statement of
+     `PowerManager::deepSleep()`, before `esp_sleep_config_gpio_isolate()`; the APIs the log reads still mean what they did
+     (`adc::Lock(timeout)` and `held()` in `SharedAdc.h`, `BoardConfig::ACTIVE.batteryAdc` and
+     `batteryDividerMultiplier`, `esp_rtc_get_time_us`). Compile the core test with the xtensa g++ command in
+     `test/host/README.md`.
+   - *Apps* (`src/main.cpp`, `lib/hal/HalPowerManager.*`, `lib/hal/HalGPIO.cpp`, CrossPoint's `lib/TrustedTime/TrustedTime.cpp`,
+     CrossInk's `lib/hal/HalClock.cpp`, `src/util/BatteryLogWriter.*`): every hook is still there, inside the blocker, at the
+     point the design needs. `stageBatteryLogEntry()` is the first thing in `enterDeepSleep()`, before the CPU goes to full
+     speed; `onWake()` follows the early wake decision and precedes the touch probe; `early()` is at the early-ghost and
+     boot-cutoff exits (CrossPoint also the SD-fail and late-ghost ones); `tickBatteryLog()` runs before the
+     exclusive-storage branch of `loop()`; `flushIfDue()` follows the render lock's scope; `flushAtEntry()` runs before the
+     Wi-Fi teardown with the card mounted; `carry()` is at the silent-restart funnel; and the release-wake, reset-loop and
+     power-pin-fault exits still call no hook. Upstream edits to `enterDeepSleep()`, the early exits of `setup()`, `loop()`,
+     the seed branch of `HalPowerManager::getBatteryPercentage()` and `HalGPIO::prepareForSleep()` move these points: read
+     those diffs.
+   - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
+     they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
+     changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
+     differs by one line and one include), and POWER.md BL-01 still holds for what came in.
 8. **Record.** A row in PORTING.md's "Upstream merges" table (parent merge, upstream commit, SDK merge, what it
    brought for Silkscreen), and the same in CrossInk's PORTING.md. Write them after the fix pass: quote the sizes of
-   the final rebuild, list the review-fix commits, and move CrossInk's "last CrossPoint commit ported" marker and the
-   `git log` base in its "Keeping up with CrossPoint" to CrossPoint's head. Then `upstream_status.sh` must print
-   `STATUS: current`.
+   the final rebuild (`silkscreen-batlog` included), list the review-fix commits, and move CrossInk's "last CrossPoint
+   commit ported" marker and the `git log` base in its "Keeping up with CrossPoint" to CrossPoint's head. Then
+   `upstream_status.sh` must print `STATUS: current`.
 9. **Bench.** The user flashes (`pio run -e silkscreen -t upload`). Measure the sleep current (POWER.md MEAS-01)
-   when a merge changed sleep, boot, `loop()` or network code.
+   when a merge changed sleep, boot, `loop()` or network code, and repeat M1 of BATTERY-LOG.md (the release image against
+   the `silkscreen-batlog` image) when it also changed the log's hooks.
 
 ## Rules the history taught
 
