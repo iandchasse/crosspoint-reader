@@ -35,6 +35,9 @@ constexpr bool SERIAL_LOG = false;
 // The header, the "# fw" line and the row are formatted into this one buffer, one after the other.
 char lineBuf[bl::ROW_BUFFER_BYTES];
 bool dirChecked = false;  // the folder exists, as far as this boot knows
+// A boot has at most one Ready row (onWake() makes it), so a second attempt could only come from a record that
+// stopped validating while the loop still sees a row pending. This makes the one attempt a rule of the writer.
+bool attempted = false;
 
 char chargeChar(const BoardConfig::ChargeState state) {
   switch (state) {
@@ -119,7 +122,8 @@ bool append(const bool orphan, const bool earlierBad) {
 
 // The one SD attempt of a wake, timed. The result goes to the SDK, which advances the row and keeps the back-off.
 void flush() {
-  if (!Storage.ready()) return;
+  if (!Storage.ready() || attempted) return;
+  attempted = true;
   const bl::Pending pending = bl::pending();
   // A bad attempt, or a row lost since the last one that reached the card (an orphan row that never reached it
   // included): the "# fw" line may be missing from the file.
