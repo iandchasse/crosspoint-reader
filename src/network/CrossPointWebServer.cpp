@@ -31,6 +31,7 @@
 #include <string_view>
 
 #include "CrossPointSettings.h"
+#include "CutoffAbortPrint.h"
 #include "FontInstaller.h"
 #include "OpdsServerStore.h"
 #include "ProtectedPaths.h"
@@ -704,6 +705,10 @@ void CrossPointWebServer::handleFileListData() const {
 
 void CrossPointWebServer::streamFileToClient(HalFile& file) const {
   NetworkClient client = server->client();
+  // The stream holds loop() until the file ends, so the low-battery cutoff
+  // cannot run meanwhile: this Print ends it on the cutoff (never on boards
+  // without one), and the next loop pass sleeps.
+  CutoffAbortPrint out(client);
   static constexpr size_t CHUNK_SIZE = 4096;
   // Off the stack: the web-server task also runs TLS and SD from this stack.
   auto buffer = makeUniqueNoThrow<uint8_t[]>(CHUNK_SIZE);
@@ -720,7 +725,7 @@ void CrossPointWebServer::streamFileToClient(HalFile& file) const {
     size_t totalWritten = 0;
     while (totalWritten < bytesRead) {
       resetTaskWatchdogIfSubscribed();
-      const size_t wrote = client.write(buffer.get() + totalWritten, bytesRead - totalWritten);
+      const size_t wrote = out.write(buffer.get() + totalWritten, bytesRead - totalWritten);
       if (wrote == 0) {
         ok = false;
         break;
