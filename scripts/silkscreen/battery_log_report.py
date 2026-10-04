@@ -118,6 +118,11 @@ FADE_GAMMA = 1.6554                     # percent to duty of the front light (Fr
 AWAKE_CEILING_MIN = 15                  # on battery the ceiling is the longer of this and the sleep timeout
 LONG_TAIL_MS = 20 * 60 * 1000           # an idle tail this long is a runaway tail whatever the timeout says
 ENTRY_PAIR_SIGMA_MV = 7.0               # scatter of an entry-to-wake pair (design table A; the entry is a loaded reading)
+EARLY_MS_LIMIT = 300                    # mean awake time of an early wake above this is flagged (CrossPoint builds)
+EARLY_MS_LIMIT_CROSSINK = 500           # CrossInk's power-key verification holds up to 400 ms
+CROSSINK_VERSION_TAG = "-silkscreen-batlog"  # ends the version CrossInk's batlog build writes into its "# fw" line
+SLOW_ENTRY_MIN_MS = 3000                # a sleep entry is slow above this and above the log's median entry plus ...
+SLOW_ENTRY_OVER_MEDIAN_MS = 2000        # ... this: ent_ms holds the sleep-screen refresh, 0.3 to 2 s of it
 
 # Every exclusion reason code, in display order.
 ALL_CODES = ("BOOT", "NOSAMPLE", "USB", "CHG_UNSEEN", "CHG_TAIL", "RTC", "SHORT", "SHORT_A", "METHOD", "HIGHSOC",
@@ -852,10 +857,18 @@ class Options:
     pair_sigma_mv: float = PAIR_SIGMA_MV
     resamples: int = 2000
     seed: int = 20260930
-    early_ms_limit: int = 300
+    early_ms_limit: Optional[int] = None  # None: from the newest "# fw" line (see early_limit_for)
     charge_hold_h: float = 12.0
     rows_shown: int = 30
     sdk_dir: Optional[Path] = None
+
+
+def early_limit_for(fw_lines: Sequence[FwLine]) -> int:
+    """The early-wake limit of the app that wrote the newest "# fw" line: CrossInk's batlog build carries the
+    "-silkscreen-batlog" version, CrossPoint's ends "-batlog" alone."""
+    if fw_lines and fw_lines[-1].version.endswith(CROSSINK_VERSION_TAG):
+        return EARLY_MS_LIMIT_CROSSINK
+    return EARLY_MS_LIMIT
 
 
 def expected_floor_ua(capacity_mah: float, touch: bool) -> float:
@@ -1254,13 +1267,14 @@ def counter_flags(rows: List[Row], opts: Options) -> List[Flag]:
                           % (len(storm_days), names)))
     add("GHOST_RATE", "more than one ghost wake per sleep hour (sleeps of 30 min or more, 3 or more ghosts)",
         [r for r in s_rows if (r.g("g_n") or 0) >= 3 and (r.sleep_h or 0) >= 0.5 and r.g("g_n") > r.sleep_h])
+    early_limit = EARLY_MS_LIMIT if opts.early_ms_limit is None else opts.early_ms_limit
     long_early = []
     for r in rows:
         n = (r.g("g_n") or 0) + (r.g("g_o") or 0)
-        if n > 0 and r.g("g_ms") is not None and r.g("g_ms") / n > opts.early_ms_limit:
+        if n > 0 and r.g("g_ms") is not None and r.g("g_ms") / n > early_limit:
             long_early.append(r)
-    add("EARLY_LONG", "mean early-wake awake time above %d ms (the P5 target; CrossInk holds up to 400 ms)"
-        % opts.early_ms_limit, long_early)
+    add("EARLY_LONG", "mean early-wake awake time above %d ms (the P5 target for CrossPoint; CrossInk's power-key "
+        "verification holds up to 400 ms, so its limit is %d ms)" % (early_limit, EARLY_MS_LIMIT_CROSSINK), long_early)
     add("KEY_HELD", "a key was held at entry, so a release wake happened inside that sleep (not counted)",
         [r for r in s_rows if r.has_flag("fl_e", 4)])
     add("CEILING", "sleeps ended by the awake ceiling or the input cap: something held the screen awake",
@@ -1286,8 +1300,12 @@ def counter_flags(rows: List[Row], opts: Options) -> List[Flag]:
         hours = sum(r.g("idle_ms") for r in long_tail) / 3.6e6
         add("LONG_TAIL", "idle tail before the sleep longer than the sleep timeout or 20 min or more, %d time(s), "
             "%.1f h in all (a tail costs 4-6.5 mAh per 10 min)" % (len(long_tail), hours), long_tail)
-    add("SLOW_ENTRY", "sleep entry took more than 2 s (a plugin Wi-Fi join, or the touch retry)",
-        [r for r in s_rows if (r.g("ent_ms") or 0) > 2000])
+    ents = [r.g("ent_ms") for r in s_rows if r.g("ent_ms") is not None]
+    ent_med = statistics.median(ents) if ents else 0
+    slow_limit = max(SLOW_ENTRY_MIN_MS, ent_med + SLOW_ENTRY_OVER_MEDIAN_MS)
+    add("SLOW_ENTRY", "sleep entry took more than %.1f s, which is the log's median entry (%.1f s, the sleep-screen "
+        "refresh included) plus 2 s and at least 3 s: a plugin Wi-Fi join, or the touch retry"
+        % (slow_limit / 1000.0, ent_med / 1000.0), [r for r in s_rows if (r.g("ent_ms") or 0) > slow_limit])
     add("TOUCH_AWAKE", "the touch controller did not accept hibernate (the 165 uA Monitor-mode risk)",
         [r for r in s_rows if r.has_flag("fl_e", 2)])
     add("SDA_LOW", "I2C SDA still low after bus recovery (about 1.5 mA in sleep)",
@@ -1618,6 +1636,8 @@ def analyze(paths: Sequence[str], opts: Optional[Options] = None) -> Analysis:
 
 
 def analyze_dataset(ds: Dataset, opts: Options) -> Analysis:
+    if opts.early_ms_limit is None:
+        opts = replace(opts, early_ms_limit=early_limit_for(ds.fw_lines))
     segs = prepare(ds, opts.charge_hold_h)
     touch = touch_fitted(ds.rows)
     rates = Rates(opts.capacity_mah, 8.0)
@@ -1923,8 +1943,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--seed", type=int, default=20260930, help="bootstrap seed")
     ap.add_argument("--pair-sigma-mv", type=float, default=PAIR_SIGMA_MV,
                     help="assumed scatter of a wake-to-wake pair difference in mV (default %.1f)" % PAIR_SIGMA_MV)
-    ap.add_argument("--early-ms-limit", type=int, default=300,
-                    help="mean early-wake awake time that raises a flag (default 300; CrossInk holds up to 400)")
+    ap.add_argument("--early-ms-limit", type=int, default=None,
+                    help="mean early-wake awake time that raises a flag (default: %d, or %d when the newest '# fw' line "
+                         "is a CrossInk build, which holds up to 400)" % (EARLY_MS_LIMIT, EARLY_MS_LIMIT_CROSSINK))
     ap.add_argument("--charge-hold-h", type=float, default=12.0,
                     help="hours after a charge during which wake samples are excluded (default 12)")
     ap.add_argument("--sdk-dir", help="freeink-sdk checkout to compare the column and notch tables with "

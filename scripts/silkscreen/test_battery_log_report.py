@@ -1029,7 +1029,7 @@ class Summaries(TempCase):
         sim.cycle(sleep_h=8.0, path="w", lit_min=2.0)  # a pocket relight
         sim.cycle(sleep_h=8.0, fl_e=(1 << 2) | (1 << 3))  # touch awake, SDA low
         sim.cycle(sleep_h=8.0, fl_e=1 << 8, fl_w=(1 << 7) | (1 << 6))  # burst skipped, slow flush
-        sim.cycle(sleep_h=8.0, extra={"ent_ms": 4000, "ab": 2, "ab_r": 4})
+        sim.cycle(sleep_h=8.0, extra={"ent_ms": 6000, "ab": 2, "ab_r": 4})  # a slow entry: over the median plus 2 s
         sim.cycle(sleep_h=8.0, awake_min=40.0, idle_ms=40 * 60000, tmo=10)  # idle past the ceiling
         sim.cycle(sleep_h=8.0, path="b", extra={"w_mv": 3480.0})
         a = self.analyze(csv_text(sim.rows))
@@ -1040,6 +1040,43 @@ class Summaries(TempCase):
         text = ba.render_report(a)
         self.assertIn("6. Counter flags", text)
         self.assertIn("pocket relight", text)
+
+    def test_slow_entry_is_relative_to_the_logs_own_entries(self):
+        # ent_ms holds the sleep-screen refresh, so a log whose entries all take 2.3 s flags none of them.
+        sim = Sim(soc=85.0)
+        for _ in range(6):
+            sim.cycle(sleep_h=8.0, extra={"ent_ms": 2310})
+        self.assertNotIn("SLOW_ENTRY", {f.code for f in self.analyze(csv_text(sim.rows)).flags})
+        sim.cycle(sleep_h=8.0, extra={"ent_ms": 6500})  # one that joined Wi-Fi first
+        slow = [f for f in self.analyze(csv_text(sim.rows)).flags if f.code == "SLOW_ENTRY"]
+        self.assertEqual([f.rows for f in slow], [[7]])
+        self.assertIn("median entry", slow[0].text)
+        # a slow card where every entry takes 4.5 s: the median moves, and nothing is singled out
+        sim = Sim(soc=85.0)
+        for _ in range(6):
+            sim.cycle(sleep_h=8.0, extra={"ent_ms": 4500})
+        self.assertNotIn("SLOW_ENTRY", {f.code for f in self.analyze(csv_text(sim.rows)).flags})
+
+    def test_early_wake_limit_follows_the_app_in_the_fw_line(self):
+        sim = Sim(soc=80.0)
+        sim.cycle(sleep_h=8.0)
+        sim.cycle(sleep_h=8.0, g_n=2, extra={"g_ms": 2 * 350})  # 350 ms a ghost
+        crosspoint = csv_text(sim.rows, fw=(FW, "1.6.5-batlog", 1, 0, 0))
+        crossink = csv_text(sim.rows, fw=(FW, "1.2.3-silkscreen-batlog", 1, 0, 0))
+        self.assertIn("EARLY_LONG", {f.code for f in self.analyze(crosspoint).flags})
+        a = self.analyze(crossink)
+        self.assertNotIn("EARLY_LONG", {f.code for f in a.flags})
+        self.assertEqual(a.opts.early_ms_limit, ba.EARLY_MS_LIMIT_CROSSINK)
+        self.assertEqual(self.analyze(crosspoint).opts.early_ms_limit, ba.EARLY_MS_LIMIT)
+        # an explicit limit wins over the fw line
+        self.assertIn("EARLY_LONG", {f.code for f in self.analyze(crossink, early_ms_limit=300).flags})
+
+    def test_the_design_example_row_flags_no_slow_entry(self):
+        # ent_ms 2310 and two ghosts of 320 ms: ordinary for a CrossInk build, which is what its fw line says
+        a = self.analyze(csv_text([EXAMPLE_ROW], fw=(FW, "1.2.3-silkscreen-batlog", 1, 0, 0)))
+        codes = {f.code for f in a.flags}
+        self.assertNotIn("SLOW_ENTRY", codes)
+        self.assertNotIn("EARLY_LONG", codes)
 
     def test_long_idle_tails(self):
         sim = Sim(soc=85.0)
