@@ -30,16 +30,20 @@ Both firmwares carry the same log through the same SDK code. CrossPoint's page i
   log is meant to observe. (The dev envs wait 250 ms for USB serial on every boot, ghost wakes included; the `# fw`
   line in the file says which kind of image wrote the rows.)
 - **The screen keeps 1% steps.** The release image shows the battery percentage in 5% steps (truncated, 100 from 98
-  up; [PORTING.md](PORTING.md)). This image leaves that out, so what its screen shows, and the log's `e_ui` and
-  `w_ui`, stay at 1% resolution. Apart from the log, it is the one place this image behaves differently from the
-  release image.
+  up; [PORTING.md](PORTING.md)). This image leaves that out, so what its screen shows still matches the log: `e_ui`
+  and `w_ui` are tenths of a percent read from the raw cache and from the first fresh burst, so the display step would
+  never have coarsened them, but the analyzer derives the percent the screen showed from them (`ui_pct()`, rounded to
+  the nearest percent), and that is only what a 1% screen shows. Apart from the log, it is the one place this image
+  behaves differently from the release image.
 - **No setting, no screen.** There is no toggle, settings entry, i18n string, Quick Action or reserve change. The log
   runs whenever the image has the macro, and "off" means flashing the release env.
 - **Gated in code.** The macro comes only from this env's `build_flags` and is never defined in code. Every line of the
   feature (the SDK files, the app hooks, the writer) sits inside `#if SILKSCREEN_BATLOG`, so every other env compiles to
   what it did before. A build with the macro on a device other than Silkscreen, or in the hardware test image, stops at an
-  `#error`. The one blocker the other way round is the release image's 5% display step (`#if !SILKSCREEN_BATLOG` in
-  `getBatteryPercentage()`), which this image compiles out.
+  `#error`. The one blocker the other way round is the release image's 5% display step: its helper and `static_assert`s
+  above `HalPowerManager::getBatteryPercentage()`, and the return inside it, sit in
+  `#if FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_BATLOG`, which this image compiles out. The device term is what leaves
+  every other board's code as it was.
 - **Swappable with the release image.** The board tag and the firmware device type are the release image's
   (`silkscreen`), so the SD card firmware update accepts either one in place of the other.
 - **Where the code is:**
@@ -210,7 +214,7 @@ Times are ms unless stated. **An empty field means unknown; a counter is 0 only 
 | 10 | `path` | How the session ended: `m` user-ordered, `a` auto-sleep timeout, `k` awake ceiling, `i` input cap, `w` unattended wake (WK-02), `b` low-battery cutoff, `e` SD-error screen, `q` Quick Lock timeout (CrossInk), `x` unknown. |
 | 11-13 | `e_mv`, `e_sd`, `e_rg` | Entry burst: mean, standard deviation and range (max minus min) of P+, mV. |
 | 14-15 | `e_z`, `e_raw` | Zero conversions (the ADC's silent failure); the sum of the 16 raw conversions (calibration-independent). |
-| 16 | `e_ui` | What the last render showed at the trigger, in 0.1 % (826 is 83 %). This image's screen shows 1% steps (the release image's shows 5% steps, but it writes no log). |
+| 16 | `e_ui` | The cached battery value at the trigger, in 0.1 % (826 is 82.6 %): the value the screen's percentage is taken from, not the number drawn. This image's screen rounds it to 1% (the release image's shows 5% steps, but it writes no log). |
 | 17-18 | `usb_e`, `chg_e` | USB present (0 or 1) and charge state at the trigger: `?` unknown, `b` on battery, `c` charging, `f` complete, `x` external idle, `n` no battery. USB reads unknown until the charge ladder has decoded. |
 | 19 | `fl_e` | Entry flags, 4 hex (below). |
 | 20 | `ent_ms` | Trigger to the SDK tail: the sleep-screen refresh, the saves, a plugin Wi-Fi join, the release wait. |
