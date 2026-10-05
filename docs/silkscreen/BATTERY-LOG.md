@@ -86,7 +86,10 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
   | CrossInk `firmware.bin` | 5618800 | 5627616 | 8816 |
 
   About 9 kB of flash and half a kB of RAM, all in the batlog image: every other env is the size it was before the log, to
-  the byte.
+  the byte. The table is that matrix. The sync to upstream `50823ffa` (three keyboard and hint fixes, after the log) moved
+  every CrossPoint env by upstream's own 18 to 68 B of flash and none of RAM; the log's footprint is now 9036 B of flash and
+  536 B of RAM (`silkscreen-gh_release` 5795210 / 103904, `silkscreen-batlog` 5804246 / 104440), and
+  [PORTING.md](PORTING.md#upstream-merges) has the sizes of every env.
 - **OTA slot headroom** (the 6553600 B app slot less `firmware.bin`): CrossPoint `silkscreen` 709584 B,
   `silkscreen-gh_release` 753328 B, `silkscreen-batlog` 744304 B, `c3check` 754672 B; CrossInk `silkscreen` 934800 B,
   `silkscreen-batlog` 925984 B, `c3check` 224560 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
