@@ -109,8 +109,9 @@ Pins:
      exclusive-storage branch of `loop()`; `flushIfDue()` follows the render lock's scope; `flushAtEntry()` runs before the
      Wi-Fi teardown with the card mounted; `carry()` is at the silent-restart funnel; and the release-wake, reset-loop and
      power-pin-fault exits still call no hook. Upstream edits to `enterDeepSleep()`, the early exits of `setup()`, `loop()`,
-     the seed branch of `HalPowerManager::getBatteryPercentage()` and `HalGPIO::prepareForSleep()` move these points: read
-     those diffs.
+     the seed branch of `HalPowerManager::getBatteryPercentage()` (and its `#if FREEINK_DEVICE_SILKSCREEN &&
+     !SILKSCREEN_BATLOG` return, which cuts the shown value to 5% steps everywhere but in the log image) and
+     `HalGPIO::prepareForSleep()` move these points: read those diffs.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's

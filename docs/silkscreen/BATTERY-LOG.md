@@ -29,12 +29,17 @@ Both firmwares carry the same log through the same SDK code. CrossPoint's page i
   `LOG_LEVEL`, no debug flag. Boot timing and the ghost-wake path therefore match the release image, which is what the
   log is meant to observe. (The dev envs wait 250 ms for USB serial on every boot, ghost wakes included; the `# fw`
   line in the file says which kind of image wrote the rows.)
+- **The screen keeps 1% steps.** The release image shows the battery percentage in 5% steps (truncated, 100 from 98
+  up; [PORTING.md](PORTING.md)). This image leaves that out, so what its screen shows, and the log's `e_ui` and
+  `w_ui`, stay at 1% resolution. Apart from the log, it is the one place this image behaves differently from the
+  release image.
 - **No setting, no screen.** There is no toggle, settings entry, i18n string, Quick Action or reserve change. The log
   runs whenever the image has the macro, and "off" means flashing the release env.
 - **Gated in code.** The macro comes only from this env's `build_flags` and is never defined in code. Every line of the
   feature (the SDK files, the app hooks, the writer) sits inside `#if SILKSCREEN_BATLOG`, so every other env compiles to
   what it did before. A build with the macro on a device other than Silkscreen, or in the hardware test image, stops at an
-  `#error`.
+  `#error`. The one blocker the other way round is the release image's 5% display step (`#if !SILKSCREEN_BATLOG` in
+  `getBatteryPercentage()`), which this image compiles out.
 - **Swappable with the release image.** The board tag and the firmware device type are the release image's
   (`silkscreen`), so the SD card firmware update accepts either one in place of the other.
 - **Where the code is:**
@@ -89,7 +94,10 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
   the byte. The table is that matrix. The sync to upstream `50823ffa` (three keyboard and hint fixes, after the log) moved
   every CrossPoint env by upstream's own 18 to 68 B of flash and none of RAM; the log's footprint is now 9036 B of flash and
   536 B of RAM (`silkscreen-gh_release` 5795210 / 103904, `silkscreen-batlog` 5804246 / 104440), and
-  [PORTING.md](PORTING.md#upstream-merges) has the sizes of every env.
+  [PORTING.md](PORTING.md#upstream-merges) has the sizes of every env. Since the 5% display step (2026-10-05) the
+  release image carries about 28 B that this image leaves out (`silkscreen` 5838946 to 5838974 B), so the log's
+  footprint over a release env built after it is about 28 B smaller than these figures; the batlog image itself did
+  not change size.
 - **OTA slot headroom** (the 6553600 B app slot less `firmware.bin`): CrossPoint `silkscreen` 709584 B,
   `silkscreen-gh_release` 753328 B, `silkscreen-batlog` 744304 B, `c3check` 754672 B; CrossInk `silkscreen` 934800 B,
   `silkscreen-batlog` 925984 B, `c3check` 224560 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
@@ -202,7 +210,7 @@ Times are ms unless stated. **An empty field means unknown; a counter is 0 only 
 | 10 | `path` | How the session ended: `m` user-ordered, `a` auto-sleep timeout, `k` awake ceiling, `i` input cap, `w` unattended wake (WK-02), `b` low-battery cutoff, `e` SD-error screen, `q` Quick Lock timeout (CrossInk), `x` unknown. |
 | 11-13 | `e_mv`, `e_sd`, `e_rg` | Entry burst: mean, standard deviation and range (max minus min) of P+, mV. |
 | 14-15 | `e_z`, `e_raw` | Zero conversions (the ADC's silent failure); the sum of the 16 raw conversions (calibration-independent). |
-| 16 | `e_ui` | What the last render showed at the trigger, in 0.1 % (826 is 83 %). |
+| 16 | `e_ui` | What the last render showed at the trigger, in 0.1 % (826 is 83 %). This image's screen shows 1% steps (the release image's shows 5% steps, but it writes no log). |
 | 17-18 | `usb_e`, `chg_e` | USB present (0 or 1) and charge state at the trigger: `?` unknown, `b` on battery, `c` charging, `f` complete, `x` external idle, `n` no battery. USB reads unknown until the charge ladder has decoded. |
 | 19 | `fl_e` | Entry flags, 4 hex (below). |
 | 20 | `ent_ms` | Trigger to the SDK tail: the sleep-screen refresh, the saves, a plugin Wi-Fi join, the release wait. |
@@ -317,6 +325,9 @@ drift from the step of `utc - rtc_ms/1000` between two synced rows.
   synthetic study gave the same +7.9 to +8.6 mV/h for every true drain from 58 µA to 1 mA.
 
 ### The "83 to 82" question
+
+(That night was read on a screen with 1% steps, which this image keeps. On the release image the two screens would
+show 80 and 80, and a one-percent fall shows only when it crosses a multiple of 5.)
 
 A one-step drop in the displayed percent over a night is what a normal night produces on this cell; it is neither evidence of
 a drain nor evidence against one. At 500 mAh one percent is 5 mAh and 8 mV at 83 %. Nine hours at the 111-127 µA floor is
