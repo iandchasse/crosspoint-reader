@@ -264,6 +264,38 @@ bool HalPowerManager::noChargeableCell() const {
   return _noCellCached;
 }
 
+#if FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_BATLOG
+namespace {
+// What Silkscreen shows for a whole-percent reading: truncated to a multiple of 5, and 100 from 98 up so a full
+// cell resting off the charger (about 4.18 V, 98-99%) reads 100 and not 95. Only the shown value; the average, the
+// cutoff and the gates keep the raw reading.
+constexpr int silkscreenShownPercent(const int percent) { return percent >= 98 ? 100 : percent / 5 * 5; }
+
+constexpr bool silkscreenShownPercentHolds() {
+  int previous = 0;
+  for (int p = 0; p <= 100; p++) {
+    const int shown = silkscreenShownPercent(p);
+    const bool pinned = p >= 98;
+    if (shown % 5 != 0) return false;
+    if (pinned ? shown != 100 : (shown > p || p - shown >= 5)) return false;
+    if (shown < previous) return false;
+    previous = shown;
+  }
+  return true;
+}
+
+static_assert(silkscreenShownPercent(0) == 0 && silkscreenShownPercent(1) == 0 && silkscreenShownPercent(4) == 0,
+              "0-4% shows 0");
+static_assert(silkscreenShownPercent(5) == 5 && silkscreenShownPercent(9) == 5, "5-9% shows 5");
+static_assert(silkscreenShownPercent(83) == 80 && silkscreenShownPercent(94) == 90, "truncates down");
+static_assert(silkscreenShownPercent(95) == 95 && silkscreenShownPercent(97) == 95, "95-97% shows 95");
+static_assert(silkscreenShownPercent(98) == 100 && silkscreenShownPercent(99) == 100 &&
+                  silkscreenShownPercent(100) == 100,
+              "98% and up shows 100");
+static_assert(silkscreenShownPercentHolds(), "multiples of 5, truncating, 100 from 98, monotonic");
+}  // namespace
+#endif
+
 uint16_t HalPowerManager::getBatteryPercentage() const {
   static const BatteryMonitor battery;
   if (BoardConfig::ACTIVE.batteryGauge.gaugeAddr != 0) {
@@ -286,8 +318,8 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
   if (BoardConfig::isSilkscreen()) {
     // No fuel gauge: the percentage is read off the divider's voltage. 16 conversions
     // averaged (a quarter of one reading's noise), then read linearly between the
-    // curve's 10% notches, so the figure moves in 1% steps instead of snapping to a
-    // notch. The step size is as fine as the hardware resolves (about 3 mV per percent
+    // curve's 10% notches, so the tracked value moves in 1% steps instead of snapping
+    // to a notch. The step size is as fine as the hardware resolves (about 3 mV per percent
     // in the 20-40% band, 8-14 mV above 80%); how accurate it is depends on the ADC's
     // calibration and the load at that moment (a lit light or a busy CPU reads lower).
     sampleTenths = BatteryMonitor::percentTenthsFromMillivolts(battery.readMillivoltsAveraged(16));
@@ -308,9 +340,16 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
   } else {
     _batteryCachedPercent = (_batteryCachedPercent * 9 + sampleTenths) / 10;
   }
+#if FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_BATLOG
+  // Silkscreen rounds to the nearest percent, then shows it in 5% steps (silkscreenShownPercent());
+  // the other boards floor, as before. The silkscreen-batlog image shows the 1% value.
+  return BoardConfig::isSilkscreen() ? silkscreenShownPercent((_batteryCachedPercent + 5) / 10)
+                                     : _batteryCachedPercent / 10;
+#else
   // Silkscreen rounds to the nearest percent, so a cell resting just under 4.20 V off
   // the charger still reads 100%; the other boards floor, as before.
   return BoardConfig::isSilkscreen() ? (_batteryCachedPercent + 5) / 10 : _batteryCachedPercent / 10;
+#endif
 }
 
 HalPowerManager::Lock::Lock() {
