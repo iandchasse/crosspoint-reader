@@ -443,6 +443,10 @@ void ClipSelectionActivity::loop() {
     return;
   }
 
+  // A touch is newer than any press still queued from a refresh: replayed after it, a queued Confirm would
+  // clip the word the finger chose. Always empty where no keys sit beside touch.
+  pendingButtonCount = 0;
+
   RenderLock lock;
   if (actionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
 
