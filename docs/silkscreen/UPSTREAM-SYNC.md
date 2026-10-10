@@ -140,6 +140,7 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      the seed branch of `HalPowerManager::getBatteryPercentage()` (and its `#if FREEINK_DEVICE_SILKSCREEN &&
      !SILKSCREEN_BATLOG` return, which cuts the shown value to 5% steps everywhere but in the log image) and
      `HalGPIO::prepareForSleep()` move these points: read those diffs.
+   - *Key access* (clipping and look-up, [PORTING.md](PORTING.md#upstream-merges), the "Not a merge: key access" row): `ClipSelectionActivity::loop()` still sends the keys through `loopButtons()` when `hasFrontButtons() && !touchInProgress()`, `textOffset()` and `textXOffset()` (and every touch hit test that adds them) still follow `hasFrontButtons()`, and the clippings list's hint and the toolbar's `panelCursorShown` too. Read each new touch-only control upstream adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
