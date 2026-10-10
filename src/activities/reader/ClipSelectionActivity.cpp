@@ -394,6 +394,26 @@ void ClipSelectionActivity::confirmSelection(const ClippingResult::Action action
   finish();
 }
 
+// With the touch tail fitted the action bar offers Look Up, Clip and Bookmark on a selection; the keys reach them as
+// a list on the second Confirm. A keys-only board keeps the direct Clip and a touch-only board has the bar.
+bool ClipSelectionActivity::keysChooseAction() const { return mappedInput.hasTouch() && mappedInput.hasFrontButtons(); }
+
+void ClipSelectionActivity::showActionPopup() {
+  // Same order as SELECTION_ACTIONS. Clip is chosen, so Confirm twice still clips.
+  static constexpr StrId OPTIONS[] = {StrId::STR_LOOKUP, StrId::STR_CLIP, StrId::STR_BOOKMARK_OPTION};
+  actionPopup.show(StrId::STR_CLIPPINGS, OPTIONS, 3, 1, [this](const int index) { chosenAction = index; });
+  requestUpdate();
+}
+
+// Run after the popup has returned: confirmSelection() may show the popup again (too long, low memory) or finish
+// the activity, neither of which is safe from inside the popup's own callback.
+void ClipSelectionActivity::applyChosenAction() {
+  if (chosenAction < 0) return;
+  const int index = chosenAction;
+  chosenAction = -1;
+  confirmSelection(SELECTION_ACTIONS[index]);
+}
+
 void ClipSelectionActivity::cancel() {
   ActivityResult result;
   result.isCancelled = true;
@@ -448,7 +468,10 @@ void ClipSelectionActivity::loop() {
   pendingButtonCount = 0;
 
   RenderLock lock;
-  if (actionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+  if (actionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) {
+    applyChosenAction();
+    return;
+  }
 
   int touchX = 0;
   int touchY = 0;
@@ -581,8 +604,10 @@ void ClipSelectionActivity::loop() {
 bool ClipSelectionActivity::handleButtons(const uint8_t buttons) {
   if (actionPopup.handleButtons(buttons & Input::INPUT_PREVIOUS, buttons & Input::INPUT_NEXT,
                                 buttons & Input::INPUT_CONFIRM, buttons & Input::INPUT_BACK,
-                                [this] { requestUpdate(); }))
+                                [this] { requestUpdate(); })) {
+    applyChosenAction();
     return true;
+  }
 
   if (buttons & Input::INPUT_BACK) {
     if (rangeStart >= 0) {
@@ -595,6 +620,10 @@ bool ClipSelectionActivity::handleButtons(const uint8_t buttons) {
   }
 
   if (buttons & Input::INPUT_CONFIRM) {
+    if (rangeStart >= 0 && mode == Mode::Clip && keysChooseAction()) {
+      showActionPopup();
+      return true;
+    }
     confirmSelection(mode == Mode::Lookup ? ClippingResult::Action::Lookup : ClippingResult::Action::Clip);
     return true;
   }

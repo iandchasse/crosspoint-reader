@@ -70,6 +70,9 @@ class ClipSelectionActivity final : public Activity {
   int textXOffset() const;
   void cancel();
   bool touchInProgress() const;
+  bool keysChooseAction() const;
+  void showActionPopup();
+  void applyChosenAction();
   bool buildSelectedText(int first, int last, std::string& text) const;
   void drawSelection() const;
   bool renderIncremental();
@@ -86,6 +89,8 @@ class ClipSelectionActivity final : public Activity {
   const int initialY;
   const Mode mode;
   OptionPopup actionPopup;
+  // What the action list chose, applied once the popup has returned (see applyChosenAction()).
+  int chosenAction = -1;
   // ponytail: retain 16 button frames during refresh; increase only if overflow is observed.
   std::array<uint8_t, 16> pendingButtons{};
   size_t pendingButtonCount = 0;
