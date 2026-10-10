@@ -205,7 +205,8 @@ int ClipSelectionActivity::closestInRow(const uint16_t row, const int centerX) c
   return best;
 }
 
-int ClipSelectionActivity::wordAt(const int x, int y) const {
+int ClipSelectionActivity::wordAt(int x, int y) const {
+  x -= textXOffset();
   y -= textOffset();
   constexpr int SLOP = 4;
   for (int i = 0; i < static_cast<int>(wordCount); ++i) {
@@ -218,7 +219,8 @@ int ClipSelectionActivity::wordAt(const int x, int y) const {
   return -1;
 }
 
-int ClipSelectionActivity::dragWordAt(const int x, int y) const {
+int ClipSelectionActivity::dragWordAt(int x, int y) const {
+  x -= textXOffset();
   y -= textOffset();
   int best = -1;
   Rect nearest{};
@@ -236,6 +238,7 @@ int ClipSelectionActivity::dragWordAt(const int x, int y) const {
 
 bool ClipSelectionActivity::selectionContains(const int x, const int y) const {
   const int offset = textOffset();
+  const int offsetX = textXOffset();
   const WordBox* previous = nullptr;
   for (int i = std::min(rangeStart, selected); i <= std::max(rangeStart, selected); ++i) {
     const WordBox& word = words[i];
@@ -246,7 +249,9 @@ bool ClipSelectionActivity::selectionContains(const int x, const int y) const {
       left = std::min(left, static_cast<int>(previous->x));
       right = std::max(right, previous->x + previous->width);
     }
-    if (selectionGeometry::contains(Rect{left, word.y + offset, right - left, word.height}, x, y)) return true;
+    if (selectionGeometry::contains(Rect{left + offsetX, word.y + offset, right - left, word.height}, x, y)) {
+      return true;
+    }
     previous = &word;
   }
   return false;
@@ -268,9 +273,10 @@ bool ClipSelectionActivity::isWithinCurrentPageEndDwellSlop(const int x, const i
   if (selectionGeometry::atBottomEdge(safe, lineHeight, x, y)) return true;
   if (selected + 1 < static_cast<int>(wordCount) && words[selected + 1].pageOffset == currentPageOffset) return false;
   const WordBox& word = words[selected];
+  const int wordX = word.x + textXOffset();
   const int wordY = word.y + textOffset();
-  return word.pageOffset == currentPageOffset && x >= word.x - TOUCH_PAGE_END_DWELL_SLOP_PX &&
-         x < word.x + word.width + TOUCH_PAGE_END_DWELL_SLOP_PX && y >= wordY - TOUCH_PAGE_END_DWELL_SLOP_PX &&
+  return word.pageOffset == currentPageOffset && x >= wordX - TOUCH_PAGE_END_DWELL_SLOP_PX &&
+         x < wordX + word.width + TOUCH_PAGE_END_DWELL_SLOP_PX && y >= wordY - TOUCH_PAGE_END_DWELL_SLOP_PX &&
          y < wordY + word.height + TOUCH_PAGE_END_DWELL_SLOP_PX;
 }
 
@@ -508,7 +514,7 @@ void ClipSelectionActivity::loop() {
           continue;
         selected = index;
         rangeStart = endpoint == 0 ? last : first;
-        dragOffsetX = words[index].x + words[index].width / 2 - touchX;
+        dragOffsetX = words[index].x + textXOffset() + words[index].width / 2 - touchX;
         dragOffsetY = words[index].y + textOffset() + words[index].height / 2 - touchY;
         touchDragSelecting = true;
         touchDragHasMoved = false;
@@ -592,7 +598,7 @@ Rect ClipSelectionActivity::handleRect(const int index, const bool start) const 
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
   const int size = std::max(24, UITheme::getInstance().getMetrics().verticalSpacing * 2);
   const bool left = start != word.isRtl;
-  const int edge = left ? word.x : word.x + word.width;
+  const int edge = (left ? word.x : word.x + word.width) + textXOffset();
   return Rect{std::clamp(edge - (left ? size : 0), safe.x, safe.x + safe.width - size),
               std::clamp(word.y + textOffset() + word.height, safe.y, safe.y + safe.height - size), size, size};
 }
@@ -600,9 +606,10 @@ Rect ClipSelectionActivity::handleRect(const int index, const bool start) const 
 int ClipSelectionActivity::selectionTop() const {
   const int first = std::min(rangeStart, selected);
   const int last = std::max(rangeStart, selected);
+  const int offset = textOffset();
   int top = renderer.getScreenHeight();
   for (int i = first; i <= last; ++i) {
-    if (words[i].pageOffset == currentPageOffset) top = std::min(top, static_cast<int>(words[i].y));
+    if (words[i].pageOffset == currentPageOffset) top = std::min(top, static_cast<int>(words[i].y) + offset);
   }
   return top;
 }
@@ -630,11 +637,12 @@ Rect ClipSelectionActivity::actionRect() const {
   const int last = std::max(rangeStart, selected);
   while (first < last && words[first].pageOffset < currentPageOffset) ++first;
   return selectionGeometry::actions(safe, selectionTop(), height + padding * 2, metrics.verticalSpacing, width,
-                                    words[first].x - padding);
+                                    words[first].x + textXOffset() - padding);
 }
 
 int ClipSelectionActivity::textOffset() const {
-  if (!mappedInput.hasTouch() && wordCount) {
+  // The key cursor stays clear of the key-hint band wherever keys are fitted, touch or not.
+  if (mappedInput.hasFrontButtons() && wordCount) {
     const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
     const WordBox& cursor = words[selected];
     return selectionGeometry::keepVisible(cursor.y, cursor.height, safe.y, safe.height);
@@ -643,7 +651,7 @@ int ClipSelectionActivity::textOffset() const {
 }
 
 int ClipSelectionActivity::textXOffset() const {
-  if (mappedInput.hasTouch() || !wordCount) return 0;
+  if (!mappedInput.hasFrontButtons() || !wordCount) return 0;
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
   const WordBox& cursor = words[selected];
   return selectionGeometry::keepVisible(cursor.x, cursor.width, safe.x, safe.width);
