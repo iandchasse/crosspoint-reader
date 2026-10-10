@@ -74,9 +74,11 @@ upstream's number, and Silkscreen's moves after it (see step 2).
    - For each conflict, find the upstream PR in the commit message and read it before resolving: keep
      upstream's intent, then re-apply the Silkscreen hunk on top.
    - Conflict hotspots: `src/main.cpp`, `lib/hal/HalGPIO.*`, `lib/hal/HalPowerManager.*`, `src/SettingsList.h`,
-     `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`, `src/activities/ActivityManager.cpp`,
-     `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on the awake ceiling), `platformio.ini`
-     (the `[silkscreen]` section), `lib/I18n/translations/english.yaml`, `docs/` and `USER_GUIDE.md`.
+     `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`,
+     `src/activities/reader/ClipSelectionActivity.*` and `EpubReaderClippingListActivity.cpp` (the key-access
+     hunks), `src/activities/ActivityManager.cpp`, `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on
+     the awake ceiling), `platformio.ini` (the `[silkscreen]` section), `lib/I18n/translations/english.yaml`,
+     `docs/` and `USER_GUIDE.md`.
    - Resolve `freeink-sdk` to the step-1 merge (or the unchanged shared head).
    - Run clang-format 21 on the app files you touched (the app has a `.clang-format`), not on the SDK.
    - Settings are stored by index: append new enum values, never renumber. A list that differs by board maps
@@ -140,7 +142,13 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      the seed branch of `HalPowerManager::getBatteryPercentage()` (and its `#if FREEINK_DEVICE_SILKSCREEN &&
      !SILKSCREEN_BATLOG` return, which cuts the shown value to 5% steps everywhere but in the log image) and
      `HalGPIO::prepareForSleep()` move these points: read those diffs.
-   - *Key access* (clipping and look-up, [PORTING.md](PORTING.md#upstream-merges), the "Not a merge: key access" row): `ClipSelectionActivity::loop()` still sends the keys through `loopButtons()` when `hasFrontButtons() && !touchInProgress()`, `textOffset()` and `textXOffset()` (and every touch hit test that adds them) still follow `hasFrontButtons()`, and the clippings list's hint and the toolbar's `panelCursorShown` too. Read each new touch-only control upstream adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys.
+   - *Beyond the battery log, key access* (clipping and look-up, [PORTING.md](PORTING.md#upstream-merges), the "Not a
+      merge: key access" row): `ClipSelectionActivity::loop()` still sends the keys through `loopButtons()` when
+      `hasFrontButtons() && !touchInProgress()` and empties `pendingButtons` on the touch path; `textOffset()` and
+      `textXOffset()` (and every touch hit test that adds them) still follow `hasFrontButtons()`, while
+      `onEnter()` tests the opening long press with `wordAtPage()`; the clippings list's hint and the toolbar's
+      `panelCursorShown` follow it too. Read each new touch-only control upstream adds to the selection, the lists
+      or the reader menu against what a keys-only X4 reaches by keys.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
