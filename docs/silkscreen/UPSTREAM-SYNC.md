@@ -52,6 +52,9 @@ Pins:
      re-wraps hundreds of unrelated lines. Format SDK edits by hand.
    - Syntax-check touched host tests with the xtensa g++ (`-std=gnu++17 -fsyntax-only`), and use
      `static_assert`s on `constexpr` rules where a test cannot run.
+   - Upstream's new host tests can put their stub directory ahead of ours (2026-10-10: `run_eego.sh` puts
+     `eego_stubs` before `metalio_stubs`, and the shared line's `BoardConfig.h` and `SharedI2c.h` need the
+     latter's `gpio.h` and `Wire.h`). Extend the stubs so both compile, and syntax-check them.
    - Commit message: `Merge <pin> (Free-Ink main) into silkscreen`, the body listing the commits taken and
      every conflict resolution.
 2. **CrossPoint.** `git merge upstream/develop` on `silkscreen`.
@@ -65,6 +68,12 @@ Pins:
    - Run clang-format 21 on the app files you touched (the app has a `.clang-format`), not on the SDK.
    - Settings are stored by index: append new enum values, never renumber. A list that differs by board maps
      positions to values (`SettingInfo::DynamicEnum`, saved by value in `CrossPointSettings::toJson`/`fromJson`).
+   - When upstream takes a value a Silkscreen shortcut had (2026-10-10: Create Clipping took Short Power 6 and
+     Long-press Confirm 5), upstream's value stays and Silkscreen's moves after it: upstream saves by value, and
+     every other board must read its files as upstream does. Build the Silkscreen list from one ordered table
+     (upstream's entries in upstream's order, then Silkscreen's), and test a saved value against what the board
+     offers (`longPressMenuValueAccepted()`, `shortPowerButtonValueAccepted()`), so other boards equal upstream.
+     A web page that hides a row by a list position must ask the device where it is (`toggleFrontlightIndex`).
    - Silkscreen-only behaviour stays gated on the board (`BoardConfig::isSilkscreen()` or profile data), so every
      other board builds and behaves as upstream's.
    - Keep new reader, network and plugin code out of the test image (`check_test_firmware.sh` fails on it).
@@ -80,6 +89,12 @@ Pins:
    path that blocks the loop, adds a timer or a wake source, keeps the radio or the CPU up, touches the SD card
    near sleep, or lights the front light. The front light is only ever lit by a user action or Restore Light on
    Wake; nothing new may add sleep current.
+   - A transfer that runs inside an activity and does not go through `HttpDownloader` (a sync client, a web
+     stream, an upload) holds `loop()` as well, and its caller's cutoff check cannot run: it must poll
+     `lowBatteryCutoffTripped()` (BAT-01). The 2026-10-10 round found two, CrossPoint's clipping sync
+     (`ClippingSync.cpp`, `request()`) and CrossInk's web streams and sync uploads (`CutoffAbortPrint.h`,
+     `StatsUploadClient.cpp`). Search the incoming diff for `SecureHttpClient`, `HTTPClient`, `NetworkClient`,
+     `readFileToStream` and `WebServer` raw callbacks.
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
    time. It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
    different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
@@ -117,10 +132,10 @@ Pins:
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
      differs by one line and one include), and POWER.md BL-01 still holds for what came in.
 8. **Record.** A row in PORTING.md's "Upstream merges" table (parent merge, upstream commit, SDK merge, what it
-   brought for Silkscreen), and the same in CrossInk's PORTING.md. Write them after the fix pass: quote the sizes of
-   the final rebuild (`silkscreen-batlog` included), list the review-fix commits, and move CrossInk's "last CrossPoint
-   commit ported" marker and the `git log` base in its "Keeping up with CrossPoint" to CrossPoint's head. Then
-   `upstream_status.sh` must print `STATUS: current`.
+   brought for Silkscreen) and the date and hashes in its Base bullet, and the same in CrossInk's PORTING.md.
+   Write them after the fix pass: quote the sizes of the final rebuild (`silkscreen-batlog` included), list the
+   review-fix commits, and move CrossInk's "last CrossPoint commit ported" marker and the `git log` base in its
+   "Keeping up with CrossPoint" to CrossPoint's head. Then `upstream_status.sh` must print `STATUS: current`.
 9. **Bench.** The user flashes (`pio run -e silkscreen -t upload`). Measure the sleep current (POWER.md MEAS-01)
    when a merge changed sleep, boot, `loop()` or network code, and repeat M1 of BATTERY-LOG.md (the release image against
    the `silkscreen-batlog` image) when it also changed the log's hooks.
@@ -141,4 +156,10 @@ Pins:
   install (esptool, urllib3 and charset-normalizer had to be restored).
 - A file appended to with `>>` must end in a newline first: CrossInk's `.gitattributes` did not, and the new rule was
   glued onto its last line.
-- Commit messages carry no AI co-author or "generated with" trailer (AGENTS.md rule 4).
+- Commit messages carry no AI co-author or "generated with" trailer (rule 4 of `.agents/rules/git-workflow.md`;
+  it was AGENTS.md rule 4 until upstream's #3890).
+- On Windows the working tree can be CRLF while the index is LF (`core.autocrlf`; `git ls-files --eol` shows
+  it). A scripted edit must keep each file's endings, or `git diff` shows the whole file changed.
+- `firmware.map` is not rewritten when SCons restores `firmware.elf` from its cache. To attribute a size
+  change, read the ELF (`xtensa-esp32s3-elf-nm -S --defined-only`): fonts are `*Glyphs` and `*Bitmaps`, the
+  translations `STRINGS_*_DATA` and `OFFSETS_*`.
