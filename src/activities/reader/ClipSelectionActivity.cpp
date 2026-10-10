@@ -75,7 +75,8 @@ void ClipSelectionActivity::onEnter() {
   const int middle = closestInRow(firstPageRows / 2, renderer.getScreenWidth() / 2);
   if (middle >= 0) selected = middle;
   if (initialX >= 0) {
-    const int hit = wordAt(initialX, initialY);
+    // The long press is in the reader's frame, where the page carries no key-cursor offset.
+    const int hit = wordAtPage(initialX, initialY);
     if (hit < 0) {
       cancel();
       return;
@@ -205,9 +206,8 @@ int ClipSelectionActivity::closestInRow(const uint16_t row, const int centerX) c
   return best;
 }
 
-int ClipSelectionActivity::wordAt(int x, int y) const {
-  x -= textXOffset();
-  y -= textOffset();
+// Hit test in page coordinates: the frame the reader drew the page in, which is where an opening long press lands.
+int ClipSelectionActivity::wordAtPage(const int x, const int y) const {
   constexpr int SLOP = 4;
   for (int i = 0; i < static_cast<int>(wordCount); ++i) {
     const WordBox& word = words[i];
@@ -217,6 +217,11 @@ int ClipSelectionActivity::wordAt(int x, int y) const {
     }
   }
   return -1;
+}
+
+// Hit test at a screen point: the page is drawn shifted by the key cursor's offsets.
+int ClipSelectionActivity::wordAt(const int x, const int y) const {
+  return wordAtPage(x - textXOffset(), y - textOffset());
 }
 
 int ClipSelectionActivity::dragWordAt(int x, int y) const {

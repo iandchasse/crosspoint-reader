@@ -52,6 +52,7 @@ class ClipSelectionActivity final : public Activity {
   bool extractWords();
   int closestInRow(uint16_t row, int centerX) const;
   int wordAt(int x, int y) const;
+  int wordAtPage(int x, int y) const;
   int dragWordAt(int x, int y) const;
   bool selectionContains(int x, int y) const;
   int nextPageStartIndexForTouchDrag() const;
