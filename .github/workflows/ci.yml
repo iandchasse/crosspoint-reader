@@ -101,6 +101,8 @@ jobs:
             asset: firmware-papermono.bin
           - env: metalio_eink4
             asset: firmware-metalio_eink4.bin
+          - env: eego_a4
+            asset: firmware-eego_a4.bin
           - env: silkscreen
             asset: firmware-silkscreen.bin
           # Hardware test firmware (docs/silkscreen/TEST-SUITE.md): a CI artifact

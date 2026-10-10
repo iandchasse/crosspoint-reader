@@ -76,6 +76,7 @@ class HalGPIO {
   void begin(bool deferTouch = false);
   // Probe and start the touch panel after begin(true). No-op once started.
   void startTouch();
+  void prepareForDeepSleep();
 
   // Button input methods
   void update();

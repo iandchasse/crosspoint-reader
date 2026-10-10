@@ -156,7 +156,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     FORCE_REFRESH = 3,
     FOOTNOTES = 4,
     PWR_CONFIRM = 5,
-    TOGGLE_FRONTLIGHT = 6,
+    CREATE_CLIPPING = 6,
+    TOGGLE_FRONTLIGHT = 7,  // Silkscreen: after upstream's 6, which stays Create Clipping
     SHORT_PWRBTN_COUNT
   };
 
@@ -170,7 +171,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     LP_MENU_BOOKMARK = 2,
     LP_MENU_DICTIONARY = 3,
     LP_MENU_READER_MENU = 4,
-    LP_MENU_FRONTLIGHT_PANEL = 5,
+    LP_MENU_CREATE_CLIPPING = 5,
+    LP_MENU_FRONTLIGHT_PANEL = 6,  // Silkscreen: after upstream's 5, which stays Create Clipping
     LONG_PRESS_MENU_FUNCTION_COUNT
   };
 

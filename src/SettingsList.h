@@ -2,6 +2,7 @@
 
 #include <BoardConfig.h>
 #include <HalClock.h>
+#include <HalFrontlight.h>
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <SdCardFontRegistry.h>
@@ -192,11 +193,13 @@ inline bool keyFrontlightAvailable() {
 #endif
 }
 
-// The long-press Confirm values this board offers, in list order. Reader Menu only with a
-// Home key; the front-light panel only with a light and no Home key (a Home-key board
-// reaches the light through its Home actions).
+// The long-press Confirm values this board offers, in list order: upstream's (Reader Menu
+// only with a Home key, then Save Clipping) and, after them, Silkscreen's front-light panel,
+// only with a light and no Home key (a Home-key board reaches the light through its Home
+// actions). The setting maps its list positions to these values, and the value is what is
+// saved, so a value is never renumbered: upstream's Save Clipping keeps 5.
 struct LongPressMenuValues {
-  uint8_t value[5];
+  uint8_t value[6];
   uint8_t count;
 };
 
@@ -204,17 +207,22 @@ inline LongPressMenuValues longPressMenuValues() {
   LongPressMenuValues v = {{CrossPointSettings::LP_MENU_KOSYNC, CrossPointSettings::LP_MENU_DISABLED,
                             CrossPointSettings::LP_MENU_BOOKMARK, CrossPointSettings::LP_MENU_DICTIONARY},
                            4};
-  if (BoardConfig::hasHomeKey()) {
-    v.value[v.count++] = CrossPointSettings::LP_MENU_READER_MENU;
-  } else if (keyFrontlightAvailable()) {
+  if (BoardConfig::hasHomeKey()) v.value[v.count++] = CrossPointSettings::LP_MENU_READER_MENU;
+  v.value[v.count++] = CrossPointSettings::LP_MENU_CREATE_CLIPPING;
+  if (!BoardConfig::hasHomeKey() && keyFrontlightAvailable()) {
     v.value[v.count++] = CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL;
   }
   return v;
 }
 
-inline bool longPressMenuValueOffered(const uint8_t value) {
-  const auto v = longPressMenuValues();
-  return std::find(v.value, v.value + v.count, value) != v.value + v.count;
+// Whether a saved long-press Confirm value loads. Upstream keeps each of its own values
+// whatever the board offers (one saved with a Home key survives a visit to a board without),
+// and so does this; the front-light panel is Silkscreen's and loads only where it is offered.
+inline bool longPressMenuValueAccepted(const uint8_t value) {
+  if (value == CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL) {
+    return !BoardConfig::hasHomeKey() && keyFrontlightAvailable();
+  }
+  return value <= CrossPointSettings::LP_MENU_CREATE_CLIPPING;
 }
 
 inline std::vector<StrId> buildLongPressMenuValues() {
@@ -235,6 +243,9 @@ inline std::vector<StrId> buildLongPressMenuValues() {
       case CrossPointSettings::LP_MENU_READER_MENU:
         labels.push_back(StrId::STR_READER_MENU);
         break;
+      case CrossPointSettings::LP_MENU_CREATE_CLIPPING:
+        labels.push_back(StrId::STR_SAVE_CLIPPING);
+        break;
       case CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL:
         labels.push_back(StrId::STR_FRONTLIGHT);
         break;
@@ -247,19 +258,113 @@ inline std::vector<StrId> buildLongPressMenuValues() {
   return labels;
 }
 
-// Short power button labels, indexed by SHORT_PWRBTN value. TOGGLE_FRONTLIGHT (6) follows
-// PWR_CONFIRM (5), so only touch builds, which list Confirm, can offer it (Silkscreen:
-// keyFrontlightAvailable()). Choosing it turns the power double-click off
+// The saved value's position in this board's list; one the board does not offer shows as Disabled.
+inline uint8_t longPressMenuDisplayValue() {
+  const auto v = longPressMenuValues();
+  const auto* it = std::find(v.value, v.value + v.count, SETTINGS.longPressMenuFunction);
+  if (it == v.value + v.count) {
+    it = std::find(v.value, v.value + v.count, static_cast<uint8_t>(CrossPointSettings::LP_MENU_DISABLED));
+  }
+  return static_cast<uint8_t>(it - v.value);
+}
+
+inline void setLongPressMenuFromDisplayValue(const uint8_t displayValue) {
+  const auto v = longPressMenuValues();
+  if (displayValue < v.count) SETTINGS.longPressMenuFunction = v.value[displayValue];
+}
+
+inline SettingInfo buildLongPressMenuSetting() {
+  return SettingInfo::DynamicEnum(StrId::STR_LONG_PRESS_MENU, buildLongPressMenuValues(), longPressMenuDisplayValue,
+                                  setLongPressMenuFromDisplayValue, "longPressMenuFunction", StrId::STR_CAT_CONTROLS);
+}
+
+// The short power button values this board offers, in list order: upstream's (Confirm only
+// with a touch panel, then Save Clipping) and, after them, Silkscreen's Toggle Frontlight
+// (keyFrontlightAvailable()). Choosing it turns the power double-click off
 // (CrossPointSettings::powerDoubleClickLight()), which would otherwise toggle twice.
-inline std::vector<StrId> buildShortPwrBtnValues() {
-#if FREEINK_CAP_TOUCH
-  std::vector<StrId> labels = {StrId::STR_IGNORE,        StrId::STR_SLEEP,     StrId::STR_PAGE_TURN,
-                               StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES, StrId::STR_CONFIRM};
-  if (keyFrontlightAvailable()) labels.push_back(StrId::STR_TOGGLE_FRONTLIGHT);
+struct ShortPowerButtonValues {
+  uint8_t value[8];
+  uint8_t count;
+};
+
+inline ShortPowerButtonValues shortPowerButtonValues() {
+  ShortPowerButtonValues v = {{CrossPointSettings::IGNORE, CrossPointSettings::SLEEP, CrossPointSettings::PAGE_TURN,
+                               CrossPointSettings::FORCE_REFRESH, CrossPointSettings::FOOTNOTES},
+                              5};
+  if (BoardConfig::hasTouch()) v.value[v.count++] = CrossPointSettings::PWR_CONFIRM;
+  v.value[v.count++] = CrossPointSettings::CREATE_CLIPPING;
+  if (keyFrontlightAvailable()) v.value[v.count++] = CrossPointSettings::TOGGLE_FRONTLIGHT;
+  return v;
+}
+
+// Whether a saved short power button value loads: each of upstream's, whatever the board
+// offers, and Toggle Frontlight (Silkscreen's) only where it is offered.
+inline bool shortPowerButtonValueAccepted(const uint8_t value) {
+  if (value == CrossPointSettings::TOGGLE_FRONTLIGHT) return keyFrontlightAvailable();
+  return value <= CrossPointSettings::CREATE_CLIPPING;
+}
+
+inline std::vector<StrId> buildShortPowerButtonValues() {
+  const auto v = shortPowerButtonValues();
+  std::vector<StrId> labels;
+  labels.reserve(v.count);
+  for (uint8_t i = 0; i < v.count; ++i) {
+    switch (v.value[i]) {
+      case CrossPointSettings::SLEEP:
+        labels.push_back(StrId::STR_SLEEP);
+        break;
+      case CrossPointSettings::PAGE_TURN:
+        labels.push_back(StrId::STR_PAGE_TURN);
+        break;
+      case CrossPointSettings::FORCE_REFRESH:
+        labels.push_back(StrId::STR_FORCE_REFRESH);
+        break;
+      case CrossPointSettings::FOOTNOTES:
+        labels.push_back(StrId::STR_FOOTNOTES);
+        break;
+      case CrossPointSettings::PWR_CONFIRM:
+        labels.push_back(StrId::STR_CONFIRM);
+        break;
+      case CrossPointSettings::CREATE_CLIPPING:
+        labels.push_back(StrId::STR_SAVE_CLIPPING);
+        break;
+      case CrossPointSettings::TOGGLE_FRONTLIGHT:
+        labels.push_back(StrId::STR_TOGGLE_FRONTLIGHT);
+        break;
+      case CrossPointSettings::IGNORE:
+      default:
+        labels.push_back(StrId::STR_IGNORE);
+        break;
+    }
+  }
   return labels;
-#else
-  return {StrId::STR_IGNORE, StrId::STR_SLEEP, StrId::STR_PAGE_TURN, StrId::STR_FORCE_REFRESH, StrId::STR_FOOTNOTES};
-#endif
+}
+
+// The saved value's position in this board's list; one the board does not offer shows as Ignore.
+inline uint8_t shortPowerButtonDisplayValue() {
+  const auto v = shortPowerButtonValues();
+  const auto* it = std::find(v.value, v.value + v.count, SETTINGS.shortPwrBtn);
+  return it == v.value + v.count ? static_cast<uint8_t>(CrossPointSettings::IGNORE)
+                                 : static_cast<uint8_t>(it - v.value);
+}
+
+inline void setShortPowerButtonFromDisplayValue(const uint8_t displayValue) {
+  const auto v = shortPowerButtonValues();
+  if (displayValue < v.count) SETTINGS.shortPwrBtn = v.value[displayValue];
+}
+
+// Where Toggle Frontlight sits in this board's list, or -1 where it is not offered. The web
+// settings page hides the power double-click row while it is chosen, and its position moves
+// with the touch panel (Confirm is listed only with one).
+inline int shortPowerButtonToggleFrontlightIndex() {
+  const auto v = shortPowerButtonValues();
+  const auto* it = std::find(v.value, v.value + v.count, static_cast<uint8_t>(CrossPointSettings::TOGGLE_FRONTLIGHT));
+  return it == v.value + v.count ? -1 : static_cast<int>(it - v.value);
+}
+
+inline SettingInfo buildShortPowerButtonSetting() {
+  return SettingInfo::DynamicEnum(StrId::STR_SHORT_PWR_BTN, buildShortPowerButtonValues(), shortPowerButtonDisplayValue,
+                                  setShortPowerButtonFromDisplayValue, "shortPwrBtn", StrId::STR_CAT_CONTROLS);
 }
 
 inline std::vector<StrId> homeThemeValues() {
@@ -279,8 +384,14 @@ inline std::vector<StrId> homeThemeValues() {
 // the font-family entry is replaced in that copy with a registry-aware version.
 // The font-size entry is always rebuilt, since its options are point sizes read
 // from the active family rather than a fixed enum.
+// forPersistence: fromJson()/toJson() pass true so the runtime frontlight probe
+// cannot drop a persisted key. Frontlight.present() is false until
+// Frontlight.begin() runs the I2C probe, which happens AFTER SETTINGS.loadFromFile();
+// filtering the persistence list on it would fail to restore (and later overwrite)
+// STR_RESTORE_LIGHT_ON_WAKE on frontlit EEGO A4 units. The UI list still filters it.
 inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
-                                                const std::vector<DictionaryEntry>* dictionaries = nullptr) {
+                                                const std::vector<DictionaryEntry>* dictionaries = nullptr,
+                                                bool forPersistence = false) {
   static const std::vector<SettingInfo> baseList = [] {
     // Enum settings are persisted as numeric values. Assign these labels by enum
     // value so a reordered menu or enum cannot silently swap their behavior.
@@ -429,26 +540,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           "longPressButtonBehavior", StrId::STR_CAT_CONTROLS),
         // List positions map to LONG_PRESS_MENU_FUNCTION values (longPressMenuValues()), so
         // CrossPointSettings saves and loads this one itself.
-        SettingInfo::DynamicEnum(
-            StrId::STR_LONG_PRESS_MENU, buildLongPressMenuValues(),
-            [] {
-              const auto v = longPressMenuValues();
-              const auto* it = std::find(v.value, v.value + v.count, SETTINGS.longPressMenuFunction);
-              if (it == v.value + v.count) {
-                it = std::find(v.value, v.value + v.count, static_cast<uint8_t>(CrossPointSettings::LP_MENU_DISABLED));
-              }
-              return static_cast<uint8_t>(it - v.value);
-            },
-            [](const uint8_t index) {
-              const auto v = longPressMenuValues();
-              if (index < v.count) SETTINGS.longPressMenuFunction = v.value[index];
-            },
-            "longPressMenuFunction", StrId::STR_CAT_CONTROLS),
+        buildLongPressMenuSetting(),
         // Erased below unless the board has the power double-click (X4 Pro, Silkscreen).
         SettingInfo::Toggle(StrId::STR_DBL_CLICK_PWR_LIGHT, &CrossPointSettings::doubleClickPwrLight,
                             "doubleClickPwrLight", StrId::STR_CAT_CONTROLS),
-        SettingInfo::Enum(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::shortPwrBtn, buildShortPwrBtnValues(),
-                          "shortPwrBtn", StrId::STR_CAT_CONTROLS),
+        // List positions map to SHORT_PWRBTN values (shortPowerButtonValues()); saved the same way.
+        buildShortPowerButtonSetting(),
         // Erased below unless the QMI8658 IMU is present (X3).
         SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
                           {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED}, "tiltPageTurn",
@@ -515,6 +612,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
             },
             "koServerUrl", StrId::STR_KOREADER_SYNC),
         SettingInfo::DynamicEnum(
+            StrId::STR_SERVER_TYPE, {StrId::STR_CROSSPOINT, StrId::STR_KOSYNC_SERVER, StrId::STR_OTHER},
+            [] { return static_cast<uint8_t>(KOREADER_STORE.getServerType()); },
+            [](uint8_t v) {
+              KOREADER_STORE.setServerType(static_cast<KOReaderServerType>(v));
+              KOREADER_STORE.saveToFile();
+            },
+            "koServerType", StrId::STR_KOREADER_SYNC),
+        SettingInfo::DynamicEnum(
             StrId::STR_DOCUMENT_MATCHING, {StrId::STR_FILENAME, StrId::STR_BINARY},
             [] { return static_cast<uint8_t>(KOREADER_STORE.getMatchMethod()); },
             [](uint8_t v) {
@@ -538,6 +643,15 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
               KOREADER_STORE.saveToFile();
             },
             "koSyncBehavior", StrId::STR_KOREADER_SYNC),
+        SettingInfo::DynamicEnum(
+            StrId::STR_SYNC_CLIPPINGS, {StrId::STR_STATE_OFF, StrId::STR_STATE_ON},
+            [] { return static_cast<uint8_t>(KOREADER_STORE.getSyncClippings()); },
+            [](uint8_t v) {
+              if (KOREADER_STORE.getSyncClippings() == (v != 0)) return;
+              KOREADER_STORE.setSyncClippings(v != 0);
+              KOREADER_STORE.saveToFile();
+            },
+            "koSyncClippings", StrId::STR_KOREADER_SYNC),
         // --- Status Bar Settings (web-only, uses StatusBarSettingsActivity) ---
         SettingInfo::Toggle(StrId::STR_CHAPTER_PAGE_COUNT, &CrossPointSettings::statusBarChapterPageCount,
                             "statusBarChapterPageCount", StrId::STR_CUSTOMISE_STATUS_BAR),
@@ -635,6 +749,14 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                              return s.nameId == StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION ||
                                     s.nameId == StrId::STR_BACK_SHORT_TO_FILE_BROWSER;
                            }),
+            v.end());
+  }
+  // Frontlit and lightless variants of a board share one binary (EEGO A4);
+  // presence is the I2C probe result from Frontlight.begin(). UI-only: the probe
+  // has not run at load time, so persistence must keep the key (forPersistence).
+  if (!forPersistence && !Frontlight.present()) {
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [](const SettingInfo& s) { return s.nameId == StrId::STR_RESTORE_LIGHT_ON_WAKE; }),
             v.end());
   }
   if (registry && registry->getFamilyCount() > 0) {

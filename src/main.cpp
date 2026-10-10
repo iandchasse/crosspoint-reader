@@ -1185,6 +1185,13 @@ void loop() {
 
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
 
+  // Under the render lock, so a step never overlaps the themes' gauge reads.
+  static bool gaugeCapacityPending = true;
+  if (gaugeCapacityPending) {
+    RenderLock lock(RenderLock::Mode::Try);
+    if (lock.ownsLock()) gaugeCapacityPending = BatteryMonitor::loadDesignCapacity();
+  }
+
   renderer.setFadingFix(SETTINGS.fadingFix);
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE

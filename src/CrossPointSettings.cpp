@@ -78,7 +78,7 @@ bool CrossPointSettings::powerDoubleClickLight() const {
 void CrossPointSettings::toJson(JsonDocument& doc) const {
   const CrossPointSettings& s = *this;
 
-  for (const auto& info : getSettingsList()) {
+  for (const auto& info : getSettingsList(nullptr, nullptr, /*forPersistence=*/true)) {
     if (!info.key) continue;
     // Dynamic entries (KOReader etc.) are stored in their own files — skip.
     if (!info.valuePtr && !info.stringOffset) continue;
@@ -106,9 +106,6 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   // option lists depend on the SD font registry), so the generic loop skips them.
   doc["fontFamily"] = fontFamily;
   doc["fontSize"] = fontPointSize;
-  // Long-press Confirm — a dynamic getter/setter in SettingsList (its list positions map
-  // to LONG_PRESS_MENU_FUNCTION values), so the generic loop skips it.
-  doc["longPressMenuFunction"] = longPressMenuFunction;
   // SD card font family name — not in SettingsList, save manually
   if (sdFontFamilyName[0] != '\0') {
     doc["sdFontFamilyName"] = sdFontFamilyName;
@@ -117,6 +114,11 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (dictionaryName[0] != '\0') {
     doc["dictionaryName"] = dictionaryName;
   }
+  // These two list positions map to board-specific values (longPressMenuValues() and
+  // shortPowerButtonValues() in SettingsList.h), so the generic persistence loop skips them
+  // and they are saved by value.
+  doc["longPressMenuFunction"] = longPressMenuFunction;
+  doc["shortPwrBtn"] = shortPwrBtn;
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
@@ -135,7 +137,7 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
 
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
 
-  for (const auto& info : getSettingsList()) {
+  for (const auto& info : getSettingsList(nullptr, nullptr, /*forPersistence=*/true)) {
     if (!info.key) continue;
     // Dynamic entries (KOReader etc.) are stored in their own files — skip.
     if (!info.valuePtr && !info.stringOffset) continue;
@@ -246,15 +248,19 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   // Font family — uses dynamic getter/setter in SettingsList so the generic loop skips it.
   const uint8_t storedFontFamily = doc["fontFamily"] | (uint8_t)0;
   fontFamily = clamp(storedFontFamily, BUILTIN_FONT_COUNT, 0);
-  // Long-press Confirm — saved by value (toJson); one this board does not offer falls back
-  // to the default, Disabled.
+  // These two controls map list positions to values that differ by board, so the generic
+  // settings loop skips them. Persisted values are stable across boards; one this board
+  // does not accept (Silkscreen's Toggle Frontlight and front-light panel on another board)
+  // falls back to the default.
   const uint8_t storedLongPress = doc["longPressMenuFunction"] | static_cast<uint8_t>(LP_MENU_DISABLED);
-  longPressMenuFunction = longPressMenuValueOffered(storedLongPress) ? storedLongPress : LP_MENU_DISABLED;
+  longPressMenuFunction = longPressMenuValueAccepted(storedLongPress) ? storedLongPress : LP_MENU_DISABLED;
+  const uint8_t storedShortPwr = doc["shortPwrBtn"] | static_cast<uint8_t>(IGNORE);
+  shortPwrBtn = shortPowerButtonValueAccepted(storedShortPwr) ? storedShortPwr : IGNORE;
   if (BoardConfig::hasHomeKey() && doc["homeButtonLongPressAction"].isNull() &&
       !doc["longPressMenuFunction"].isNull()) {
-    static constexpr HomeButtonAction LEGACY[] = {HomeButtonAction::Sync, HomeButtonAction::Ignore,
-                                                  HomeButtonAction::Bookmark, HomeButtonAction::Dictionary,
-                                                  HomeButtonAction::ReaderMenu};
+    static constexpr HomeButtonAction LEGACY[] = {HomeButtonAction::Sync,       HomeButtonAction::Ignore,
+                                                  HomeButtonAction::Bookmark,   HomeButtonAction::Dictionary,
+                                                  HomeButtonAction::ReaderMenu, HomeButtonAction::CreateClipping};
     if (s.longPressMenuFunction < sizeof(LEGACY) / sizeof(LEGACY[0])) {
       s.homeButtonLongPressAction = static_cast<uint8_t>(LEGACY[s.longPressMenuFunction]);
       needsResave = true;
@@ -275,7 +281,6 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   }
   // Dictionary folder name — uses dynamic getter/setter in SettingsList, load manually
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
-
   // Language -- stored as code string for stability across enum reorders.
   if (doc["language"].is<const char*>()) {
     language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));

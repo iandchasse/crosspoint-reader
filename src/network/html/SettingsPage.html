@@ -501,10 +501,13 @@
         pwrBtnFootnoteBackRow.style.display = 'none';
       }
     }
-    // Toggle Frontlight (6) toggles on a single press, so the double-click is off.
+    // Toggle Frontlight toggles on a single press, so the double-click is off. The server
+    // sends its list position (it moves with the touch panel, which adds Confirm).
     const doubleClickRow = document.getElementById('row-setting-doubleClickPwrLight');
     if (doubleClickRow) {
-      doubleClickRow.style.display = shortPwrBtnVal === 6 ? 'none' : '';
+      const shortPwrSetting = findSetting('shortPwrBtn');
+      const toggleIndex = shortPwrSetting ? shortPwrSetting.toggleFrontlightIndex : undefined;
+      doubleClickRow.style.display = toggleIndex !== undefined && shortPwrBtnVal === toggleIndex ? 'none' : '';
     }
   }
 

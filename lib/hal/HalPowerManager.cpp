@@ -14,6 +14,10 @@
 #include "HalFrontlight.h"
 #include "HalGPIO.h"
 
+#if FREEINK_DEVICE_EEGO_A4
+#include <HalFrontlight.h>
+#endif
+
 #if SILKSCREEN_BATLOG
 #include <BatteryLog.h>
 #endif
@@ -82,6 +86,11 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const { sleepImpl(gpio, /*sl
 void HalPowerManager::startDeepSleepMinimal(HalGPIO& gpio) const { sleepImpl(gpio, /*sleepCommands=*/false); }
 
 void HalPowerManager::sleepImpl(HalGPIO& gpio, const bool sleepCommands) const {
+#if FREEINK_DEVICE_EEGO_A4
+  // LM3630A and GSL share I2C; turn the light off before touch releases the bus.
+  Frontlight.setOn(false);
+  gpio.prepareForDeepSleep();
+#endif
   // A touch controller on an always-on rail goes to sleep, then the shared I2C
   // bus is released with nothing in flight (no-ops on boards without them). Both
   // before the serial teardown below, so their logs still reach the host. The
