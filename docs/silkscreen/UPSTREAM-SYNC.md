@@ -39,6 +39,19 @@ Pins:
   host C++ compiler, so host tests can only be compiled, not run.
 - `git config core.longpaths true` in every repo (the scripts also set it per call).
 
+## Decision rule: match upstream
+
+The owner's rule (2026-10-10): at every fork in the road, match upstream. Where a merge, a conflict or a build setting
+offers a choice between upstream's behaviour and a Silkscreen divergence, take upstream's: its defaults, enum values,
+language and font sets, flags, wording and UI. A Silkscreen difference stays only where the hardware or a standing rule
+needs it (key access, drain, the front light, the board profile, the battery log, the 5 % display step). It is then gated
+to Silkscreen, placed after upstream's entries, and listed in the sync record with its reason. A choice this rule does
+not settle is reported, not made.
+
+Standing examples: CrossInk's English-only built-in translations (`custom_i18n_builtin_langs = en`) stay as upstream
+builds them, and Silkscreen does not restore `all`; a value upstream took that a Silkscreen shortcut once held keeps
+upstream's number, and Silkscreen's moves after it (see step 2).
+
 ## The steps
 
 0. **Status.** `scripts/silkscreen/upstream_status.sh` (from `crosspoint-reader`) fetches every upstream and
