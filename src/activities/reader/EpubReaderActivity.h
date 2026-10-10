@@ -73,8 +73,9 @@ class EpubReaderActivity final : public ReaderActivity {
   static constexpr unsigned long PANEL_HOLD_MS = 1500;
   static constexpr int PANEL_HOLD_STEP = 10;
   bool panelHoldJumped = false;
-  // Whether the panel draws its cursor row. Button boards always do; touch
-  // boards only once a button has moved it, so a tapped row is not left inverted.
+  // Whether the panel draws its cursor row. Boards with front keys (a Silkscreen with its touch
+  // tail too) always do; touch-only boards only once a button has moved it, so a tapped row is
+  // not left inverted.
   bool panelCursorShown = false;
   // FreeInkUI chrome + tap targets for the overlay; created when it opens,
   // released when it closes.

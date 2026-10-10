@@ -2532,8 +2532,9 @@ void EpubReaderActivity::renderOverlay() {
   if (!epub || !section || !toolbarUi) return;
 
   ReaderToolbarUi::Model model;
-  // The toolbar's tool pill is the button-navigation cursor: tap-first (same
-  // convention as the panel lists), it only shows once a button has moved it.
+  // The toolbar's tool pill is the button-navigation cursor: tap-first on touch-only boards (same
+  // convention as the panel lists), it only shows there once a button has moved it. Boards with
+  // front keys show it from the start.
   // Panels override below: there the pill marks the open panel on every board.
   model.activeTool = (overlay == Overlay::Toolbar && !panelCursorShown) ? -1 : focusedTool;
   // Strings the model points at live here until render() returns.
@@ -2560,8 +2561,8 @@ void EpubReaderActivity::renderOverlay() {
   if (!mappedInput.hasTouch()) {
     model.denseRows = true;
   }
-  // Tap-first: the cursor is only drawn once a button has moved it, so a
-  // tapped row does not stay inverted after its action.
+  // Tap-first on touch-only boards: the cursor is only drawn once a button has moved it, so a
+  // tapped row does not stay inverted after its action. Boards with front keys draw it from the start.
   model.selectedIndex = panelCursorShown ? panelIndex : -1;
   if (overlay == Overlay::Contents) {
     model.panelTitle = tr(STR_TOOL_CONTENTS);
