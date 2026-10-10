@@ -323,7 +323,7 @@ void EpubReaderActivity::openReaderMenu() {
     overlay = Overlay::Toolbar;
     focusedTool = 0;
     panelHoldJumped = false;
-    panelCursorShown = !mappedInput.hasTouch();
+    panelCursorShown = mappedInput.hasFrontButtons();
     if (!toolbarUi) toolbarUi = std::make_unique<ReaderToolbarUi>(renderer);
     toolbarUi->begin();
     discardOverlayPage();
@@ -2443,8 +2443,9 @@ void EpubReaderActivity::openOverlay(Overlay target) {
   overlay = target;
   if (!toolbarUi) toolbarUi = std::make_unique<ReaderToolbarUi>(renderer);
   if (previous == Overlay::None) toolbarUi->begin();
-  // Buttons show a cursor from the start; touch boards only once a button moves it.
-  panelCursorShown = !mappedInput.hasTouch();
+  // Wherever keys are fitted (a Silkscreen with its touch tail too) the cursor shows from the
+  // start; touch-only boards only once a button moves it.
+  panelCursorShown = mappedInput.hasFrontButtons();
   switch (target) {
     case Overlay::Toolbar:
       focusedTool = 0;
