@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <HalMemory.h>
+#include <HalPowerManager.h>
 #include <KOReaderCredentialStore.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -19,6 +20,12 @@ constexpr size_t BUFFER_SIZE = 32 * 1024;
 
 bool request(freeink::SecureHttpClient& http, const std::string& url, char* buffer, JsonDocument& doc,
              const bool upload = false) {
+  // The sync is one request per clipping and runs inside the activity, so loop()'s own battery check
+  // cannot run until it ends: stop here at the low-battery cutoff (a no-op on boards without one).
+  if (powerManager.lowBatteryCutoffTripped()) {
+    LOG_ERR("CLIP", "Clipping sync stopped at the low-battery cutoff");
+    return false;
+  }
   size_t payloadSize = 0;
   if (upload) {
     if (doc.overflowed() || measureJson(doc) >= BUFFER_SIZE) {
