@@ -147,8 +147,9 @@ upstream's number, and Silkscreen's moves after it (see step 2).
       `hasFrontButtons() && !touchInProgress()` and empties `pendingButtons` on the touch path; `textOffset()` and
       `textXOffset()` (and every touch hit test that adds them) still follow `hasFrontButtons()`, while
       `onEnter()` tests the opening long press with `wordAtPage()`; the clippings list's hint and the toolbar's
-      `panelCursorShown` follow it too. Read each new touch-only control upstream adds to the selection, the lists
-      or the reader menu against what a keys-only X4 reaches by keys.
+      `panelCursorShown` follow it too, and the second Confirm opens the Look Up / Clip / Bookmark list only where
+      `hasTouch() && hasFrontButtons()` (upstream's code clips at once). Read each new touch-only control upstream
+      adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
