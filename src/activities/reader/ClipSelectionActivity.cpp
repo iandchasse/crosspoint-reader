@@ -401,6 +401,14 @@ bool ClipSelectionActivity::handleHomeGesture() {
   return true;
 }
 
+// A finger is on the glass or has just lifted, or a drag or the opening long press is still being tracked.
+bool ClipSelectionActivity::touchInProgress() const {
+  int x = 0;
+  int y = 0;
+  return touchDragSelecting || ignoreInitialTouch || mappedInput.isScreenTouchHeld(x, y) ||
+         mappedInput.wasScreenTouchReleased();
+}
+
 void ClipSelectionActivity::loopButtons() {
   const uint8_t buttons = selectionInput.pollButtons(mappedInput, millis());
   if (buttons) {
@@ -423,7 +431,9 @@ void ClipSelectionActivity::loopButtons() {
 
 void ClipSelectionActivity::loop() {
   if (wordCount == 0) return;
-  if (!mappedInput.hasTouch()) {
+  // Silkscreen keeps its keys beside the touch tail: with no finger on the glass they run the keys-only
+  // path, so a held Left or Right repeats and quick presses queue through a refresh.
+  if (!mappedInput.hasTouch() || (mappedInput.hasFrontButtons() && !touchInProgress())) {
     loopButtons();
     return;
   }

@@ -68,6 +68,7 @@ class ClipSelectionActivity final : public Activity {
   int textOffset() const;
   int textXOffset() const;
   void cancel();
+  bool touchInProgress() const;
   bool buildSelectedText(int first, int last, std::string& text) const;
   void drawSelection() const;
   bool renderIncremental();
