@@ -186,7 +186,8 @@ void EpubReaderClippingListActivity::buildScreen(UiScreen& screen) {
     return;
   }
 
-  if (!mappedInput.hasTouch()) {
+  // Hold Confirm is a key route: the line shows wherever keys are fitted, touch or not.
+  if (mappedInput.hasFrontButtons()) {
     const int helpHeight = renderer.getLineHeight(UI_10_FONT_ID);
     const fui::Rect band = screen.takeBottom(static_cast<int16_t>(helpHeight + metrics.verticalSpacing));
     GUI.drawHelpText(renderer, Rect{band.x, band.y + metrics.verticalSpacing, band.width, helpHeight},
