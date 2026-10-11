@@ -41,11 +41,22 @@ struct Variant {
 };
 
 constexpr Variant VARIANTS[] = {
+#if FREEINK_SILKSCREEN_368
+    // Neither X3 driver takes an async base (asyncBase is false in both), so the reader runs a blocking base
+    // and the strips there (routes 2-6): this one is a driver trial, and a garbled chart is not a reader fault.
+    {"Text page, planes buffered", GrayPath::TiledPlanes, false,
+     "A driver trial, not the reader's route on the X3 pair (no async base there): a FAST base fired async, both "
+     "planes rendered into 52 KB buffers while it runs, then streamed to the controller."},
+    {"Text page, 80-row strips", GrayPath::TiledStrips, false,
+     "A FAST base waited out, then an 8 KB scratch band by band (7,920 B here): the reader's strip path, which "
+     "is the only one on the X3 pair (no async base)."},
+#else
     {"Text page, planes buffered", GrayPath::TiledPlanes, false,
      "The reader's anti-aliased page: a FAST base fired async, both planes rendered into 48 KB buffers while it "
      "runs, then streamed to the controller."},
     {"Text page, 80-row strips", GrayPath::TiledStrips, false,
      "The reader's fallback when two plane buffers do not fit: an 8 KB scratch, band by band, after the base."},
+#endif
     {"Text page, Fading Fix on", GrayPath::FastBase, true,
      "With the Sunlight Fading Fix: displayGrayscaleBase(FAST), no async base, and a power-down after each "
      "refresh."},

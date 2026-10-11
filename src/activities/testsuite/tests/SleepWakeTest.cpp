@@ -62,6 +62,14 @@ constexpr uint16_t R34_ENTRY_MAX_TENTHS = 9999;
 // the Silkscreen 3.68" variant's UC8253 or UC8279d; its 58-73 uA typical,
 // 95 uA flag and 110 uA limit are the board's, with the 4.26" panel's 2-6 uA in them.
 constexpr int FLEX_GAP_MAX_UA = 8;
+// What a P5 record says of the limits above. On the 3.68" variant they are the 4.26" board's, with the
+// GDEQ0426T82's 2-6 uA in them: this panel's own deep-sleep draw is not in hand (POWER.md row 17), and the
+// record, like the screen, must not read as this panel's. Nothing is added on the 4.26" board.
+#if FREEINK_SILKSCREEN_368
+#define P5_LIMIT_BASIS " limit_basis=4.26in_panel"
+#else
+#define P5_LIMIT_BASIS ""
+#endif
 // A 1 min path sleeps 60 s after the arming press, give or take the loop's pace.
 constexpr unsigned long TIMED_MIN_MS = 58000;
 constexpr unsigned long TIMED_MAX_MS = 75000;
@@ -464,8 +472,8 @@ class SleepWakeTest final : public TestScreen {
     formatWakeMask(mask, sizeof(mask), ext1Mask);
     record(verdict,
            "path=%s stage=%u from_timeout=%d armed_ago_s=%lu uptime_s=%lu usb_at_entry=%d host_at_entry=%d touch=%d "
-           "wake=%s ext1=%s power_wake=%d asleep_s=%s current_ua=%s limit_ua=%u above_ds_budget=%d spread_ua=%d "
-           "observed=%d flex=%s r5_mv=%s r34_mv=%s flex_gap_ua=%s fails=%s",
+           "wake=%s ext1=%s power_wake=%d asleep_s=%s current_ua=%s limit_ua=%u above_ds_budget=%d" P5_LIMIT_BASIS
+           " spread_ua=%d observed=%d flex=%s r5_mv=%s r34_mv=%s flex_gap_ua=%s fails=%s",
            sleepPathCode(slept.path), slept.stage, slept.fromTimeout ? 1 : 0,
            static_cast<unsigned long>(slept.armedAgoMs / 1000), static_cast<unsigned long>(slept.uptimeMs / 1000),
            slept.usbConnected ? 1 : 0, slept.usbHost ? 1 : 0, slept.touchActive ? 1 : 0, wakeCauseName(wake), mask,
@@ -492,10 +500,17 @@ class SleepWakeTest final : public TestScreen {
   // BRING_UP section 4: a few uA is the panel; 40-70 uA a panel that never
   // reached deep sleep; 100-300 uA back-feed into IO47/IO48.
   static const char* flexGapClass(const int gap) {
+#if FREEINK_SILKSCREEN_368
+    // The first two bands are the GDEQ0426T82's 2-6 uA and its ordinary sleep mode; the 3.68" panel's own
+    // numbers are not in hand, so only the board's back-feed band is named and the rest is recorded.
+    if (gap >= 100 && gap <= 300) return "backfeed";
+    return "recorded";
+#else
     if (gap >= 0 && gap <= FLEX_GAP_MAX_UA) return "panel";
     if (gap >= 40 && gap <= 70) return "panel_awake";
     if (gap >= 100 && gap <= 300) return "backfeed";
     return "unclear";
+#endif
   }
 
   // --- screen ----------------------------------------------------------------
@@ -527,9 +542,16 @@ class SleepWakeTest final : public TestScreen {
     page.rowf("Reset / wake / ext1", "%s / %s / %s%s", resetReasonName(reset), wakeCauseName(wake), mask,
               powerWake ? "" : " (not POWER)");
     if (asleepKnown) page.rowf("Asleep (RTC)", "%ld min %02ld s", asleepS / 60, asleepS % 60);
+#if FREEINK_SILKSCREEN_368
+    // The 4.26" board's numbers, with its panel's 2-6 uA in them: this panel's own draw is not in hand.
+    page.rowf("Expected, 4.26\" panel in it", "%u-%u uA typical, flag %u, fail %u",
+              slept.touchActive ? TOUCH_TYPICAL_LOW_UA : TYPICAL_LOW_UA,
+              slept.touchActive ? TOUCH_TYPICAL_HIGH_UA : TYPICAL_HIGH_UA, budgetUa(), limitUa());
+#else
     page.rowf("Expected", "%u-%u uA typical, flag %u, fail %u",
               slept.touchActive ? TOUCH_TYPICAL_LOW_UA : TYPICAL_LOW_UA,
               slept.touchActive ? TOUCH_TYPICAL_HIGH_UA : TYPICAL_HIGH_UA, budgetUa(), limitUa());
+#endif
     page.setCompact(false);
     page.gap(8);
     drawEntries(page);
