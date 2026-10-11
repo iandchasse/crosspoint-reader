@@ -33,6 +33,13 @@
 #define CROSSPOINT_BOARD_NAME "murphy"
 #elif FREEINK_DEVICE_DELINK
 #define CROSSPOINT_BOARD_NAME "delink"
+#elif FREEINK_SILKSCREEN_368 && CROSSPOINT_TEST_SUITE
+// The Silkscreen 3.68" panel variant is a board class of its own: OTA and the SD update refuse an image
+// built for the 4.26" panel, and the other way round. Its test firmware has a tag of its own too.
+#define CROSSPOINT_BOARD_NAME "silkscreen-368-test"
+#elif FREEINK_SILKSCREEN_368
+// The battery-log image keeps this tag, as on the 4.26" board, so it swaps with the release image.
+#define CROSSPOINT_BOARD_NAME "silkscreen-368"
 #elif FREEINK_DEVICE_SILKSCREEN && CROSSPOINT_TEST_SUITE
 // The hardware test firmware: the reader's update paths reject it as another board.
 #define CROSSPOINT_BOARD_NAME "silkscreen-test"
