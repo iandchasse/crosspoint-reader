@@ -173,18 +173,22 @@ done
 v368_file "$SDK" libs/hardware/XteinkDetect/test/host/test_silkscreen_368_policy.cpp
 v368_file "$SDK" libs/hardware/BoardConfig/test/host/run_profile_asserts.py
 v368_need "$SDK" libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp 'setDisplayX3();' 1
-v368_variant_app() {  # dir: what every app that has the variant carries (CrossInk names its envs and has no test firmware)
+v368_variant_app() {  # dir [sites]: what every app that has the variant carries (CrossInk names its envs and has no test firmware)
   local dir=$1
+  # HalDisplay.cpp's HALF -> resync and gray-base sites: five in CrossPoint (displayBuffer, displayBufferAsync,
+  # refreshDisplay and the two displayGrayscaleBase overloads), four in CrossInk. A merge that resolves one of
+  # them back to gpio.deviceIsX3() builds every env and ghosts that path on the variant.
+  local sites=${2:-4}
   v368_need "$dir" lib/hal/HalDisplay.h 'isX3Panel' 1
   v368_need "$dir" lib/hal/HalDisplay.h 'FREEINK_SILKSCREEN_368' 1
-  v368_need "$dir" lib/hal/HalDisplay.cpp 'isX3Panel()' 4
+  v368_need "$dir" lib/hal/HalDisplay.cpp 'isX3Panel()' "$sites"
   v368_need "$dir" src/main.cpp 'isX3Panel()' 1
   v368_need "$dir" src/network/FirmwareBoardTag.cpp '"silkscreen-368"' 1
   v368_need "$dir" platformio.ini '^\[env:silkscreen-368\]' 1
   v368_need "$dir" platformio.ini 'DSILKSCREEN_PANEL_368=1' 1
   v368_need "$dir" scripts/silkscreen/build_matrix.sh 'silkscreen-368' 1
 }
-v368_variant_app "$CP"
+v368_variant_app "$CP" 5
 v368_need "$CP" src/network/FirmwareBoardTag.cpp '"silkscreen-368-test"' 1
 v368_need "$CP" platformio.ini '^\[env:silkscreen-368-gh_release\]' 1
 v368_need "$CP" platformio.ini '^\[env:silkscreen-368-test\]' 1
