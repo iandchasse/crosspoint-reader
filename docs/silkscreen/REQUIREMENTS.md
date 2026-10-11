@@ -214,7 +214,7 @@ Rows changed after the hardware audit of 2026-09-30 (Rev 1.01) carry a 2026-10-0
 
 | Level | ID | Requirement | Source |
 |---|---|---|---|
-| must | `touch-optional` | Touch (J4 + U7) is fitted only for -T01C/-FT01C panels. Probe the controller on I2C and run normally when it is absent. | de-link_pcb/docs/HARDWARE.md:116, 869 |
+| must | `touch-optional` | Touch (J4 + U7) is fitted only for -T01C/-FT01C panels. Probe the controller on I2C and run normally when it is absent. The 3.68" variant meets it by having no touch code at all, which is `touch-368-none`'s deviation from "probe": nothing is probed there. | de-link_pcb/docs/HARDWARE.md:116, 869 |
 | must | `touch-pins` | TP_RST = GPIO11 and TP_INT = GPIO41, with SDA=GPIO38 and SCL=GPIO39 on the shared bus. Default J4 pinout: 1 GND, 2 3V3, 3 RST, 4 INT, 5 SDA, 6 SCL. | de-link_pcb/docs/HARDWARE.md:871-874, 1242, 1255 |
 | must | `touch-int-pullup` | TP_INT has no discrete pull-up. If the controller's INT is open-drain, enable the MCU pull-up on GPIO41. | de-link_pcb/docs/HARDWARE.md:893-895; DESIGN_REVIEW.md:468 |
 | must | `touch-no-deep-wake` | GPIO41 is not an RTC GPIO, so touch cannot wake the chip from deep sleep via ext0/ext1. Only light-sleep GPIO wake is possible. | de-link_pcb/docs/HARDWARE.md:890-893, 1255, 1313; DESIGN_REVIEW.md:466 |

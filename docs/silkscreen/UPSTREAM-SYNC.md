@@ -184,7 +184,7 @@ to the byte.
      `silkscreen-368*` image. In the SDK the hotspots are `BoardConfig.h`'s driver macros, `XteinkDetect`'s stock-probe
      selection and `EpdBus`'s X3 `BUSY_N` rule, and `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (37
      cases) must still hold. CrossInk's copy of this lens is its own `docs/silkscreen/` page once it has the variant.
-   - *Tooling and rules:* the analyzer's tests pass   - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
+   - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
      differs by one line and one include), and POWER.md BL-01 still holds for what came in.
