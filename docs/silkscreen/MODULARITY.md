@@ -10,6 +10,7 @@ Silkscreen is a base board meant to be built many ways: with or without a front 
 It records the conclusion of the modularity research of 2026-09-30, which was a synthesis checked by an independent verification pass, as amended by the owner's decisions. It also gives the state after the work that research led to.
 
 - **Status:** SDK `3ee11bc`, app `16374791`, with the follow-up review's fixes (SDK `923f61d`, app `fix(silkscreen): address follow-up review`) and the hardware audit's (SDK `65660a6`, app `f25a8651`). **Nothing here has run on a board.** Every probe threshold is derived from datasheets and the netlist, and waits for the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
+- **The 3.68" variant** ([below](#the-368-variant-silkscreen-368), 2026-10-11): SDK `c875022` to `48be3d0`, app `9385762a` to `4d9bb804` and the docs commit after it. Built and checked without hardware; its bench list is in [TEST-SUITE.md](TEST-SUITE.md#the-368-variant-silkscreen-368-test).
 - `§` refers to `de-link_pcb/docs/HARDWARE.md`. SDK paths are relative to `freeink-sdk/libs/`.
 - The battery cost of every check is in [Battery cost of the checks](#battery-cost-of-the-checks); the drain rules they keep to are in [POWER.md](POWER.md).
 
@@ -19,7 +20,7 @@ Every Silkscreen variation falls into one of four tiers. Only the first is a bui
 
 | Tier | How the firmware learns it | Variations |
 |---|---|---|
-| 1. Panel family | A separate build env, `BoardProfile` and board tag | 4.26" (800×480) now, in `[env:silkscreen]`. Later: the 3.68" x3 panel (528×792) and the 5.76" panel (SSD2677, 920×680). |
+| 1. Panel family | A separate build env, `BoardProfile` and board tag | 4.26" (800×480) in `[env:silkscreen]`. The 3.68" x3 panel (792×528 native, 528×792 portrait) in `[env:silkscreen-368]`. Later: the 5.76" panel (SSD2677, 920×680). |
 | 2. Probed at runtime | Read at a reset by a check that is harmless to the part: a reset pulse and register reads, or a pin read with a pull for a few ms. The result patches `BoardConfig::ACTIVE` before a driver uses it. Where a wake needs it, it is kept in RTC memory, for deep-sleep wakes only. | The display controller (SSD1677 or UC8279D). The touch tail (FT6336U, identified by its chip id; a GT911 only in an alternate-jumper build). The RTC (U13 DS3231MZ, identified by its register pattern; U14 RV-8263; or none). Whether each key ladder has its pull-up. As a fault check, the power button's idle level. |
 | 3. Detected on a user action | Seen only by running the part, so detected inside an enable the user asks for (or Restore Light on Wake, or a silent restart's replay of a lit light), never on its own. The result is kept in RTC memory. | The front-light load (a `J3` light, a `J6` strip, or none) and each of its strings (warm, cool). |
 | 4. Invisible | The firmware cannot see it and does not need to. | Individual keys; front-mounted keys; UP(2)-as-power; the `J4` jumper mux; `R37` and the U10 variant; the battery; the SD socket. |
@@ -31,7 +32,7 @@ Every Silkscreen variation falls into one of four tiers. Only the first is a bui
 - **The display must work first.** Every screen, a setup screen included, needs the right driver before it can show anything.
 - **Firmware updates.** A board tag per panel family lets OTA and the SD firmware update refuse an image built for another panel.
 
-The SILKSCREEN profile's 48,000-byte `static_assert` is not what forces this. The framebuffer is allocated at runtime and sized by `MAX_FRAMEBUFFER_BYTES` (the largest compiled-in profile). A second profile needs a term there, a `Board` value and a `selectDevice()` case.
+The SILKSCREEN profile's 48,000-byte `static_assert` is not what forces this. The framebuffer is allocated at runtime and sized by `MAX_FRAMEBUFFER_BYTES` (the largest compiled-in profile). A second profile needs a term there, and the way in. The 3.68" variant took the narrow one: a profile derived from `SILKSCREEN` by a `constexpr` function (so the pins, power policy, ladders, light, SD and RTC cannot drift), picked by a build macro, and the same `Board::Silkscreen`, so no enum value, no `selectDevice()` case and no app site that tests the board changes.
 
 ### Why probes, kept in RTC memory rather than NVS
 
@@ -58,10 +59,12 @@ Status after this round (SDK `3ee11bc`, app `16374791`, the follow-up review and
 
 | Module | Variants | Tier and mechanism | Status | Left to do |
 |---|---|---|---|---|
-| Panel family | 4.26" GDEQ0426T82 family and the custom 4.26" panel; 3.68" x3; 5.76" GDEH0576T81 | 1. Env `silkscreen`, profile `SILKSCREEN`, board tag `silkscreen` (`silkscreen-test` for the test firmware). | 4.26" done | The 3.68" and 5.76" envs ([Future work](#future-work)) |
+| Panel family | 4.26" GDEQ0426T82 family and the custom 4.26" panel; 3.68" x3; 5.76" GDEH0576T81 | 1. Env `silkscreen`, profile `SILKSCREEN`, board tag `silkscreen` (`silkscreen-test` for the test firmware). The 3.68": env `silkscreen-368`, `-DSILKSCREEN_PANEL_368=1`, profile `SILKSCREEN_368`, board tag `silkscreen-368` (`silkscreen-368-test`). | 4.26" done; 3.68" built and checked, nothing run on a board | The 3.68"'s [bench list](TEST-SUITE.md#the-368-variant-silkscreen-368-test); the 5.76" env ([Future work](#future-work)) |
 | Panel suffix within 4.26" | Plain, -T01C (touch), -FL01C (light), -FT01C (both) | None: the suffix changes only touch and light, which are handled below. | Done | — |
 | Display controller | SSD1677 (Good Display panels) or UC8279D (the custom panel), same 800×480 and orientation | 2. A half-duplex VER/FLG read on SDI (`IO12` via `R29`) before `display.begin()`. Any UltraChip answer runs the UC8279 driver, a FLG driven the same on both passes included; UC8179 is not used on this panel size and is not linked. 16 B RTC cache, checked against `BUSY` at the wake's first panel reset. `-DSILKSCREEN_DISPLAY_CONTROLLER` override. | Done (SDK `0c34a6d`, follow-up review) | B2 on the UC8279D panel: verdict and IDs, geometry (TRES, gate offset), `BUSY_N`, deep-sleep current, waveforms |
 | Case window | Every measured case (4.26" Rev K/L and P03, 3.68", 5.76"): the active area plus 0.5-0.7 mm | Profile constant `viewableInsets {0,0,0,0}`. | Done | T7 against the case |
+| Display controller, 3.68" variant | UC8253 (the first X3 batches) or UC8279d (later ones), same 792×528 | 2. The X3's stock protocol, before `display.begin()`: reset (high 10 ms, low 50 ms, high 50 ms), a bounded `BUSY_N` wait (300 ms), then three VER bytes bit-banged on SDI (`IO12` through `R29`, released with the internal pull-up): byte 2 `0x66` is a UC8279d, `0xFF` a UC8253. No FLG, no MTP, no generic probe (it would take a UC8253 for an UltraChip part, and is not linked). Only those two ids are kept in RTC memory for a deep-sleep wake; any other id runs the UC8253 driver and is probed again at every wake. `-DSILKSCREEN_DISPLAY_CONTROLLER=uc8253` or `=uc8279` (`[silkscreen368] display_flags`) forces it. | Built (SDK `757cf9f`, `4fa3c1f`) | The VER bytes of the real panel (P1's `action=panel` row): see the bench list |
+| Touch, 3.68" variant | None: no tail on `J4` (and `U7` unfitted) | 1. `-DFREEINK_CAP_TOUCH=0` and `NO_TOUCH` in the profile: no touch driver is linked and nothing probes `0x38`, `0x5D` or `0x14`, resets `TP_RST` or sends a hibernate. The keys-only path (the X4's) runs everywhere. `scripts/silkscreen/check_no_touch.sh` fails a build that links one. | Built and audited | A logic analyser at boot and at sleep entry |
 | Touch tail on `J4` | None; FT6336U (-T01C, -FT01C); GT911 (alternate jumpers) | 2. Reset, then the chip id at `0xA3` (0x06, 0x36 or 0x64) is read before any write. The GT911 fallback is built only with `-DSILKSCREEN_TOUCH_ALT_JUMPERS=1`. RTC cache. | Done (SDK `a26e398`, `3ee11bc`) | B9: the chip id (0x64 expected), orientation, hibernate current |
 | `J4` jumper mux | `R42`/`R44`/`R46`/`R52` (default) or `R43`/`R45`/`R58`/`R66` | 4. It only routes connector pins. A GT911 tail, which needs the alternate jumpers, also needs the alternate-jumper build: a default image resets it awake and never sleeps it (about 3.3 mA in sleep). Fit exactly one jumper of each pair (§9.2); firmware cannot see a pair fitted twice. | n/a | — |
 | RTC | U13 DS3231MZ at 0x68; U14 RV-8263-C7 at 0x51; none | 2. 0x68 must show the DS3231 register pattern before anything is written to it; then 0x51 is tried; with neither, the board has no RTC. | Done (SDK `abca595`, `3ee11bc`) | B7. 0x51 has no identity check ([J6 accessories](#j6-accessories)) |
@@ -120,10 +123,10 @@ Battery drain is the port's first constraint ([POWER.md](POWER.md)). None of the
 
 | Check | When | Cost |
 |---|---|---|
-| Display controller | A boot other than a deep-sleep wake that goes on to start the panel (or the boot cutoff's and the reset loop's panel sleep) | ≈115 ms with an SSD1677, ≈170 ms with a UC8279 (both passes hold reset 50 ms). On a deep-sleep wake, one `BUSY` read after the driver's own reset; only a panel swapped during the sleep adds 300 ms and a restart that probes. |
+| Display controller | A boot other than a deep-sleep wake that goes on to start the panel (or the boot cutoff's and the reset loop's panel sleep) | ≈115 ms with an SSD1677, ≈170 ms with a UC8279 (both passes hold reset 50 ms). On a deep-sleep wake, one `BUSY` read after the driver's own reset; only a panel swapped during the sleep adds 300 ms and a restart that probes. The 3.68" variant's X3 probe: ≈111 ms (reset 110 ms, one `BUSY_N` read, three VER bytes), 410 ms at most when `BUSY_N` stays LOW through its 300 ms bound; nothing at a deep-sleep wake with a conclusive verdict (`0x66`, `0xFF`), and ≈111 ms at every wake with another id. |
 | Power button idle level | A reset other than a deep-sleep wake | 15 ms (four 8-sample ADC2 readings, radio off) |
 | Key ladders | A reset other than a deep-sleep wake | About 10 ms for both ladders. Each pull is on for about 2 ms, and both end off. |
-| Touch tail | Each boot past the wake decision | ≈307 ms for the controller's reset and settle, plus a chip-id read: at a cold boot whether or not a tail is fitted, and at a deep-sleep wake when a tail was found before. Nothing on a deep-sleep wake when none was. |
+| Touch tail | Each boot past the wake decision | ≈307 ms for the controller's reset and settle, plus a chip-id read: at a cold boot whether or not a tail is fitted, and at a deep-sleep wake when a tail was found before. Nothing on a deep-sleep wake when none was. Not in the 3.68" variant, which has no touch code: that is the ≈307 ms and the NACKed hibernate write at each sleep entry it saves. |
 | RTC identity | Each boot past the wake decision | One 19-register read; a second read 20 ms later only on a mismatch. A read that gets no answer is repeated, three attempts 10 ms apart (upstream's `readRegsRetry()`), so a board with no RTC pays up to 30 ms per address (0x68, then 0x51) |
 | Front-light load | Each switch-on the user asks for, and a restore | The caller does not wait: the monitor timer reads `LED_MONIT` every 20 ms for 500 ms (at most 25 readings, each under the ADC lock), then every 100 ms while lit as before. On a board with no light, one OVP event per string tried, and the rail wait between them on the same timer (≈1-3 s, at most 4 s) with the loop running; a restore no longer delays the first paint, and its message comes a few seconds after boot (once per cold boot, and once after a wake if the light was removed during the sleep). A fallback to the other string adds the rail wait (≈1-3 s) and a second window once: the reader then saves the warmth on the string there is. After a no-light result the light panel's slider and keys only set the level, so a gesture runs the probe once. |
 
@@ -174,20 +177,33 @@ The board may be shortened at its cut line (§16, cut-line row). The cut removes
   - A cold, top-bin 6+6 strip can sit near 22.3-22.9 V, close to the 23 V trip. It may read as "no load" or as a missing string, which is a bring-up item (B8).
 - **`P+` on pin 12** is the raw cell behind a 0.75 A PPTC. That is hardware only.
 
+## The 3.68" variant (`silkscreen-368`)
+
+The owner's "x3 build": Silkscreen Rev 1.01 cut at its cut line, carrying the Xteink X3's 3.68" panel (792×528 native, 528×792 in portrait) on `J2`, a 500 mAh cell, no touch tail and, optionally, a light strip on `J3`. The panel's 24 pads follow `J2`'s order by position (the exact part is not identified in any repo), and its controller is a UC8253 or a UC8279d: reading VER is the first bench step. It is a build choice (tier 1), and the same device in every other respect.
+
+| Part | What it is |
+|---|---|
+| Identity | `FREEINK_DEVICE_SILKSCREEN` and `Board::Silkscreen`, unchanged. The battery log, the 5% battery step, the front light, the early wake decision, the power policy and the key-access gating therefore apply as they are. |
+| Panel | `-DSILKSCREEN_PANEL_368=1` in the SDK: the derived profile `SILKSCREEN_368` (792×528, UC8253 by default, 10 MHz, `BUSY_N` pulled up while awake, the pins of `SILKSCREEN`), the X3 pair `Uc8253X3Driver` and `Uc8279Driver` linked, the SSD1677 and UC8279 X4 drivers not, and the facade in X3 mode from its constructor (`FreeInkDisplay::isX3Mode()`). A build asserts the pins equal `SILKSCREEN`'s, the framebuffer is 52,272 bytes, and the build is touchless. |
+| Touch | None, twice: `NO_TOUCH` in the profile and `-DFREEINK_CAP_TOUCH=0`, which compiles the driver out. The SDK refuses the macro with touch, with the alternate-jumper build or with a forced `ssd1677`. |
+| App | `HalDisplay::isX3Panel()` is `isX3Mode()` in this build and `gpio.deviceIsX3()` in every other. The five `HalDisplay` sites (HALF resync, the gray base), the splashless-wake rebase, the last-screen sleep and the reader's `absoluteImageGrayscale` ask it. `xteinkClassPanel()` needed nothing: the profile inherits `x4ClassPanel`, which an SDK `static_assert` pins, and both X3 drivers report overlay gray. |
+| Left as the board's | `gpio.deviceIsX3()` (the X3 board: C3 only), `isXteinkDevice()` (it also drives the `GPIO13` latch power-off) and `hasEdgeSideButtons()` stay false for Silkscreen. The keyboard's side-hint reserve, the "Hardware detect" log line and the web server's device string (not compiled for Silkscreen: the web page's Auto image target stays 480×800 on this panel) are the X3 board's. |
+| Envs and tags | `silkscreen-368`, `-gh_release`, `-gh_release_rc`, `-batlog` (tag `silkscreen-368`) and `-test` (tag `silkscreen-368-test`), from `[silkscreen368]`, which does not inherit `touch_flags`. OTA and the SD update refuse a 4.26" image, and the reverse. |
+| Checks | `scripts/silkscreen/check_no_touch.sh` (no touch driver, none of the SSD1677, UC8279 X4 or generic probe code, the X3 pair linked, the tag), `check_test_firmware.sh silkscreen-368-test`, and `upstream_status.sh`'s "variant survived the merge" lens. All run in `build_matrix.sh` and, for the first two, in CI. |
+
+**Verified without hardware** (2026-10-11): the SDK's `static_assert`s and their 37-case driver `run_profile_asserts.py`; the host suites for the probe (the 0x66, 0xFF, unknown-id, cached-verdict and forced cases on the real detector), the X3 drivers' diagnostics and the driver-free sleep, which run under MSVC; the five existing envs build to the byte (`silkscreen` with an identical symbol table); every 368 env builds and passes the audit; `check_sleep_wake_sources.sh` passes. **What the build cannot say**, and the bench list in [TEST-SUITE.md](TEST-SUITE.md#the-368-variant-silkscreen-368-test) takes in order: which controller the panel really is (read VER first), whether the SSD1677-reference boost (`L1` 47 µH, `R14` 2.2 Ω, `Q4`) drives this glass, the panel's deep-sleep current and its `BUSY_N` level in sleep, the 300 ms `BUSY_N` guard and the 60 ms driver-free settle, orientation (the X3 drivers cannot mirror; the flex is at the bottom), gray on a UC8279d ("pending hardware validation" in its LUT header), UP(2) as the power key on the cut board, and a logic analyser at boot and at sleep entry.
+
+## Future work
 ## Future work
 
-- **3.68" x3 env.**
-  - A `SILKSCREEN_368` profile (528×792) with its own device flag, board tag and `MAX_FRAMEBUFFER_BYTES` term.
-  - Identify the panel's controller with the SDK's X3 probe (a UC8279d answers the VER read, a UC8253 does not).
-  - Link the X3 drivers for the S3. `FREEINK_DRIVER_UC8253_X3` and `FREEINK_DRIVER_UC8279` are built for `FREEINK_DEVICE_X3` (the C3) only today.
-  - Check the panel's contact side and pin 1 against `J2`.
+- **3.68" x3 env: built 2026-10-11** ([above](#the-368-variant-silkscreen-368)). What is left is its bench list, among it the panel's contact side and pin 1 against `J2`.
 - **5.76" env.**
   - An SSD2677 driver (none exists) and a 920×680 profile (78,200 B per buffer).
   - Its `BUSY` polarity, pixel origin and a conservative SPI clock over the long flex.
   - A left-handed mount as a setting: a 180° rotation plus the key remap.
   - The page keys UP2/DOWN2, and later a LIS2DH12 `ImuType`.
   - Its wake keys: the spec makes DOWN1 and RIGHT wake keys, which needs the same ext0+ext1 decision as a cut board without the rework (the port arms `IO18` only).
-- **A board tag per panel family before any release channel exists.** Today there is one `silkscreen` tag (`src/network/FirmwareBoardTag.cpp`). Each env needs its own (`silkscreen`, `silkscreen-368`, `silkscreen-576`), so OTA and the SD update refuse a cross-panel image.
+- **A board tag per panel family before any release channel exists.** The 4.26" and 3.68" images have theirs (`silkscreen`, `silkscreen-368`, and `-test` for each: `src/network/FirmwareBoardTag.cpp`). The 5.76" needs `silkscreen-576`, so OTA and the SD update refuse a cross-panel image there too.
 - **OTA pointed at the fork.** `src/network/OtaUpdater.cpp` queries upstream's releases. A Silkscreen build finds no `-silkscreen` asset there and reports no update. Point it at the fork's releases, or turn OTA off for Silkscreen, before releases exist.
 - **An identity check at 0x51**, so an accessory there is not taken for the RV-8263.
 - **Measure every threshold on hardware.** The checklist covers each one:

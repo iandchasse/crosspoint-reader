@@ -4,6 +4,8 @@ A second firmware image for bring-up. It is built from this branch as `[env:silk
 
 Everything test-only is under `#if CROSSPOINT_TEST_SUITE` or in `src/activities/testsuite/`, which the reader envs compile to nothing. The reader image does not change.
 
+The 3.68" X3-panel variant has its own build of it, `[env:silkscreen-368-test]`, from the same sources: no touch, the SDK's X3 drivers, and the screens that say what is true there. It is [below](#the-368-variant-silkscreen-368-test), with its bench list.
+
 ## Build and flash
 
 ```bash
@@ -17,7 +19,8 @@ pio run -e silkscreen-test -t upload
 - Go back to the reader over USB: `pio run -e silkscreen -t upload`. The two images carry different board tags (`silkscreen-test` and `silkscreen`), so neither accepts the other through OTA or the SD firmware update, and the test image has neither.
 - While a USB data host is attached the test firmware holds auto-sleep off, so esptool can reach it. If the board is asleep, hold POWER to wake it first.
 - CI builds the env and keeps `firmware-silkscreen-test.bin` as a build artifact. It is never a release asset.
-- `bash scripts/check_test_firmware.sh` (after a build) checks the image, as CI does: no reader, library, book-parsing, web-server, OTA, SD-update, plugin or light-panel function is linked; no static initialiser from reader code runs except four allowed ones from `lib/Epub` and `lib/LibraryIndex` (below); and the board tag `CROSSPOINT-BOARD-V1:silkscreen-test;` appears exactly once. It stops with an error when `nm` fails or its output lacks a symbol every image has.
+- The 3.68" variant: `pio run -e silkscreen-368-test -t upload`. It inherits `[silkscreen368]`'s hooks (`frontlight_flags`, and `display_flags` for forcing `uc8253` or `uc8279`; it has no `touch_flags`), carries the board tag `silkscreen-368-test`, and CI keeps `firmware-silkscreen-368-test.bin`. `bash scripts/check_test_firmware.sh silkscreen-368-test` and `bash scripts/silkscreen/check_no_touch.sh silkscreen-368-test` check it.
+- `bash scripts/check_test_firmware.sh [env]` (after a build) checks the image, as CI does: no reader, library, book-parsing, web-server, OTA, SD-update, plugin or light-panel function is linked; no static initialiser from reader code runs except four allowed ones from `lib/Epub` and `lib/LibraryIndex` (below); and the board tag `CROSSPOINT-BOARD-V1:silkscreen-test;` appears exactly once. It stops with an error when `nm` fails or its output lacks a symbol every image has.
 
 ## How the test firmware differs from the reader
 
@@ -131,9 +134,11 @@ This table lists the variants the firmware detects ([MODULARITY.md](MODULARITY.m
 
 | Variant | Found by | Reported in | Cases to try |
 |---|---|---|---|
-| Panel family | The build (board tag) | P1: profile and board tag | — |
+| Panel family: 4.26" or 3.68" X3 panel | The build (board tag: `silkscreen-test` or `silkscreen-368-test`) | P1: profile and board tag; on the 3.68", `x3_mode=` and `geom=` (FAIL `x3_mode`, `geometry`) | Each image on its own panel |
 | Display controller: SSD1677 or UC8279D | The SDK probe before `display.begin()` | P1 (`action=panel`); the `panel=` token in P1's boot row and in every T4 row | Each panel, after a cold boot (`source=probed`) and after a wake (`source=cached`) |
+| Display controller, 3.68": UC8253 or UC8279d | The SDK's stock X3 probe: three VER bytes, byte 2 decides | P1 (`action=panel`: `ver=`, `ver_bytes=3`, `busy_timeout=`, `driver=`, `x3_mode=`, `geom=`); the `panel=` token (`UC8279:probed:XXXX66:-`) | Each panel, after a cold boot (`source=probed`) and after a wake (`source=cached`); a unit whose VER reads blank is taken for a UC8253, so force `uc8279` and compare |
 | Touch tail: none, FT6336U, or GT911 (alternate-jumper build) | The probe and its chip-id check | P1 (`touch_id=`), P2, T11 (`touch_id=`, `gt911_fallback=`) | No tail; an FT6336U tail; a `J6` device at 0x38, which must be refused |
+| Touch, 3.68": none in the build | `FREEINK_CAP_TOUCH=0` | P1 (`touch_id=no_touch`, "none in this build"); T11 and T12 (SKIP, `reason=no_touch_in_build`) | A logic analyser at boot and at sleep entry |
 | RTC: U13, U14 or none | The DS3231 pattern at 0x68, then 0x51 | P1 (`rtc_id=`), P2, T13 (`rtc_id=`, `pattern=`) | The fitted part; a `J6` device at 0x68, which must be refused |
 | Key ladders | The presence test at a reset | P1 (`ladders=`, and the readings with each pull); T3 (`ladders=`, and the keys it leaves out) | Both fitted; one built without its pull-up |
 | Power button idle level | `IO18` read on the ADC at a reset | P1 and T3 (`pwr_idle=`, fail `power_idle`) | Normal; `R72` fitted with `R36` (a rework only) |
@@ -141,6 +146,34 @@ This table lists the variants the firmware detects ([MODULARITY.md](MODULARITY.m
 | Front-light load and strings | The switch-on probe | T9 (`probe=`, `cool=`, `warm=`, fail `no_light`); T10 (`probe2=`, `probe2_dark=`, `probe2_strings=`, `probe2_load=`, `restored_load=`) | A `J3` light; a `J6` pair; a one-colour `J6` strip. No light at all: T10's step 0 (`step=0`, `strings=`, `load=`), and on the reader image ([PORTING.md B8](PORTING.md#bring-up-checklist-real-board)). |
 | Front-light driver: TPS923610, or the TPS923611 swap | The operator (T10's step 0 asks): the firmware cannot see it | T10 step 0 (`build=`; the swap refused unless `D3` is an SMAJ33A) | The standard build; the swap with an SMAJ33A |
 
+### The 3.68" variant (`silkscreen-368-test`)
+
+The same suite on the 3.68" X3-panel build (no touch, the SDK's X3 drivers; [MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368)). Everything that is the board's runs as it does on the 4.26" one (the keys, the battery and charge tests, the card, the RTC, Wi-Fi, the front light, the sleep paths and P8); these differ:
+
+| Test | On the 3.68" build |
+|---|---|
+| T11, T12 | One screen, "No touch in this build". It records a SKIP (`touch=none reason=no_touch_in_build cap_touch=0`) when it opens, and names the logic-analyser check. The touch tests and every `touchDiagnostics()` read are not compiled. |
+| P1 | The panel row prints the three VER bytes the stock probe read (`ver=`, with `ver_bytes=3`, `flg=n/a` and `busy_timeout=`, which is 1 when the 300 ms `BUSY_N` wait expired), the verdict as `uc8279d`, `uc8253_assumed` or `inconclusive`, **the driver that ran** (`driver=Uc8279Driver` or `Uc8253X3Driver`, by the facade's rule), `x3_mode=1` and `geom=792x528`. FAIL `x3_mode` or `geometry` when the panel is not in X3 mode at the profile's geometry, and `probe_inconclusive` for an id that is neither `0x66` nor `0xFF` (it runs as UC8253 and is probed again at every wake). The touch id reads `no_touch`, and the touch row "none in this build". |
+| T4 | The SSD1677's reference BUSY times (FULL 1800, HALF 1720, FAST 500 ms), the FULL >= HALF > FAST order and "promoted" are not judged: the rows say "no reference yet, record it", and `x4_ref=none`. A HALF is a resync by design on the X3 panel, and the first paints after boot run as FULL. The BUSY window (100 ms to 30 s), async and turn-off are still checked. |
+| T5, T6, T8 | The X3 drivers report their B/W refreshes only, so the gray waveform and the settle passes read "not reported" (`gray=not_reported`), where they read BUSY 0 ms and "skipped". The checks that need a record are not made (`gray_skipped`, `gray_busy`, `turn_off`, a promoted base, and T6's gray-while-inverted detection): a reported B/W refresh must still end inside the BUSY window, and the operator's look at the chart is the verdict. A `displayGrayscaleBase()` route fires no refresh the driver reports on its differential path: its base row reads "not reported". |
+| T7 | Unchanged. Look for the orientation the case drawing gives (the flex at the bottom): the X3 drivers cannot mirror. |
+| T8 | The profile clock is the X3's 10 MHz; the 26.7 and 40 MHz trials have no reference. Run the profile clock first. |
+| P5, sleep screen | No touch lines. The 58-73 µA typical, the 95 µA flag and the 110 µA limit are the board's with the 4.26" panel's 2-6 µA in them, and say so; the J2 flex gap is recorded with no reference (the panel's deep-sleep current is not in hand). |
+
+**Bench list.** In order; nothing here has run on a board.
+
+1. **Read VER first.** Flash `silkscreen-368-test`, open P1 after a cold boot: `ver=XX-XX-66` is a UC8279d (`driver=Uc8279Driver`), `ver=FF-FF-FF` a UC8253 read with SDI's pull-up (`driver=Uc8253X3Driver`; the model, not yet a measurement). Any other id runs as UC8253, is not kept and is probed again at every wake (111 ms of awake time each): record the three bytes. A UC8279d unit whose VER reads blank (`FF`) gets the UC8253 driver until a build forces `display_flags = -DSILKSCREEN_DISPLAY_CONTROLLER=uc8279`. `busy_timeout=1` is a `BUSY_N` that never rose in 300 ms (a flex out, or a panel that holds it LOW after the reset). After a wake the row must say `source=cached` with the cold boot's bytes.
+2. **Boost.** T4's scope loops (FULL, HALF, FAST) with BRING_UP §8's probes: PREVGH `C14.2`, PREVGL `C16.2`, VSH `C13.2`, VSL `C15.2`, VCOM `C20.2`, GDR at `Q4.1` and RESE at `Q4.2` / `R14.2`. The parts are the SSD1677 reference (`L1` 47 µH, `R14` 2.2 Ω, `Q4`); this panel's reference values are not in any repo, so record each rail, and compare with the 4.26" board on the same probes. The X3's own waveform banks were tuned on the X3's boost: T4 and T5 must be clean in every mode.
+3. **Deep-sleep current and `BUSY_N`.** P5 with the J2 flex in and out (POWER.md row 17 and §4): the gap is this panel's draw, once the R5 test has ruled back-feed out. Note IO48 (across R34) in sleep: its level for a UC8253 and a UC8279d is not in hand.
+4. **The two unmeasured guards.** The 300 ms `BUSY_N` guard after the driver's own reset: watch the log of the first deep-sleep wakes for `[EPD] BUSY stays LOW after the reset ... restarting` (it would restart every wake, with a probe and a boot of awake time each time). The 60 ms driver-free settle (`sleepPanelWithoutDriver()`: the reset loop's sleep, and the boot cutoff's probe, `begin()` and sleep): 3 forced panics on the reader image must end at the same floor.
+5. **Orientation.** T7: the text upright against the bottom keys with the flex at the bottom, and the `{0,0,0,0}` insets against the case window. A rotated mounting needs a driver change.
+6. **Gray.** T5 on a UC8279d: its LUT header says "pending hardware validation". Look at the four levels and the plain page after it; the log cannot judge them. The UC8253's gray is the X3's own.
+7. **UP(2) as POWER on the cut board.** Set OPT's "UP(2) is POWER" (turning "Cut-down board" on sets both) before T3: `SW7` counts as POWER on `IO18`, and `up2_window` stays quiet (BRING_UP §10).
+8. **No touch.** A logic analyser on `IO38`/`IO39` from reset release through the first screen and across a sleep entry: no transaction to `0x38`, `0x5D` or `0x14`, `IO11` HIGH and still, `IO41` never driven. (P2 and T13 do scan the bus on purpose; keep them out of this capture.)
+9. **Clock.** T8: the profile run first, then 26.7 MHz over `R29`-`R34` (33 Ω) and the longer flex; the 10 MHz is the X3's proven value.
+10. **Sleep current and the log.** MEAS-01 with the release image, then the A/B of [BATTERY-LOG.md](BATTERY-LOG.md#9-bench-proof) with `silkscreen-368-batlog`.
+
+### OPT Board options
 ### OPT Board options
 
 **Purpose:** what the firmware cannot see about the board under test, for the tests that depend on it. It is no test: each change logs an INFO row.
@@ -275,6 +308,8 @@ The display tests run the reader's own calls (`GfxRenderer`, `HalDisplay`) and r
 - the update-sequence byte (`0x22`). The Silkscreen profile uses the X4 defaults: FULL `0xF7`, HALF `0xD7` (after the `0x5A` temperature write), FAST `0xFC`, and `0xCC` for the gray waveform (`0xCF` with the Fading Fix power-down). A UC8279 panel reports its `TSSET` byte instead: `0x1E` (GC) for FULL and HALF, `0x5A` (DU) for FAST and for the non-flashing base of a gray page, and its CDI (`0x97`) for the gray waveform;
 - the BUSY time, from the activation to the end of the completion wait;
 - the host time, which is the rest of the call: SPI transfers, the RAM resync after the refresh, and the power-down.
+
+On the 3.68" variant the driver is one of the SDK's X3 pair, which report their B/W refreshes only (the sequence byte is the CDI byte: UC8253 `0x29` for the full and fast banks and `0xA9` for the half scrub, UC8279d `0x97` for the first refresh and `0xD7` after): see [the variant](#the-368-variant-silkscreen-368-test) for what the display tests then judge.
 
 A refresh is in the **BUSY window** when the driver reported it, it did not time out, and it took at least 100 ms and less than 30 s. The floor is 100 ms, not the 20 ms of the first proposal, because the completion wait gives up after 20 ms when BUSY never rises. That happens with no panel (the BUSY pull reads idle) or with BUSY stuck LOW, so a 20 ms floor would pass a missing panel. It also catches a UC8279 panel driven as an SSD1677 after a wrong verdict: its waits either end at once or run to the 30 s timeout. The quickest real waveform, FAST, takes about 500 ms. 30 s is the SDK's timeout, reached when BUSY is stuck HIGH.
 
@@ -468,7 +503,7 @@ Auto-sleep is held off for the step (about 15 s). The screen keeps the advice up
 
 ### T11 Touch probe, mapping and gestures
 
-**Purpose:** the touch probe, the controller's orientation and raw ranges, and the gestures. **Bring-up:** B9.
+**Purpose:** the touch probe, the controller's orientation and raw ranges, and the gestures. **Bring-up:** B9. On `silkscreen-368-test` there is no touch in the build and this is one screen that says so ([the variant](#the-368-variant-silkscreen-368-test)).
 
 The screen opens on the probe and the mapping:
 
@@ -489,7 +524,7 @@ The mapping stays in force until the next boot, so the menu uses it. With no con
 
 ### T12 Touch sleep command
 
-**Purpose:** the controller takes its sleep command, so it draws 55 µA and not 220 µA through deep sleep. **Bring-up:** B9, B10.
+**Purpose:** the controller takes its sleep command, so it draws 55 µA and not 220 µA through deep sleep. **Bring-up:** B9, B10. On `silkscreen-368-test` there is no touch in the build and this is the same one screen as T11.
 
 J4's 3V3 is not switched, so every sleep entry has to put a fitted FT6336U into hibernate (`0xA5 = 0x03`, TP-01).
 

@@ -50,7 +50,9 @@ not settle is reported, not made.
 
 Standing examples: CrossInk's English-only built-in translations (`custom_i18n_builtin_langs = en`) stay as upstream
 builds them, and Silkscreen does not restore `all`; a value upstream took that a Silkscreen shortcut once held keeps
-upstream's number, and Silkscreen's moves after it (see step 2).
+upstream's number, and Silkscreen's moves after it (see step 2). The 3.68" variant's panel predicate keeps upstream's own
+expression, `gpio.deviceIsX3()`, in the `#else` of its one `#if FREEINK_SILKSCREEN_368`, so every other board is upstream's
+to the byte.
 
 ## The steps
 
@@ -81,8 +83,11 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`,
      `src/activities/reader/ClipSelectionActivity.*` and `EpubReaderClippingListActivity.cpp` (the key-access
      hunks), `src/activities/ActivityManager.cpp`, `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on
-     the awake ceiling), `platformio.ini` (the `[silkscreen]` section), `lib/I18n/translations/english.yaml`,
-     `docs/` and `USER_GUIDE.md`.
+     the awake ceiling), `platformio.ini` (the `[silkscreen]` and `[silkscreen368]` sections), `lib/I18n/translations/english.yaml`,
+     `docs/` and `USER_GUIDE.md`. For the 3.68" variant also `lib/hal/HalDisplay.*` (`isX3Panel()` and the five sites that ask
+     it), the splashless-wake rebase in `src/main.cpp`, `SleepActivity.cpp` (the last-screen sleep) and the
+     `absoluteImageGrayscale` line of `EpubReaderActivity.cpp`, where upstream's edits to `gpio.deviceIsX3()` land, and
+     `src/network/FirmwareBoardTag.cpp` (the two `FREEINK_SILKSCREEN_368` branches stay ahead of the 4.26" Silkscreen ones).
    - Resolve `freeink-sdk` to the step-1 merge (or the unchanged shared head).
    - Run clang-format 21 on the app files you touched (the app has a `.clang-format`), not on the SDK.
    - Settings are stored by index: append new enum values, never renumber. A list that differs by board maps
@@ -115,11 +120,13 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      `StatsUploadClient.cpp`). Search the incoming diff for `SecureHttpClient`, `HTTPClient`, `NetworkClient`,
      `readFileToStream` and `WebServer` raw callbacks.
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
-   time. It runs the sleep-wake guard, the real envs, the test-firmware check, then the proxy envs **last**: a
+   time. It runs the sleep-wake guard, the real envs, the image checks (the test firmware's, and in CrossPoint the
+   3.68" variant's no-touch audit), then the proxy envs **last**: a
    different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
    (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
-   call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `x4pro`, then `c3check`;
-   CrossInk: `silkscreen`, `silkscreen-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 20-30 minutes.
+   call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `silkscreen-368`,
+   `silkscreen-368-batlog`, `silkscreen-368-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`, `silkscreen-batlog`,
+   `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 20-40 minutes.
    `silkscreen-batlog` is the battery log's own env ([BATTERY-LOG.md](BATTERY-LOG.md)): the release env's sources and flags
    plus `-DSILKSCREEN_BATLOG=1`. It must still build in both repos, and its size next to the release env's is the log's
    footprint. A hook that a conflict resolution left outside its `#if SILKSCREEN_BATLOG` blocker fails every env that lacks
@@ -163,7 +170,17 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      `ed88f03` put RTC_PERIPH on and an idle-level RTC pull on every ext1 wake pad, which on IO18 (R62 and R76) is
      forbidden, so the SDK leaves a power pin the board biases itself (`InputPins::powerExternalPull`) out of it
      and both guards allow that one call behind that exemption.
-   - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
+   - *The 3.68" variant* ([MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368), run after every sync):
+     `upstream_status.sh` finds the SDK's macros, profile and driver selection, the five 368 envs, both tags, `isX3Panel()`
+     and its sites and the audit's wiring, but not what a merge changed around them. Read the incoming diff for each place
+     that tests `gpio.deviceIsX3()` or `Board::XteinkX3`: a site about the X3's *panel* (a refresh mode, a gray base, a
+     waveform choice, a sleep-screen path) must ask `display.isX3Panel()`, one about the X3 *board* (the gauge, the SD
+     rail, side hints, device names) must not. A new driver or probe path that only `FREEINK_DEVICE_X3` links must stay
+     off for `FREEINK_SILKSCREEN_368`, and `scripts/silkscreen/check_no_touch.sh` must still pass for every
+     `silkscreen-368*` image. In the SDK the hotspots are `BoardConfig.h`'s driver macros, `XteinkDetect`'s stock-probe
+     selection and `EpdBus`'s X3 `BUSY_N` rule, and `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (37
+     cases) must still hold. CrossInk's copy of this lens is its own `docs/silkscreen/` page once it has the variant.
+   - *Tooling and rules:* the analyzer's tests pass   - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
      differs by one line and one include), and POWER.md BL-01 still holds for what came in.

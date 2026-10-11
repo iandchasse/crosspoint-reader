@@ -29,6 +29,15 @@ Both firmwares carry the same log through the same SDK code. CrossPoint's page i
   `LOG_LEVEL`, no debug flag. Boot timing and the ghost-wake path therefore match the release image, which is what the
   log is meant to observe. (The dev envs wait 250 ms for USB serial on every boot, ghost wakes included; the `# fw`
   line in the file says which kind of image wrote the rows.)
+- **The 3.68" variant has its own env** (CrossPoint): `silkscreen-368-batlog` is `silkscreen-368-gh_release` plus
+  `-DSILKSCREEN_BATLOG=1`, version `<x.y.z>-368-batlog`, with the release image's board tag (`silkscreen-368`) so the two swap
+  over SD. Flash it with `pio run -e silkscreen-368-batlog -t upload`, and go back with
+  `pio run -e silkscreen-368-gh_release -t upload`. It is the same log code and hooks (the variant is the same device and
+  `Board::Silkscreen`); it costs 9,012 B of flash and 528 B of RAM over the 368 release image. Two things differ for the
+  analyzer. The panel's deep-sleep current is not in hand (POWER.md row 17), so its reference floor (the no-touch 58 µA plus
+  self-discharge, chosen because the `cfg` column's touch bit is 0 on this build) is the 4.26" board's: a floor a few µA
+  above it is not by itself a fault, and the first campaign sets this panel's. And the version must not end in
+  `-silkscreen-batlog`, which the analyzer reads as CrossInk's (its early-wake limit is 500 ms, not 300).
 - **The screen keeps 1% steps.** The release image shows the battery percentage in 5% steps (truncated, 100 from 98
   up; [PORTING.md](PORTING.md)). This image leaves that out, so what its screen shows still matches the log: `e_ui`
   and `w_ui` are tenths of a percent read from the raw cache and from the first fresh burst, so the display step would
