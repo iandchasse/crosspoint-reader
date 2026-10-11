@@ -8,6 +8,8 @@
 // firmware shares with the reader (popups, Wi-Fi, keyboard) keep tr(), with the
 // language pinned to English.
 #if CROSSPOINT_TEST_SUITE
+#include <BoardConfig.h>
+
 namespace testsuite::text {
 inline constexpr char MENU_TITLE[] = "Silkscreen hardware test";
 inline constexpr char RESULTS_ON_CARD[] = "Results: /.silkscreen-test/results.csv";
@@ -51,17 +53,32 @@ inline constexpr char SLEEP_P5_PATH[] = "P5 path";
 // left on the retained sleep screen. Lines fit a 480 px portrait width.
 inline constexpr char SLEEP_CURRENT_HEADING[] = "Sleep current at J5, 3.8 V, USB and UART off";
 inline constexpr const char* SLEEP_CURRENT_LINES[] = {
+#if FREEINK_SILKSCREEN_368
+    // The 3.68" variant has no touch; 58-73 uA is the 4.26" board's, a GDEQ0426T82's 2-6 uA in it.
+    "No touch in this build: 58-73 uA (4.26\" panel)",
+    "This panel's own draw: not in hand, record it",
+#else
     "No touch tail: 58-73 uA",
     "FT6336U tail hibernated: 113-130 uA",
+#endif
     "Wait 60 s, then average 60 s",
 };
 inline constexpr char SLEEP_PINS_HEADING[] = "Pins in sleep";
 // IO48 is the panel's BUSY: an SSD1677 holds it HIGH in deep sleep, while a
 // UC8279's BUSY_N level there is not in hand (PORTING.md B2, B3).
 inline constexpr const char* SLEEP_PIN_LINES[] = {
-    "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",    "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
-    "IO48: 3.3 V (SSD1677), note it (UC8279)", "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",
-    "Unheld, probe and note: IO1-4 IO8 IO9",   "IO41: unheld (FT6336U), 0 V (GT911)",
+    "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",         "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
+#if FREEINK_SILKSCREEN_368
+    "IO48: note it (UC8253, UC8279d: not in hand)",
+#else
+    "IO48: 3.3 V (SSD1677), note it (UC8279)",
+#endif
+    "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",         "Unheld, probe and note: IO1-4 IO8 IO9",
+#if FREEINK_SILKSCREEN_368
+    "IO41: no touch in this build, never driven",
+#else
+    "IO41: unheld (FT6336U), 0 V (GT911)",
+#endif
 };
 // The back-feed probes of BRING_UP section 4 (HW-01), left on the sleep screen
 // beside the pins; P5 shows them in full.
@@ -69,7 +86,11 @@ inline constexpr char SLEEP_PROBES_HEADING[] = "Back-feed probes in sleep (HW-01
 inline constexpr const char* SLEEP_PROBE_LINES[] = {
     "Across R5 (3V3-EPD_RST): < 20 mV, 0.1 V = 10 uA",
     "Across R34 (33 ohm, BUSY): ~0 mV, 1 mV = 30 uA",
+#if FREEINK_SILKSCREEN_368
+    "J2 flex in vs out: record the gap (P5)",
+#else
     "J2 flex in vs out: a few uA apart (P5)",
+#endif
 };
 }  // namespace testsuite::text
 #endif

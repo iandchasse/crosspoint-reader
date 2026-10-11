@@ -58,7 +58,9 @@ constexpr uint16_t R34_MAX_TENTHS = 2;  // 0.1 mV units
 constexpr uint16_t R34_ENTRY_MAX_TENTHS = 9999;
 // J2 flex in vs out (same touch set-up): the GDEQ0426T82 sleeps at 2-6 uA, so a
 // gap above 8 uA (with the meter's digit) fails on an SSD1677 panel. The UC8279D
-// panel's own draw is not in hand: its gap is recorded, not judged.
+// panel's own draw is not in hand: its gap is recorded, not judged. Neither is
+// the Silkscreen 3.68" variant's UC8253 or UC8279d; its 58-73 uA typical,
+// 95 uA flag and 110 uA limit are the board's, with the 4.26" panel's 2-6 uA in them.
 constexpr int FLEX_GAP_MAX_UA = 8;
 // A 1 min path sleeps 60 s after the arming press, give or take the loop's pace.
 constexpr unsigned long TIMED_MIN_MS = 58000;
@@ -90,14 +92,23 @@ constexpr char RESULT_INTRO[] =
 constexpr const char* PROBE_LINES[] = {
     "Across R5 (3V3 to EPD_RST): under 20 mV. Each 0.1 V is 10 uA into IO47.",
     "Across R34 (33 ohm in BUSY): about 0 mV. Each 1 mV is 30 uA into IO48.",
+#if FREEINK_SILKSCREEN_368
+    // The 3.68" panel's deep-sleep draw is not in hand (POWER.md row 17): its gap is recorded, with no reference.
+    "J2 flex in vs out: record the gap, no reference yet for this panel. 100-300 uA: back-feed.",
+#else
     "J2 flex in vs out: a few uA apart (panel 2-6 uA). 100-300 uA: back-feed. 40-70 uA: the panel never slept.",
+#endif
 };
 // BRING_UP section 6: what a reading above the budget points at.
 constexpr char HIGH_HEADING[] = "Above the budget";
 constexpr const char* HIGH_LINES[] = {
     "+100-300 uA: IO47/IO48 back-feed (R5, R34, J2 flex A/B)",
     "+18 uA: R36 and R72 both fitted",
+#if FREEINK_SILKSCREEN_368
+    "No touch in this build: no touch adder to look for",
+#else
     "Touch: +55 uA hibernated, +220 uA awake, about 1.1 mA with TP_RST low",
+#endif
     "mA: CE/D2 back-feed (HW-08) or an unparked SD bus (SD_VDD about 3.2 V)",
 };
 constexpr char STAGE_ONE_NOTE[] =
@@ -569,8 +580,12 @@ class SleepWakeTest final : public TestScreen {
     page.rowf("USB host / USB power", "%s / %s", hostAttached ? "attached (holds auto-sleep off)" : "none",
               usbPower ? "yes" : "no");
     if (shown.batteryOnly && usbPower) page.row("This path", "does not fire on USB power");
+#if FREEINK_SILKSCREEN_368
+    page.rowf("Typical, 4.26\" panel in it", "%u-%u uA", TYPICAL_LOW_UA, TYPICAL_HIGH_UA);
+#else
     page.rowf("Typical, no touch / FT6336U", "%u-%u / %u-%u uA", TYPICAL_LOW_UA, TYPICAL_HIGH_UA, TOUCH_TYPICAL_LOW_UA,
               TOUCH_TYPICAL_HIGH_UA);
+#endif
     page.setCompact(false);
     page.gap(4);
     page.heading(text::SLEEP_PINS_HEADING);

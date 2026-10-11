@@ -15,6 +15,7 @@
 
 #include "CrossPointSettings.h"
 #include "GrayPass.h"
+#include "PanelFamily.h"
 #include "PanelPatterns.h"
 #include "PanelRun.h"
 #include "TestFactories.h"
@@ -103,7 +104,10 @@ class InversionTest final : public PanelRunTest {
             STEPS[step].inverted ? "inverted" : "normal", refreshModeName(sample.requested),
             refreshModeName(sample.ran), refreshModeName(STEPS[step].expect), sample.sequence,
             static_cast<unsigned long>(sample.busyMs),
-            STEPS[step].grayPass ? (gray.gray.reported() ? ", gray waveform ran" : ", gray pass skipped") : "");
+            STEPS[step].grayPass ? X3_PANEL_BUILD         ? ", gray pass not reported"
+                                   : gray.gray.reported() ? ", gray waveform ran"
+                                                          : ", gray pass skipped"
+                                 : "");
     if (STEPS[step].pause) pauseRun();
   }
 
@@ -130,7 +134,8 @@ class InversionTest final : public PanelRunTest {
     for (int i = 0; i < STEP_COUNT; ++i) {
       appendf(ran, sizeof(ran), "%s%s", i != 0 ? "," : "", refreshModeName(samples[i].ran));
       appendf(expected, sizeof(expected), "%s%s", i != 0 ? "," : "", refreshModeName(STEPS[i].expect));
-      if (samples[i].ran != STEPS[i].expect) ++wrongMode;
+      // The X3 drivers choose their own mode (a HALF is a resync): recorded in ran=, not judged.
+      if (!X3_PANEL_BUILD && samples[i].ran != STEPS[i].expect) ++wrongMode;
       if (!samples[i].inWindow()) ++bad;
     }
     char fails[80] = "";
@@ -141,8 +146,11 @@ class InversionTest final : public PanelRunTest {
     if (tiledOffered) addFailure(fails, sizeof(fails), "tiled_offered_inverted");
     if (answer != 0) addFailure(fails, sizeof(fails), "operator");
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail, "ran=%s expected=%s gray=%s bad=%d operator=%s fails=%s",
-           ran, expected, gray.gray.reported() ? "ran" : "skipped", bad, LOOK_KEYS[answer],
-           fails[0] == '\0' ? "none" : fails);
+           ran, expected,
+           X3_PANEL_BUILD         ? "not_reported"
+           : gray.gray.reported() ? "ran"
+                                  : "skipped",
+           bad, LOOK_KEYS[answer], fails[0] == '\0' ? "none" : fails);
   }
 
   void drawBody(TestPage& page) const override {
@@ -164,6 +172,7 @@ class InversionTest final : public PanelRunTest {
                 refreshModeName(STEPS[i].expect), static_cast<unsigned long>(s.busyMs));
     }
     page.row("Gray waveform while inverted", gray.missingBuffer     ? "B/W store failed"
+                                             : X3_PANEL_BUILD       ? "not reported: look at the chart"
                                              : gray.gray.reported() ? "RAN"
                                                                     : "skipped");
     page.row("Tiled gray route offered while inverted", tiledOffered ? "YES" : "no");

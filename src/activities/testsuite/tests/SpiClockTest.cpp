@@ -6,7 +6,11 @@
 // of every run and when the screen closes, and any wake restores it anyway
 // (display begin). The controller has no read-back on this board, so the
 // operator compares the frames with a run at the profile clock; the host time
-// per refresh (the SPI transfers) shows the clock's effect.
+// per refresh (the SPI transfers) shows the clock's effect. On the Silkscreen
+// 3.68" variant (X3_PANEL_BUILD, PanelFamily.h) the panel is the X3's, at the
+// profile's 10 MHz: no reference exists for a faster clock yet, record it, and
+// the X3 drivers report no gray pass, so that run is judged by its base refresh
+// and the operator's look.
 #include <Arduino.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
@@ -17,6 +21,7 @@
 #include <memory>
 
 #include "GrayPass.h"
+#include "PanelFamily.h"
 #include "PanelPatterns.h"
 #include "PanelRun.h"
 #include "TestFactories.h"
@@ -54,6 +59,11 @@ constexpr char INTRO[] =
     "Left/Right pick a clock, Confirm runs it: 20 B/W refreshes (4 FAST, then a HALF), the gray chart and a plain "
     "page. The panel is back at its own clock afterwards. The SSD1677 is specified to 20 MHz: faster is a trial. "
     "Run the profile clock first, then compare.";
+constexpr char INTRO_X3[] =
+    "Left/Right pick a clock, Confirm runs it: 20 B/W refreshes (4 FAST, then a HALF), the gray chart and a plain "
+    "page. The panel is back at its own clock afterwards. The profile's is the X3's: faster is a trial, and no "
+    "reference exists for this panel yet, so record it. Run the profile clock first, then compare. The X3 "
+    "drivers do not report the gray pass.";
 constexpr char CHART_FOOTER[] = "Any key or tap: continue.   Back: stop.";
 constexpr char PLAIN_TITLE[] = "T8  After the gray pass: FAST";
 constexpr char PLAIN_NOTE[] =
@@ -186,9 +196,15 @@ class SpiClockTest final : public PanelRunTest {
     } else if (step == STEP_GRAY) {
       result.missingBuffer = gray.missingBuffer;
       result.grayRan = gray.grayRan();
-      result.grayOk = gray.grayRan() && gray.gray.inWindow() && gray.base.inWindow();
-      LOG_INF("TEST", "T8 gray pass: %s, BUSY %lu ms, strips %u ms", result.grayRan ? "ran" : "skipped",
-              static_cast<unsigned long>(gray.gray.busyMs), gray.renderMs);
+      if (X3_PANEL_BUILD) {
+        // No record of the gray waveform: the base refresh and the operator's look judge the run.
+        result.grayOk = gray.base.inWindow();
+        LOG_INF("TEST", "T8 gray pass: not reported by the X3 drivers, strips %u ms", gray.renderMs);
+      } else {
+        result.grayOk = gray.grayRan() && gray.gray.inWindow() && gray.base.inWindow();
+        LOG_INF("TEST", "T8 gray pass: %s, BUSY %lu ms, strips %u ms", result.grayRan ? "ran" : "skipped",
+                static_cast<unsigned long>(gray.gray.busyMs), gray.renderMs);
+      }
     }
     if (pausesAfter(step)) pauseRun();
   }
@@ -214,7 +230,7 @@ class SpiClockTest final : public PanelRunTest {
     }
     char fails[80] = "";
     if (result.bad != 0) addFailure(fails, sizeof(fails), "busy_window");
-    if (result.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
+    if (!X3_PANEL_BUILD && result.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
     if (result.missingBuffer) addFailure(fails, sizeof(fails), "scratch");
     if (!result.grayOk) addFailure(fails, sizeof(fails), "gray");
     if (!result.plain.inWindow() || result.plain.promoted()) addFailure(fails, sizeof(fails), "plain_page");
@@ -232,12 +248,15 @@ class SpiClockTest final : public PanelRunTest {
            static_cast<unsigned long>(result.busy[HalDisplay::HALF_REFRESH].meanMs()),
            static_cast<unsigned long>(result.hostMeanMs(HalDisplay::HALF_REFRESH)),
            baseline.valid ? "" : "none:", static_cast<unsigned long>(baseline.hostMeanMs(HalDisplay::FAST_REFRESH)),
-           result.bad, result.promoted, result.grayRan ? "ran" : "skipped", LOOK_KEYS[answer],
-           fails[0] == '\0' ? "none" : fails);
+           result.bad, result.promoted,
+           X3_PANEL_BUILD   ? "not_reported"
+           : result.grayRan ? "ran"
+                            : "skipped",
+           LOOK_KEYS[answer], fails[0] == '\0' ? "none" : fails);
   }
 
   void drawBody(TestPage& page) const override {
-    page.paragraph(INTRO, 6);
+    page.paragraph(X3_PANEL_BUILD ? INTRO_X3 : INTRO, 6);
     page.gap(4);
     page.rowf("Clock", "%d/%d  %s (%lu kHz)", selected + 1, CLOCK_COUNT, CLOCKS[selected].name,
               static_cast<unsigned long>(clockHz(selected) / 1000));
@@ -256,7 +275,10 @@ class SpiClockTest final : public PanelRunTest {
                 static_cast<unsigned long>(r.busy[HalDisplay::FAST_REFRESH].meanMs()),
                 static_cast<unsigned long>(r.hostMeanMs(HalDisplay::FAST_REFRESH)),
                 static_cast<unsigned long>(r.busy[HalDisplay::HALF_REFRESH].meanMs()),
-                static_cast<unsigned long>(r.hostMeanMs(HalDisplay::HALF_REFRESH)), r.grayRan ? "ran" : "skipped",
+                static_cast<unsigned long>(r.hostMeanMs(HalDisplay::HALF_REFRESH)),
+                X3_PANEL_BUILD ? "not reported"
+                : r.grayRan    ? "ran"
+                               : "skipped",
                 r.verdict != nullptr ? ", " : "", r.verdict != nullptr ? r.verdict : "");
     }
   }

@@ -2,7 +2,10 @@
 
 // The panel controller this boot resolved (the SDK's XteinkDetect display probe
 // under the profile's DisplayProbeConfig), shown and logged by P1 and T4
-// (CROSSPOINT_TEST_SUITE builds only).
+// (CROSSPOINT_TEST_SUITE builds only). On the Silkscreen 3.68" variant the probe
+// is the X3's stock one: three VER bytes, no FLG and no MTP, byte 2 decides
+// (0x66 a UC8279d, 0xFF a UC8253), and the rows add the driver that ran and the
+// geometry, so the first bench step (read VER) is one row of P1.
 #if CROSSPOINT_TEST_SUITE
 #include <cstddef>
 

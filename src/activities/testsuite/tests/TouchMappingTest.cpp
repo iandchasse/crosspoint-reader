@@ -1,4 +1,22 @@
 #if CROSSPOINT_TEST_SUITE
+#include <BoardConfig.h>
+
+#if !FREEINK_CAP_TOUCH
+// No touch in this build (FREEINK_CAP_TOUCH=0, the Silkscreen 3.68" variant): T11 is a screen that says so.
+#include <Memory.h>
+
+#include "NoTouchTest.h"
+#include "TestFactories.h"
+
+namespace testsuite {
+
+std::unique_ptr<Activity> createTouchMappingTest(const TestInfo& info, GfxRenderer& renderer,
+                                                 MappedInputManager& mappedInput) {
+  return makeUniqueNoThrow<NoTouchTest>(info, renderer, mappedInput);
+}
+
+}  // namespace testsuite
+#else
 // T11: touch probe, mapping and gestures (bring-up B9). The profile's mounting
 // (swapXY/flipX/flipY) and raw ranges are a guess until measured. Calibrate
 // takes the controller's raw coordinates at five on-screen targets and fits
@@ -823,4 +841,5 @@ std::unique_ptr<Activity> createTouchMappingTest(const TestInfo& info, GfxRender
 }
 
 }  // namespace testsuite
+#endif  // FREEINK_CAP_TOUCH
 #endif

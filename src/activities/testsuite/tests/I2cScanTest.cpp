@@ -155,7 +155,9 @@ class I2cScanTest final : public TestScreen {
     touchActive = gpio.hasTouch();
     // Where the controller found at boot answers: a GT911 on the fallback can sit
     // at the alternate address (0x14), which only the driver knows.
+#if FREEINK_CAP_TOUCH
     touchAddr = TestSuiteAccess::input(gpio).touchDiagnostics().address;
+#endif
     if (touchAddr == 0) touchAddr = BoardConfig::ACTIVE.touch.i2cAddress;
     // Identity checks at boot (TouchConfig::requireFocalTechId, SensorsConfig::rtcIdentityCheck).
     touchRejected = touchIdRejected();

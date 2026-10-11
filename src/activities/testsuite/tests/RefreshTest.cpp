@@ -2,7 +2,8 @@
 // T4: B/W refresh modes (bring-up B2). A run alternates two full-screen frames
 // with one kind of refresh and logs, per refresh, the mode the driver actually
 // ran (a FAST can be promoted to HALF), its sequence byte (SSD1677: 0x22;
-// UC8279: TSSET) and its BUSY time, with the panel controller the boot resolved;
+// UC8279: TSSET; X3 drivers: the CDI byte) and its BUSY time, with the panel
+// controller the boot resolved;
 // the operator judges the ghosting. The turn-off variants run the
 // Sunlight Fading Fix through SETTINGS.fadingFix, which the loop hands to the
 // renderer, so they exercise the reader's own path. The scope loops repeat one
@@ -17,6 +18,7 @@
 #include <cstdio>
 
 #include "CrossPointSettings.h"
+#include "PanelFamily.h"
 #include "PanelPatterns.h"
 #include "PanelProbe.h"
 #include "PanelRun.h"
@@ -38,9 +40,15 @@ constexpr int QUESTION_LOOK = 1;
 // X4-class references for this panel and waveform set (Ssd1677Driver's default
 // config: FULL about 1800 ms, FAST about 500 ms; HalDisplay.h: HALF about
 // 1720 ms). A mean outside +/-50 % is flagged, not failed. A UC8279 panel runs
-// other waveforms: its runs set the baseline instead.
+// other waveforms: its runs set the baseline instead. So do the X3 drivers of
+// the Silkscreen 3.68" variant (X3_PANEL_BUILD, PanelFamily.h): no reference
+// yet, record it, and neither the FULL >= HALF > FAST order nor a promotion
+// is judged there (a HALF is a resync by design, the first paints run as FULL).
 constexpr uint32_t REFERENCE_MS[MODES] = {1800, 1720, 500};
 constexpr uint32_t REFERENCE_TOLERANCE_PCT = 50;
+constexpr char X3_NOTE[] =
+    "X3 drivers: a HALF is a resync and the first paints after boot run as FULL: recorded, not failed. No "
+    "reference times yet: these runs set them.";
 
 struct Variant {
   const char* name;  // on the screen
@@ -338,10 +346,10 @@ class RefreshTest final : public PanelRunTest {
     const int order = modeOrder();
     char fails[64] = "";
     if (summary.bad != 0) addFailure(fails, sizeof(fails), "busy_window");
-    if (summary.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
+    if (!X3_PANEL_BUILD && summary.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
     if (variant.async && summary.asyncOk != summary.steps) addFailure(fails, sizeof(fails), "async");
     if (variant.turnOff && summary.turnOffSeen != summary.steps) addFailure(fails, sizeof(fails), "turn_off");
-    if (order == 0) addFailure(fails, sizeof(fails), "mode_order");
+    if (!X3_PANEL_BUILD && order == 0) addFailure(fails, sizeof(fails), "mode_order");
     if (answer != 0) addFailure(fails, sizeof(fails), "operator");
 
     // "ran" is mode:count@update-sequence byte; busy_ms is min/mean/max per mode.
@@ -357,7 +365,9 @@ class RefreshTest final : public PanelRunTest {
       appendf(busy, sizeof(busy), "%s%s:%lu/%lu/%lu", busy[0] != '\0' ? "," : "", refreshModeName(mode),
               static_cast<unsigned long>(stats.minMs), static_cast<unsigned long>(stats.meanMs()),
               static_cast<unsigned long>(stats.maxMs));
-      if (!nearReference(mode, stats.meanMs())) addFailure(outside, sizeof(outside), refreshModeName(mode));
+      if (!X3_PANEL_BUILD && !nearReference(mode, stats.meanMs())) {
+        addFailure(outside, sizeof(outside), refreshModeName(mode));
+      }
     }
     char panel[40];
     formatPanelToken(panel, sizeof(panel));
@@ -368,7 +378,10 @@ class RefreshTest final : public PanelRunTest {
     if (variant.async) appendf(resultLine, sizeof(resultLine), " async=%d/%d", summary.asyncOk, summary.steps);
     if (variant.turnOff) appendf(resultLine, sizeof(resultLine), " turn_off=%d/%d", summary.turnOffSeen, summary.steps);
     appendf(resultLine, sizeof(resultLine), " x4_ref=%s%s order=%s spi_khz=%lu operator=%s fails=%s",
-            outside[0] != '\0' ? "outside:" : "ok", outside,
+            X3_PANEL_BUILD       ? "none"
+            : outside[0] != '\0' ? "outside:"
+                                 : "ok",
+            outside,
             order < 0   ? "incomplete"
             : order > 0 ? "ok"
                         : "bad",
@@ -382,6 +395,7 @@ class RefreshTest final : public PanelRunTest {
     page.gap(4);
     page.rowf("Refresh", "%d/%d  %s", selected + 1, VARIANT_COUNT, variant.name);
     page.paragraph(variant.expect, 3);
+    if (X3_PANEL_BUILD) page.paragraph(X3_NOTE, 3);
     if (variant.loop) page.paragraph(SCOPE_NOTE, 4);
     page.setCompact(true);
     if (variant.cadence) page.rowf("Reader refresh frequency (N)", "%d", cadenceTurns());
@@ -416,6 +430,15 @@ class RefreshTest final : public PanelRunTest {
     page.heading("Mean BUSY this boot");
     for (int mode = 0; mode < MODES; ++mode) {
       const BusyStats& stats = bootStats[mode];
+      if (X3_PANEL_BUILD) {
+        if (stats.count == 0) {
+          page.row(refreshModeName(mode), "not run (no reference yet)");
+        } else {
+          page.rowf(refreshModeName(mode), "%lu ms, n=%u (no reference yet: record it)",
+                    static_cast<unsigned long>(stats.meanMs()), stats.count);
+        }
+        continue;
+      }
       if (stats.count == 0) {
         page.rowf(refreshModeName(mode), "not run (X4: %lu ms)", static_cast<unsigned long>(REFERENCE_MS[mode]));
         continue;
@@ -425,7 +448,13 @@ class RefreshTest final : public PanelRunTest {
                 nearReference(mode, stats.meanMs()) ? "ok" : "outside +/-50%");
     }
     const int order = modeOrder();
-    page.row("FULL >= HALF > FAST", order < 0 ? "run all three" : order > 0 ? "yes" : "NO");
+    if (X3_PANEL_BUILD) {
+      page.row("FULL >= HALF > FAST", order < 0   ? "run all three"
+                                      : order > 0 ? "yes (recorded)"
+                                                  : "no (recorded, not judged)");
+    } else {
+      page.row("FULL >= HALF > FAST", order < 0 ? "run all three" : order > 0 ? "yes" : "NO");
+    }
   }
 
   int selected = 0;

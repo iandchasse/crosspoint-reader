@@ -5,6 +5,10 @@
 // the driver's state was cleaned up (a FAST that runs as HALF would mask it).
 // The plane buffers and the strip scratch are allocated when the screen opens
 // and freed when it closes, the same sizes the reader's tiled path uses.
+// The Silkscreen 3.68" variant's X3 drivers (X3_PANEL_BUILD, PanelFamily.h)
+// report no gray waveform, and no displayGrayscaleBase() settle either: those
+// rows read "not reported", and the run is judged by what was reported (the B/W
+// refreshes) and by the operator's look.
 #include <Arduino.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
@@ -17,6 +21,7 @@
 
 #include "CrossPointSettings.h"
 #include "GrayPass.h"
+#include "PanelFamily.h"
 #include "PanelPatterns.h"
 #include "PanelRun.h"
 #include "TestFactories.h"
@@ -150,7 +155,15 @@ class GrayscaleTest final : public PanelRunTest {
 
   void afterStep(const int step) override {
     completedSteps = step + 1;
-    if (step == 0) {
+    if (step == 0 && X3_PANEL_BUILD) {
+      LOG_INF(
+          "TEST",
+          "T5 %s: base asked %s ran %s BUSY %lu ms%s; gray not reported; render %u, wait %u, write %u, cleanup %u ms%s",
+          grayPathName(VARIANTS[runVariant].path), refreshModeName(pass.base.requested),
+          pass.base.reported() ? refreshModeName(pass.base.ran) : "not reported",
+          static_cast<unsigned long>(pass.base.busyMs), pass.base.async ? " async" : "", pass.renderMs, pass.waitMs,
+          pass.writeMs, pass.cleanupMs, pass.missingBuffer ? "; a buffer was missing" : "");
+    } else if (step == 0) {
       LOG_INF("TEST",
               "T5 %s: base asked %s ran %s seq=0x%02X BUSY %lu ms%s; gray %s seq=0x%02X BUSY %lu ms; render %u, "
               "wait %u, write %u, cleanup %u ms%s",
@@ -191,17 +204,45 @@ class GrayscaleTest final : public PanelRunTest {
     const Variant& variant = VARIANTS[runVariant];
     const bool tiledAsync = variant.path == GrayPath::TiledPlanes || variant.path == GrayPath::TiledStrips;
     char fails[80] = "";
-    if (!pass.base.inWindow() || pass.base.promoted()) addFailure(fails, sizeof(fails), "base");
+    if (X3_PANEL_BUILD) {
+      // A displayGrayscaleBase() route fires no reported refresh when its differential happy path runs, and
+      // the gray waveform is never reported: nothing to judge there. A promotion is the driver's design.
+      if (pass.base.reported() && !pass.base.inWindow()) addFailure(fails, sizeof(fails), "base");
+    } else if (!pass.base.inWindow() || pass.base.promoted()) {
+      addFailure(fails, sizeof(fails), "base");
+    }
     if (tiledAsync && !(pass.base.async && pass.base.busyAtReturn)) addFailure(fails, sizeof(fails), "async_base");
-    if (variant.fadingFix && !(pass.base.turnOff && pass.gray.turnOff)) addFailure(fails, sizeof(fails), "turn_off");
-    if (!pass.grayRan()) {
-      addFailure(fails, sizeof(fails), "gray_skipped");
-    } else if (!pass.gray.inWindow()) {
-      addFailure(fails, sizeof(fails), "gray_busy");
+    if (!X3_PANEL_BUILD) {
+      if (variant.fadingFix && !(pass.base.turnOff && pass.gray.turnOff)) {
+        addFailure(fails, sizeof(fails), "turn_off");
+      }
+      if (!pass.grayRan()) {
+        addFailure(fails, sizeof(fails), "gray_skipped");
+      } else if (!pass.gray.inWindow()) {
+        addFailure(fails, sizeof(fails), "gray_busy");
+      }
     }
     if (!nextPage.inWindow()) addFailure(fails, sizeof(fails), "next_page");
-    if (nextPage.promoted()) addFailure(fails, sizeof(fails), "next_fast_promoted");
+    if (!X3_PANEL_BUILD && nextPage.promoted()) addFailure(fails, sizeof(fails), "next_fast_promoted");
     if (answer != 0) addFailure(fails, sizeof(fails), "operator");
+    if (X3_PANEL_BUILD) {
+      char base[40];
+      if (pass.base.reported()) {
+        snprintf(base, sizeof(base), "%s@%02X:%lu", refreshModeName(pass.base.ran), pass.base.sequence,
+                 static_cast<unsigned long>(pass.base.busyMs));
+      } else {
+        snprintf(base, sizeof(base), "not_reported");
+      }
+      record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
+             "route=%s base=%s gray=not_reported next=%s:%lu render_ms=%u wait_ms=%u write_ms=%u cleanup_ms=%u "
+             "heap_used=%u psram_used=%u operator=%s fails=%s",
+             grayPathName(variant.path), base, refreshModeName(nextPage.ran),
+             static_cast<unsigned long>(nextPage.busyMs), pass.renderMs, pass.waitMs, pass.writeMs, pass.cleanupMs,
+             static_cast<unsigned>(pass.internalFreeBefore - pass.internalFreeMin),
+             static_cast<unsigned>(pass.psramFreeBefore - pass.psramFreeMin), LOOK_KEYS[answer],
+             fails[0] == '\0' ? "none" : fails);
+      return;
+    }
     record(fails[0] == '\0' ? Verdict::Pass : Verdict::Fail,
            "route=%s base=%s@%02X:%lu gray=%02X:%lu next=%s:%lu render_ms=%u wait_ms=%u write_ms=%u cleanup_ms=%u "
            "heap_used=%u psram_used=%u operator=%s fails=%s",
@@ -236,11 +277,17 @@ class GrayscaleTest final : public PanelRunTest {
     char heading[48];
     snprintf(heading, sizeof(heading), "Last run: %s", VARIANTS[runVariant].name);
     page.heading(heading);
-    page.rowf("Base: asked / ran", "%s / %s, seq = 0x%02X, BUSY %lu ms%s", refreshModeName(pass.base.requested),
-              refreshModeName(pass.base.ran), pass.base.sequence, static_cast<unsigned long>(pass.base.busyMs),
-              pass.base.async ? (pass.base.busyAtReturn ? ", async" : ", async (not busy)") : "");
+    if (X3_PANEL_BUILD && !pass.base.reported()) {
+      page.row("Base: asked / ran", "not reported by the X3 drivers");
+    } else {
+      page.rowf("Base: asked / ran", "%s / %s, seq = 0x%02X, BUSY %lu ms%s", refreshModeName(pass.base.requested),
+                refreshModeName(pass.base.ran), pass.base.sequence, static_cast<unsigned long>(pass.base.busyMs),
+                pass.base.async ? (pass.base.busyAtReturn ? ", async" : ", async (not busy)") : "");
+    }
     if (pass.missingBuffer) {
       page.row("Gray pass", "skipped: a buffer was missing");
+    } else if (X3_PANEL_BUILD) {
+      page.row("Gray waveform", "not reported by the X3 drivers: look at the chart");
     } else if (pass.grayRan()) {
       page.rowf("Gray waveform", "seq = 0x%02X, BUSY %lu ms", pass.gray.sequence,
                 static_cast<unsigned long>(pass.gray.busyMs));

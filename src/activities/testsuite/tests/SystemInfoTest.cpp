@@ -93,7 +93,9 @@ class SystemInfoTest final : public TestScreen {
     snap.pinPowerSelection = esp_efuse_read_field_bit(ESP_EFUSE_PIN_POWER_SELECTION);
 #endif
     snap.normalMhz = getCpuFrequencyMhz();
+#if FREEINK_CAP_TOUCH
     snap.touchAddr = TestSuiteAccess::input(gpio).touchDiagnostics().address;
+#endif
     if (snap.touchAddr == 0) snap.touchAddr = BoardConfig::ACTIVE.touch.i2cAddress;
     hostAttached = usbHostAttached();
     recordPanel();
@@ -283,7 +285,8 @@ class SystemInfoTest final : public TestScreen {
     if (gpio.hasTouch()) {
       snprintf(touchText, sizeof(touchText), "%s 0x%02x", touchControllerName(touch.controller), snap.touchAddr);
     } else {
-      snprintf(touchText, sizeof(touchText), "not found");
+      // A build with no touch driver has nothing to find; say so rather than "not found".
+      snprintf(touchText, sizeof(touchText), FREEINK_CAP_TOUCH ? "not found" : "none in this build");
     }
     page.rowf("Touch / front light", "%s / %s", touchText, Frontlight.present() ? "in this build" : "not built");
     drawBootProbes(page);

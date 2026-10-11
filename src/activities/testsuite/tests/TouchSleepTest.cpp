@@ -1,4 +1,22 @@
 #if CROSSPOINT_TEST_SUITE
+#include <BoardConfig.h>
+
+#if !FREEINK_CAP_TOUCH
+// No touch in this build (FREEINK_CAP_TOUCH=0, the Silkscreen 3.68" variant): T12 is a screen that says so.
+#include <Memory.h>
+
+#include "NoTouchTest.h"
+#include "TestFactories.h"
+
+namespace testsuite {
+
+std::unique_ptr<Activity> createTouchSleepTest(const TestInfo& info, GfxRenderer& renderer,
+                                               MappedInputManager& mappedInput) {
+  return makeUniqueNoThrow<NoTouchTest>(info, renderer, mappedInput);
+}
+
+}  // namespace testsuite
+#else
 // T12: the touch controller's sleep command (TP-01, TP-02; bring-up B9). J4's
 // 3V3 is not switched, so every sleep entry must hibernate a fitted FT6336U
 // (0xA5 = 0x03). Three paths, each checked by its result and by the address no
@@ -227,4 +245,5 @@ std::unique_ptr<Activity> createTouchSleepTest(const TestInfo& info, GfxRenderer
 }
 
 }  // namespace testsuite
+#endif  // FREEINK_CAP_TOUCH
 #endif

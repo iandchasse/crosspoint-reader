@@ -66,6 +66,10 @@ void formatPowerIdleToken(char* buf, const size_t size) {
 bool powerIdleFault() { return freeink::PowerManager::powerPinCheck().idle == PowerPinIdle::Undefined; }
 
 void formatTouchIdToken(char* buf, const size_t size) {
+#if !FREEINK_CAP_TOUCH
+  // No touch driver in this build: nothing was identified, and nothing asks it.
+  snprintf(buf, size, "no_touch");
+#else
   if (!BoardConfig::touchIdentityCheck()) {
     snprintf(buf, size, "off");
     return;
@@ -86,10 +90,15 @@ void formatTouchIdToken(char* buf, const size_t size) {
   } else {
     snprintf(buf, size, "none");
   }
+#endif
 }
 
 bool touchIdRejected() {
+#if !FREEINK_CAP_TOUCH
+  return false;
+#else
   return BoardConfig::touchIdentityCheck() && TestSuiteAccess::input(gpio).touchDiagnostics().idRejected;
+#endif
 }
 
 void formatRtcIdToken(char* buf, const size_t size) {

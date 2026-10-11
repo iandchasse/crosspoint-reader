@@ -1,6 +1,7 @@
 #if CROSSPOINT_TEST_SUITE
 #include "TestCatalog.h"
 
+#include <BoardConfig.h>
 #include <Memory.h>
 
 #include <cstring>
@@ -30,8 +31,14 @@ constexpr TestInfo TESTS[] = {
     {"T8", "Panel SPI clock", "40 MHz display SPI trial", createSpiClockTest},
     {"T9", "Front light", "On/off, warm/cool, brightness, LED_MONIT, dVf, colour run", createFrontlightTest},
     {"T10", "Light trip", "Over-voltage trip at a lowered level; step 0: open load", createLightTripTest},
+#if FREEINK_CAP_TOUCH
     {"T11", "Touch mapping", "Probe, raw coordinates, calibration and gestures", createTouchMappingTest},
     {"T12", "Touch sleep", "Controller sleep command (TP-01, TP-02)", createTouchSleepTest},
+#else
+    // The 3.68" variant has no touch: both screens say so and record a SKIP (NoTouchTest.h).
+    {"T11", "Touch mapping", "No touch in this build", createTouchMappingTest},
+    {"T12", "Touch sleep", "No touch in this build", createTouchSleepTest},
+#endif
     {"T13", "RTC", "Presence, registers and time", createRtcTest},
     {"T14", "RTC across sleep", "Time kept through a deep sleep", createRtcSleepTest},
     {"P3", "SD card", "Card identity, bus, speed, a verified write, power cycles", createSdCardTest},
