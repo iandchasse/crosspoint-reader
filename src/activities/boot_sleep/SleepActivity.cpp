@@ -885,7 +885,7 @@ void SleepActivity::renderLastScreenSleepScreen() const {
   // Only the moon differs from the displayed frame, so a differential FAST
   // update adds it without the flashing clean pass (which sweeps the panel
   // through the inverse — a full white flash on a night-mode page).
-  if (gpio.deviceIsX3()) {
+  if (display.isX3Panel()) {
     renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
   } else {
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);

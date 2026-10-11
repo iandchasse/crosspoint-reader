@@ -1082,7 +1082,7 @@ void setup() {
       APP_STATE.showBootScreen = true;
       APP_STATE.saveToFile();
       if (Storage.exists(SLEEP_FRAME_FILE) && loadSleepFrameBuffer()) {
-        if (gpio.deviceIsX3()) {
+        if (display.isX3Panel()) {
           // begin() clears the X3 controller RAM, so restore the saved frame as
           // the baseline for the first reader paint without refreshing the panel.
           renderer.cleanupGrayscaleWithFrameBuffer();

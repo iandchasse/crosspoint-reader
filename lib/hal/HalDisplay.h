@@ -2,11 +2,27 @@
 #include <Arduino.h>
 #include <BoardConfig.h>
 #include <EInkDisplay.h>
+#include <HalGPIO.h>
 
 class HalDisplay {
  public:
   using Controller = BoardConfig::DisplayController;
   Controller getController() const;
+
+  // True when the glass is the Xteink X3's 792x528 panel (UC8253 or UC8279d), whose refresh
+  // handling differs from the X4's: a HALF refresh resyncs the controller, the gray base is
+  // the OEM differential waveform, and a splashless wake rebases the controller RAM. It is a
+  // panel test, not a board test: gpio.deviceIsX3() stays "the X3 board" (gauge, SD rail,
+  // side hints). The two agree on every build but the Silkscreen 3.68" variant, which carries
+  // this panel on an S3 that is never detected as an X3 board; there the SDK's panel mode
+  // answers, true from construction.
+  bool isX3Panel() const {
+#if FREEINK_SILKSCREEN_368
+    return einkDisplay.isX3Mode();
+#else
+    return gpio.deviceIsX3();
+#endif
+  }
 
   using GrayscaleMode = freeink::GrayscaleMode;
   using GrayscaleCapabilities = freeink::GrayscaleCapabilities;
