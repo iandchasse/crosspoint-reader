@@ -10,7 +10,9 @@
 // 3.68" variant (X3_PANEL_BUILD, PanelFamily.h) the panel is the X3's, at the
 // profile's 10 MHz: no reference exists for a faster clock yet, record it, and
 // the X3 drivers report no gray pass, so that run is judged by its base refresh
-// and the operator's look.
+// and the operator's look. The screen opens on the profile clock there (a first
+// bench run is the reference the trials are compared with), and a mode no refresh
+// ran in reads n/a: a UC8253 reports its HALF turns, which are resyncs, as FULL.
 #include <Arduino.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
@@ -87,6 +89,30 @@ struct ClockResult {
   uint32_t hostMeanMs(const int mode) const { return busy[mode].count != 0 ? hostSumMs[mode] / busy[mode].count : 0; }
 };
 ClockResult results[CLOCK_COUNT];
+
+#if FREEINK_SILKSCREEN_368
+// The mean BUSY and host time of one mode of a run, or n/a when no refresh ran in it. A UC8253 reports every
+// HALF request as FULL (a resync), so its HALF column is empty and the HALF turns' data is under FULL; a 0
+// there would be a number nobody measured.
+void meansColumns(char* out, const size_t size, const char* key, const ClockResult& r, const int mode) {
+  if (r.busy[mode].count == 0) {
+    snprintf(out, size, "%s_busy=n/a %s_host=n/a", key, key);
+    return;
+  }
+  snprintf(out, size, "%s_busy=%lu %s_host=%lu", key, static_cast<unsigned long>(r.busy[mode].meanMs()), key,
+           static_cast<unsigned long>(r.hostMeanMs(mode)));
+}
+
+// "<busy>+<host>", or n/a, for the screen.
+void meansText(char* out, const size_t size, const ClockResult& r, const int mode) {
+  if (r.busy[mode].count == 0) {
+    snprintf(out, size, "n/a");
+    return;
+  }
+  snprintf(out, size, "%lu+%lu", static_cast<unsigned long>(r.busy[mode].meanMs()),
+           static_cast<unsigned long>(r.hostMeanMs(mode)));
+}
+#endif
 
 class SpiClockTest final : public PanelRunTest {
  public:
@@ -233,11 +259,29 @@ class SpiClockTest final : public PanelRunTest {
     if (!X3_PANEL_BUILD && result.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
     if (result.missingBuffer) addFailure(fails, sizeof(fails), "scratch");
     if (!result.grayOk) addFailure(fails, sizeof(fails), "gray");
-    if (!result.plain.inWindow() || result.plain.promoted()) addFailure(fails, sizeof(fails), "plain_page");
+    // A promotion of the plain page is recorded, not judged, on the X3 pair (as T5 does).
+    if (!result.plain.inWindow() || (!X3_PANEL_BUILD && result.plain.promoted())) {
+      addFailure(fails, sizeof(fails), "plain_page");
+    }
     if (answer != 0) addFailure(fails, sizeof(fails), "operator");
     const Verdict verdict = fails[0] == '\0' ? Verdict::Pass : Verdict::Fail;
     result.verdict = verdictName(verdict);
     const ClockResult& baseline = results[0];
+#if FREEINK_SILKSCREEN_368
+    char fast[48];
+    char half[48];
+    char full[48];
+    meansColumns(fast, sizeof(fast), "fast", result, HalDisplay::FAST_REFRESH);
+    meansColumns(half, sizeof(half), "half", result, HalDisplay::HALF_REFRESH);
+    meansColumns(full, sizeof(full), "full", result, HalDisplay::FULL_REFRESH);
+    record(verdict,
+           "clock=%s clock_khz=%lu profile_khz=%lu %s %s %s baseline_fast_host=%s%lu bad=%d promoted=%d "
+           "gray=not_reported operator=%s fails=%s",
+           CLOCKS[runClock].key, static_cast<unsigned long>(result.appliedHz / 1000),
+           static_cast<unsigned long>(profileHz / 1000), fast, half, full,
+           baseline.valid ? "" : "none:", static_cast<unsigned long>(baseline.hostMeanMs(HalDisplay::FAST_REFRESH)),
+           result.bad, result.promoted, LOOK_KEYS[answer], fails[0] == '\0' ? "none" : fails);
+#else
     record(verdict,
            "clock=%s clock_khz=%lu profile_khz=%lu fast_busy=%lu fast_host=%lu half_busy=%lu half_host=%lu "
            "baseline_fast_host=%s%lu bad=%d promoted=%d gray=%s operator=%s fails=%s",
@@ -253,6 +297,7 @@ class SpiClockTest final : public PanelRunTest {
            : result.grayRan ? "ran"
                             : "skipped",
            LOOK_KEYS[answer], fails[0] == '\0' ? "none" : fails);
+#endif
   }
 
   void drawBody(TestPage& page) const override {
@@ -264,13 +309,27 @@ class SpiClockTest final : public PanelRunTest {
     page.rowf("Panel SPI clock now", "%lu kHz", static_cast<unsigned long>(panelSpiHz() / 1000));
     if (stoppedAfter >= 0) page.rowf("Last run", "stopped after %d of %d steps", stoppedAfter, STEP_COUNT);
     page.gap(4);
+#if FREEINK_SILKSCREEN_368
+    page.heading("Mean BUSY + host ms (gray: not reported)");
+#else
     page.heading("Mean BUSY + host time per refresh");
+#endif
     for (int i = 0; i < CLOCK_COUNT; ++i) {
       const ClockResult& r = results[i];
       if (!r.valid) {
         page.row(CLOCKS[i].name, "not run");
         continue;
       }
+#if FREEINK_SILKSCREEN_368
+      char fast[24];
+      char half[24];
+      char full[24];
+      meansText(fast, sizeof(fast), r, HalDisplay::FAST_REFRESH);
+      meansText(half, sizeof(half), r, HalDisplay::HALF_REFRESH);
+      meansText(full, sizeof(full), r, HalDisplay::FULL_REFRESH);
+      page.rowf(CLOCKS[i].name, "FAST %s, HALF %s, FULL %s ms%s%s", fast, half, full, r.verdict != nullptr ? ", " : "",
+                r.verdict != nullptr ? r.verdict : "");
+#else
       page.rowf(CLOCKS[i].name, "FAST %lu+%lu, HALF %lu+%lu ms, gray %s%s%s",
                 static_cast<unsigned long>(r.busy[HalDisplay::FAST_REFRESH].meanMs()),
                 static_cast<unsigned long>(r.hostMeanMs(HalDisplay::FAST_REFRESH)),
@@ -280,12 +339,15 @@ class SpiClockTest final : public PanelRunTest {
                 : r.grayRan    ? "ran"
                                : "skipped",
                 r.verdict != nullptr ? ", " : "", r.verdict != nullptr ? r.verdict : "");
+#endif
     }
   }
 
   std::unique_ptr<uint8_t[]> scratch;
   uint32_t profileHz = 0;
-  int selected = CLOCK_COUNT - 1;  // the 40 MHz trial
+  // The 40 MHz trial on the 4.26" board. A first bench run of the 3.68" variant opens on the profile clock:
+  // the reference the trials are compared with, over R29-R34 and a longer flex.
+  int selected = X3_PANEL_BUILD ? 0 : CLOCK_COUNT - 1;
   int runClock = 0;
   int completedSteps = 0;
   int stoppedAfter = -1;
