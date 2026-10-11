@@ -3,3 +3,6 @@
 scripts/sdfat_patches/*.patch text eol=lf
 # The Silkscreen sync scripts run under Git Bash, which rejects CRLF: keep them LF where core.autocrlf is set.
 scripts/silkscreen/*.sh text eol=lf
+# The two guards build_matrix.sh runs are bash scripts too.
+scripts/check_sleep_wake_sources.sh text eol=lf
+scripts/check_test_firmware.sh text eol=lf
