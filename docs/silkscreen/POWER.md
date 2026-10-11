@@ -96,11 +96,21 @@ The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82
 - **Row 17 is not in hand.** The UC8253 and the UC8279d have no datasheet figure in the repo. The floor is the budget above less the 4.26" panel's 2-6 µA, plus this panel's own: unknown. P5 records the J2 flex-in/flex-out gap with no reference, and MEAS-01 is the test.
 - **No touch terms.** The +55 µA hibernate, +220 µA Monitor and ≈1.1 mA `TP_RST` rows do not exist: no tail, and no code that could miss a sleep command. `IO11` is still parked HIGH and held (inherited, at no cost), and `IO41` is never configured.
 - **`BUSY_N`.** IO48 has the internal pull-up while awake (the X3 drivers' active-low `BUSY_N`; ≈73 µA only while the controller drives it LOW, in a refresh wait) and is a plain unheld input in sleep, as for the UC8279. Its level in sleep is not in hand, so HW-01's R34 check is the one that matters.
-- **Awake.** The X3's stock controller probe costs about 111 ms at a cold boot (410 ms at most, when `BUSY_N` stays LOW through its 300 ms bound) and nothing at a deep-sleep wake with a conclusive verdict (VER `0x66` or `0xFF`; any other id runs the UC8253 driver and is probed at every wake). The driver-free panel sleep (the reset loop) is about 72 ms idle and 172 ms at most; the boot cutoff's is the probe, `begin()` and the deep-sleep command.
+- **Awake.** Computed from the driver and bus code (SPI at the profile's 10 MHz, 99-byte rows, 528 rows, 52,272 B a plane; the 10-15 µs of per-row call overhead is an estimate), none measured:
+
+  | When | What | Cost |
+  |---|---|---|
+  | A cold boot, or any reset but a deep-sleep wake (and the boot cutoff's and the reset loop's panel sleep) | The X3's stock controller probe: reset 10 + 50 + 50 ms, one `BUSY_N` read, three VER bytes | About 111 ms; 410 ms at most, when `BUSY_N` stays LOW through its 300 ms bound |
+  | A deep-sleep wake with a conclusive verdict (VER `0x66` or `0xFF`) | No probe: the driver's own reset and one `BUSY_N` read | Nothing normally. A `BUSY_N` that stays LOW 300 ms after the reset drops the verdict and restarts, and the next boot probes (about 0.3 s, a restart and about 111 ms more, at every wake if it repeats: bench list step 8). Any other id is not kept and is probed at every wake (about 111 ms each) |
+  | Every `display.begin()`: a cold boot, and each wake that reaches the UI (not a ghost wake) | `Uc8253X3Driver::begin()`: the 80 ms reset, then `initController()`, which writes **both** 52,272 B planes white (the UC8253 has no RAM clear). `Uc8279Driver::begin()`: the 80 ms reset and a register script, no fill | UC8253 about 170-190 ms against the SSD1677's roughly 70-80 ms: **about +95-110 ms per `begin()`**, about 1.3-1.8 µAh at 45-60 mA (inference). UC8279d about equal to the SSD1677 |
+  | A Quick Resume wake (`SplashlessWake` with `/.crosspoint/sleep_frame.bin`) | `cleanupGrayscaleWithFrameBuffer()` rebases the controller RAM that `begin()` cleared: both planes rewritten (UC8253: DTM2, DSP, DTM1, DSP; UC8279d: PTIN, the same two planes, PTOUT). No refresh, no PON, no `BUSY_N` wait | **About 85-110 ms** of SPI-bound CPU, about 1.4-1.8 µAh (inference). It replaces the first reader page's HALF, which `HalDisplay` turns into a full sync (a FULL waveform, a conditioning pass and a settle: seconds of panel drive), with a FAST differential, because only this branch sets `allowFastInitialReaderRefresh`. Net: a Quick Resume wake saves time and energy |
+  | The worst case for one wake, UC8253 | The `begin()` fill and the rebase | About 190-220 ms, about 2.6-3.6 µAh (inference) |
+  | A HALF anywhere on the X3 pair (every N-th page, sleep covers, overlays) | `requestResync(1)`: the HALF becomes a full sync with one conditioning pass | The X3 panel's own cost, as on the C3 X3, switched on for this variant on purpose; not measured |
+
+  The driver-free panel sleep (the reset loop) is about 72 ms idle and 172 ms at most (a 10 + 1 ms reset, a 60 + 1 ms settle and a BUSY_N wait of up to 100 ms); the boot cutoff's is the probe, `begin()` and the deep-sleep command. The 60 ms settle is host-tested only (bench list step 10).
 - **Saved against a board with a tail.** The ≈307 ms touch reset and settle at each cold boot, and the NACKed hibernate write at each sleep entry.
 - **Wake sources, timers, holds, pulls.** None added: `scripts/check_sleep_wake_sources.sh` passes.
 
-## 2. Pin states in sleep
 ## 2. Pin states in sleep
 
 **How the pads behave in deep sleep.**
@@ -171,7 +181,7 @@ The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82
 
 **Sleep-current test (MEAS-01)**
 
-1. Use a release build (`silkscreen-gh_release`). The dev env adds a 250 ms USB-serial wait (`CROSSPOINT_WAIT_FOR_USB_SERIAL`) to every boot, ghost wakes and re-sleeps included.
+1. Use a release build (`silkscreen-gh_release`; `silkscreen-368-gh_release` on the 3.68" variant). The dev env adds a 250 ms USB-serial wait (`CROSSPOINT_WAIT_FOR_USB_SERIAL`) to every boot, ghost wakes and re-sleeps included.
 2. Put the cell, or a 3.8 V source, on J5 through a µA meter or a PPK2-class logger.
 3. Unplug USB, and take any UART adapter off TP1/TP2. Fit the SD card, connect the panel, light off, J6 empty.
 4. Wait at least 60 s after sleep entry, then average over at least 60 s. The DS3231 converts every 10 s (≈575 µA for ≈10 ms), so short readings mislead.
@@ -194,7 +204,7 @@ The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82
   - the loop and boot cutoffs;
   - the ghost-wake and release-wake re-sleeps;
   - the SD-error screen timeout (60 s) and the no-input timeout after a wake (180 s);
-  - 3 forced panics (a test build), with the panel refreshed fast before them: the driver-free panel sleep must bring it to the same floor.
+  - 3 forced panics, with the panel refreshed fast before them: the driver-free panel sleep must bring it to the same floor. No image forces a panic (the test firmware's P6 is not built, and no shipping image gets a hook): [TEST-SUITE.md's reader-image checks](TEST-SUITE.md#checks-that-need-the-reader-image) give the scratch patch.
 
 **Bench checks**
 
