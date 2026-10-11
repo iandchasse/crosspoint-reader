@@ -43,12 +43,18 @@ constexpr int QUESTION_LOOK = 1;
 // other waveforms: its runs set the baseline instead. So do the X3 drivers of
 // the Silkscreen 3.68" variant (X3_PANEL_BUILD, PanelFamily.h): no reference
 // yet, record it, and neither the FULL >= HALF > FAST order nor a promotion
-// is judged there (a HALF is a resync by design, the first paints run as FULL).
+// is judged there, in the lettered runs or in the scope loops. HalDisplay turns
+// every HALF request into requestResync(1) on the X3 panel, so a HALF is a full
+// sync: Uc8253X3Driver::displayStart() reports it as FULL (its HALF scrub, CDI
+// 0xA9, runs only for a refresh that follows a power-down), Uc8279Driver::
+// displayStart() reports it as HALF (the same GC bank as FULL). The first paints
+// after begin() are full syncs on both (one on a UC8253, two on a UC8279d): a
+// FAST request reports FULL there.
 constexpr uint32_t REFERENCE_MS[MODES] = {1800, 1720, 500};
 constexpr uint32_t REFERENCE_TOLERANCE_PCT = 50;
 constexpr char X3_NOTE[] =
-    "X3 drivers: a HALF is a resync and the first paints after boot run as FULL: recorded, not failed. No "
-    "reference times yet: these runs set them.";
+    "X3 drivers: a HALF is a resync, reported FULL by a UC8253 and HALF by a UC8279d, and the first paints after "
+    "boot run as FULL. Recorded, not failed. No reference times yet: these runs set them.";
 
 struct Variant {
   const char* name;  // on the screen
@@ -268,12 +274,13 @@ class RefreshTest final : public PanelRunTest {
   }
 
   // Every end of a scope loop records it: the refreshes it ran and what the
-  // driver reported. FAIL only on a refresh outside the BUSY window or promoted.
+  // driver reported. FAIL only on a refresh outside the BUSY window or, off the
+  // X3 pair, promoted: a HALF loop there is a run of full syncs (X3_PANEL_BUILD).
   void recordLoop(const bool completed) {
     const LoopStats& l = loopStats;
     char fails[48] = "";
     if (l.bad != 0) addFailure(fails, sizeof(fails), "busy_window");
-    if (l.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
+    if (!X3_PANEL_BUILD && l.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
     char ran[48] = "";
     char busy[80] = "";
     for (int mode = 0; mode < MODES; ++mode) {
@@ -449,7 +456,9 @@ class RefreshTest final : public PanelRunTest {
     }
     const int order = modeOrder();
     if (X3_PANEL_BUILD) {
-      page.row("FULL >= HALF > FAST", order < 0   ? "run all three"
+      // A UC8253 reports every HALF request as FULL, so its HALF column stays empty and the order cannot
+      // complete there; a UC8279d reports HALF as HALF.
+      page.row("FULL >= HALF > FAST", order < 0   ? "run all three (a UC8253 reports HALF as FULL)"
                                       : order > 0 ? "yes (recorded)"
                                                   : "no (recorded, not judged)");
     } else {
