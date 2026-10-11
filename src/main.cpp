@@ -870,7 +870,9 @@ void setup() {
   // boot — but defer the sleep-or-boot decision until SETTINGS is loaded below:
   // click-to-wake is a setting, and an X4 battery power-off cuts all power, so
   // only SD state survives to the next boot.
-  const bool wakeHoldVerified = wakeupReason != HalGPIO::WakeupReason::PowerButton || gpio.verifyPowerButtonWakeup();
+  // The Metalio boots after the button is released, so it skips the check.
+  const bool wakeHoldVerified = wakeupReason != HalGPIO::WakeupReason::PowerButton || BoardConfig::isMetalioEInk4() ||
+                                gpio.verifyPowerButtonWakeup();
   const bool unverifiedWake = wakeupReason == HalGPIO::WakeupReason::PowerButton && !wakeHoldVerified;
   if (earlyWakeDecision) {
     // PowerConfig::earlyWakeDecision: decide now, before touch, the RTC, SD, the
