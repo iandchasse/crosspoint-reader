@@ -164,6 +164,13 @@ class SystemInfoTest final : public TestScreen {
     char fails[24];
     const Verdict verdict = panelProbeVerdict(fails, sizeof(fails));
     formatPanelProbe(panelLine, sizeof(panelLine));
+#if FREEINK_SILKSCREEN_368
+    if (verdict == Verdict::Warn) {
+      // The warned reading is in `fails` (panelProbeVerdict()); a WARN names it in warns=.
+      record(verdict, "action=panel %s warns=%s fails=none", panelLine, fails);
+      return;
+    }
+#endif
     record(verdict, "action=panel %s fails=%s", panelLine, fails);
   }
 

@@ -95,6 +95,22 @@ const char* driverName() {
                                                                                          : "Uc8253X3Driver";
 }
 
+#if FREEINK_SILKSCREEN_368
+// What really ran, where driverName() only repeats the facade's rule: the X3 drivers report the CDI byte of the
+// bank a refresh used as its sequence (Uc8253X3Driver 0x29 for the full and fast banks, 0xA9 for the half scrub;
+// Uc8279Driver 0x97 for the first refresh, 0xD7 after; EpdBus.h). With no refresh on record there is nothing to
+// compare, which is no mismatch. A preprocessor block, so the 4.26" build's object code stays as it was.
+bool driverReportMatches() {
+  const auto bus = freeink::EpdBus::diagnostics();
+  if (bus.refreshes == 0) return true;
+  const uint8_t sequence = bus.lastRefreshSequence;
+  if (BoardConfig::ACTIVE.displayController == BoardConfig::DisplayController::UC8279) {
+    return sequence == 0x97 || sequence == 0xD7;
+  }
+  return sequence == 0x29 || sequence == 0xA9;
+}
+#endif
+
 }  // namespace
 
 void formatPanelProbe(char* buf, const size_t size) {
@@ -104,8 +120,11 @@ void formatPanelProbe(char* buf, const size_t size) {
   if (diag != nullptr) {
     if (X3_PANEL_BUILD) {
       // The stock X3 protocol reads three VER bytes and no FLG; byte 2 decides (0x66 a UC8279d, 0xFF a UC8253).
-      appendf(buf, size, " ver=%02X-%02X-%02X ver_bytes=%u flg=n/a busy_timeout=%d", diag->ver[0], diag->ver[1],
-              diag->ver[2], static_cast<unsigned>(diag->verBytesRead), diag->busyTimedOut ? 1 : 0);
+      // A verdict kept across a deep sleep has no BUSY_N reading of this boot (the cache holds the id bytes
+      // only, and the SDK's record then says five bytes): the row keeps the protocol's three and says "cached".
+      const bool cached = freeink::displayControllerSource() == DisplayControllerSource::Cached;
+      appendf(buf, size, " ver=%02X-%02X-%02X ver_bytes=3 flg=n/a busy_timeout=%s", diag->ver[0], diag->ver[1],
+              diag->ver[2], cached ? "cached" : (diag->busyTimedOut ? "1" : "0"));
     } else {
       appendf(buf, size, " ver=%02X-%02X-%02X-%02X-%02X flg=%02X", diag->ver[0], diag->ver[1], diag->ver[2],
               diag->ver[3], diag->ver[4], diag->flg);
@@ -115,8 +134,16 @@ void formatPanelProbe(char* buf, const size_t size) {
   }
   appendf(buf, size, " variant=%02X", BoardConfig::ACTIVE.displayControllerVariant);
   if (X3_PANEL_BUILD) {
+    // driver= is the facade's rule and geom= the configured geometry (nothing reads the glass back); seq= is
+    // what the last refresh reported, the CDI byte of the bank it ran, which names the driver family.
     appendf(buf, size, " driver=%s x3_mode=%d geom=%ux%u", driverName(), display.isX3Panel() ? 1 : 0,
             static_cast<unsigned>(display.getDisplayWidth()), static_cast<unsigned>(display.getDisplayHeight()));
+    const auto bus = freeink::EpdBus::diagnostics();
+    if (bus.refreshes != 0) {
+      appendf(buf, size, " seq=%02X", bus.lastRefreshSequence);
+    } else {
+      appendf(buf, size, " seq=-");
+    }
   }
   if (diag != nullptr && diag->mtpValid) {
     appendf(buf, size, " mtp=");
@@ -142,16 +169,26 @@ void formatPanelToken(char* buf, const size_t size) {
 Verdict panelProbeVerdict(char* fails, const size_t size) {
   snprintf(fails, size, "none");
 #if FREEINK_SILKSCREEN_368
-  // The variant's panel is the X3's from construction (the SDK facade starts in X3 mode there): X3 mode on
-  // and the profile's 792x528. Anything else is the X4 route driving the wrong geometry. (A preprocessor
-  // block, not X3_PANEL_BUILD: the 4.26" build's function stays as the compiler had it, byte for byte.)
+  // The variant's panel is the X3's from construction (the SDK facade starts in X3 mode there): X3 mode on,
+  // the facade's 792x528 (what it seeded from the driver at begin()) equal to the X3 constants and to the
+  // profile, and the driver family that ran the last refresh the one the controller calls for. Each can fire
+  // if the facade, the profile or the driver selection is edited, and none reads the panel: a PASS here says
+  // the build is consistent and the controller resolved, not that a panel is there (T4's BUSY time says that).
+  // (A preprocessor block, not X3_PANEL_BUILD: the 4.26" build's function stays as the compiler had it, byte
+  // for byte.)
   if (!display.isX3Panel()) {
     snprintf(fails, size, "x3_mode");
     return Verdict::Fail;
   }
   if (display.getDisplayWidth() != BoardConfig::ACTIVE.displayWidth ||
-      display.getDisplayHeight() != BoardConfig::ACTIVE.displayHeight) {
+      display.getDisplayHeight() != BoardConfig::ACTIVE.displayHeight ||
+      display.getDisplayWidth() != EInkDisplay::X3_DISPLAY_WIDTH ||
+      display.getDisplayHeight() != EInkDisplay::X3_DISPLAY_HEIGHT) {
     snprintf(fails, size, "geometry");
+    return Verdict::Fail;
+  }
+  if (!driverReportMatches()) {
+    snprintf(fails, size, "driver");
     return Verdict::Fail;
   }
 #endif
@@ -166,6 +203,15 @@ Verdict panelProbeVerdict(char* fails, const size_t size) {
     snprintf(fails, size, "probe_inconclusive");
     return Verdict::Fail;
   }
+#if FREEINK_SILKSCREEN_368
+  // The stock probe goes on after a BUSY_N that never read HIGH within 300 ms, by design, and takes the VER
+  // bytes anyway. The id it read is then a reading of a panel that was not answering: a WARN, not a PASS.
+  // For a WARN `fails` carries the warned reading (the caller writes it as warns=).
+  if (diag->busyTimedOut) {
+    snprintf(fails, size, "busy_timeout");
+    return Verdict::Warn;
+  }
+#endif
   return Verdict::Pass;
 }
 
