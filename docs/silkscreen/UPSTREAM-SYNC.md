@@ -67,7 +67,11 @@ upstream's number, and Silkscreen's moves after it (see step 2).
      `static_assert`s on `constexpr` rules where a test cannot run.
    - Upstream's new host tests can put their stub directory ahead of ours (2026-10-10: `run_eego.sh` puts
      `eego_stubs` before `metalio_stubs`, and the shared line's `BoardConfig.h` and `SharedI2c.h` need the
-     latter's `gpio.h` and `Wire.h`). Extend the stubs so both compile, and syntax-check them.
+     latter's `gpio.h` and `Wire.h`; 2026-10-11: `run_picco_touch.sh` and `picco_stubs`, which also lacked
+     `SharedAdc.h`'s `freertos/semphr.h`, `esp_system.h`, `soc/soc_caps.h` and `esp32-hal-periman.h`). Extend the
+     stubs so both compile, and syntax-check them. The SDK's host tests are listed by their READMEs and `run*.sh`
+     / `run*.py` scripts; check them all, and note one that fails at upstream's own pin (2026-10-11:
+     `run_uc8279c_a4.py`) instead of mending it.
    - Commit message: `Merge <pin> (Free-Ink main) into silkscreen`, the body listing the commits taken and
      every conflict resolution.
 2. **CrossPoint.** `git merge upstream/develop` on `silkscreen`.
@@ -150,6 +154,15 @@ upstream's number, and Silkscreen's moves after it (see step 2).
       `panelCursorShown` follow it too, and the second Confirm opens the Look Up / Clip / Bookmark list only where
       `hasTouch() && hasFrontButtons()` (upstream's code clips at once). Read each new touch-only control upstream
       adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys.
+   - *Sleep and wake calls in the SDK* (`PowerManager::armWakeOnPins()`, `deepSleep()`, `powerDownRailsForSleep()`;
+     the apps' `HalPowerManager::startDeepSleep()`): read every upstream edit against POWER.md section 2's pin table
+     and rules ZD-01, PB-01, PB-02 and WK-01, name the pads and pulls a change reaches on Silkscreen (IO18 is the only
+     wake pad; IO1 and IO4 are ADC ladders, IO2, IO8 and IO9 ADC inputs, none of them armed) and say whether the sleep
+     floor can move. The sleep guard (`scripts/check_sleep_wake_sources.sh` here, `.py` in CrossInk) fails on a new
+     `esp_sleep_pd_config` on purpose: do not widen it before the pin table has been read. 2026-10-11: upstream's
+     `ed88f03` put RTC_PERIPH on and an idle-level RTC pull on every ext1 wake pad, which on IO18 (R62 and R76) is
+     forbidden, so the SDK leaves a power pin the board biases itself (`InputPins::powerExternalPull`) out of it
+     and both guards allow that one call behind that exemption.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
@@ -179,8 +192,9 @@ upstream's number, and Silkscreen's moves after it (see step 2).
   install (esptool, urllib3 and charset-normalizer had to be restored).
 - A file appended to with `>>` must end in a newline first: CrossInk's `.gitattributes` did not, and the new rule was
   glued onto its last line.
-- Commit messages carry no AI co-author or "generated with" trailer (rule 4 of `.agents/rules/git-workflow.md`;
-  it was AGENTS.md rule 4 until upstream's #3890).
+- Commit messages carry no AI co-author or "generated with" trailer (the bullet "No assistant co-author or
+  generated-by trailers" under Git Operation Rules in `.agents/rules/git-workflow.md`; it was rule 4 of that file
+  until upstream's #3951 turned its numbered rules into bullets, and AGENTS.md rule 4 until #3890).
 - On Windows the working tree can be CRLF while the index is LF (`core.autocrlf`; `git ls-files --eol` shows
   it). A scripted edit must keep each file's endings, or `git diff` shows the whole file changed.
 - `firmware.map` is not rewritten when SCons restores `firmware.elf` from its cache. To attribute a size
