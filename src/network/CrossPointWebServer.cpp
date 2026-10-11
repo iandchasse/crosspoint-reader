@@ -6,6 +6,7 @@
 #include <Crypto.h>
 #include <DeviceSecret.h>
 #include <FsHelpers.h>
+#include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <HalMemory.h>
 #include <HalPowerManager.h>
@@ -569,6 +570,10 @@ void CrossPointWebServer::handleStatus() const {
   }
 #if FREEINK_DEVICE_X4 || FREEINK_DEVICE_X3
   doc["device"] = gpio.deviceIsX3() ? "X3" : "X4";
+#elif FREEINK_SILKSCREEN_368
+  // The 3.68" variant's panel is the X3's (528x792): the files page's "Auto" image target keys on "X3" or "X4"
+  // and would otherwise take the 4.26" board's 480x800 for it.
+  doc["device"] = display.isX3Panel() ? "X3" : BoardConfig::ACTIVE.name;
 #else
   doc["device"] = BoardConfig::ACTIVE.name;
 #endif
