@@ -34,8 +34,9 @@ fi
 # PowerManager::armWakeOnPins() (it keeps the RTC pull it sets on each wake pad powered). On Silkscreen the
 # power pin is biased by the board (IO18: R62 and R76), where an RTC pull is forbidden (POWER.md section 2) and
 # the power domain stays at the IDF default (ZD-01), so the call must sit behind the powerExternalPull
-# exemption: a statement naming powerExternalPull ahead of it in the same function. Anywhere else, or with
-# another argument, it is an RTC power-domain override.
+# exemption: in the same function, a statement naming powerExternalPull and after it a line that returns on
+# the wake mask (`... gpioMask ... return;`), both ahead of the call. Anywhere else, or with another
+# argument, it is an RTC power-domain override.
 if hits=$(code_matches 'esp_sleep_pd_config' | grep -v "^${power_manager}:"); then
   echo "esp_sleep_pd_config() outside ${power_manager}:"
   echo "$hits"
@@ -44,17 +45,18 @@ fi
 if ! awk '
   /^void PowerManager::armWakeOnPins/ { fn = 1 }
   fn && /^}/ { fn = 0 }
-  fn && /powerExternalPull/ && $0 !~ /^[[:space:]]*(\/\/|\*|\/\*)/ { exempt = 1 }
+  fn && /powerExternalPull/ && $0 !~ /^[[:space:]]*(\/\/|\*|\/\*)/ { named = 1 }
+  fn && named && /gpioMask/ && /return[[:space:]]*;/ && $0 !~ /^[[:space:]]*(\/\/|\*|\/\*)/ { exempt = 1 }
   /esp_sleep_pd_config/ && $0 !~ /^[[:space:]]*(\/\/|\*|\/\*)/ {
     calls++
     if (!fn) outside++
     else if (!exempt) unguarded++
-    if ($0 !~ /ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON/) wrong++
+    if ($0 !~ /esp_sleep_pd_config\(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON\)/) wrong++
   }
   END { exit !(calls <= 1 && outside == 0 && unguarded == 0 && wrong == 0) }
 ' "$power_manager"; then
   echo "esp_sleep_pd_config() in ${power_manager} must be the single ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON"
-  echo "call in PowerManager::armWakeOnPins(), behind the InputPins::powerExternalPull exemption."
+  echo "call in PowerManager::armWakeOnPins(), behind the InputPins::powerExternalPull exemption and its early return."
   status=1
 fi
 
