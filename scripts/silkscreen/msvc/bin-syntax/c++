@@ -1,0 +1,5 @@
+#!/bin/sh
+# c++ -> the PlatformIO Xtensa g++ -fsyntax-only (cxx_syntax.py), for the runners MSVC cannot link: put this
+# directory first on PATH (scripts/silkscreen/msvc/README.md).
+here=$(cd "$(dirname "$0")/.." && { pwd -W 2>/dev/null || pwd; })
+exec python "$here/cxx_syntax.py" "$@"

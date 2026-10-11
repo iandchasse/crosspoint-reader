@@ -1,0 +1,65 @@
+# Running the SDK's host tests with MSVC
+
+The SDK's host suites (`freeink-sdk/libs/**/test/host/run*.sh`, `run*.py` and the command lines in their
+READMEs) build with `c++` or `$CXX`. The Windows bench host has no g++, but it has Visual Studio Build Tools 2022
+(`cl` 14.44, `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`). This directory is a GNU-style
+`c++` over `cl.exe`, so the suites run there. Before the 3.68" variant stage (2026-10-11) the runbook said the
+host had no C++ compiler and the suites were only syntax-checked.
+
+## Use
+
+From `freeink-sdk` (the runners and READMEs expect it), in Git Bash:
+
+```sh
+# the sh runners and the README command lines call `c++`
+export PATH="$PWD/../scripts/silkscreen/msvc/bin:$PATH"
+bash libs/hardware/InputManager/test/host/run.sh
+
+# the python runners call $CXX; a list-form subprocess needs the .bat
+CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeInkDisplay/test/host/run_x3_diagnostics.py
+```
+
+(`..` is `crosspoint-reader`; use a path in `C:/...` form for `CXX`.) A compile takes 20-60 s.
+
+## What it does
+
+- Translates `-D`, `-U`, `-I`, `-o` and the sources; ignores `-std=`, `-W*`, `-f*`, `-O*` and `-pthread`. It always
+  compiles `/std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus` with `NDEBUG` undefined, so `assert()` holds (the SDK's
+  tests also `#undef NDEBUG`: an `assert()` that wraps a call must not vanish).
+- Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64` and `__builtin_expect`.
+- Passes every argument through a response file, runs `cl` under a timeout (`CXX_MSVC_TIMEOUT`, 600 s) and removes
+  its object directory. `VCVARS` names `vcvars64.bat` when Visual Studio is not in a default place.
+
+## What ran (2026-10-11, SDK `48be3d0`, all pass)
+
+XteinkDetect `test_display_probe`, `test_silkscreen_policy`, `test_silkscreen_368_policy` (each build variant its
+README names); FreeInkDisplay `run_uc8253_power.py`, `run_uc8279.py`, `run_x3_diagnostics.py`; InputManager
+`run.sh`, `run_metalio.sh`, `run_picco.sh`, `run_picco_touch.sh`; BatteryMonitor, Imu, SDCardManager and
+HapticManager `run.sh`; BoardConfig `test_probe_checks`; FrontlightManager `test_load_policy`; PowerManager
+`run_sleep_panel.py`. A negative control fails as it must: `SLEEP_PANEL_SOURCE` pointing at the pre-fix
+`PowerManager.cpp` stops `run_sleep_panel.py` on `r.settleMs == 61`.
+
+## What it cannot do
+
+- **Link a test that does `#define private public`.** MSVC mangles the access specifier into the name, so the
+  object compiles and the link fails: FreeInkDisplay `run_pro.py` and `run_picco.py`, InputManager `run_eego.sh`,
+  AudioManager `run_metalio.sh`. Use the syntax mode: `bin-syntax` on `PATH`, or `CXX=cxx_syntax.bat`, which runs the
+  PlatformIO Xtensa g++ (`toolchain-xtensa-esp-elf`, 14.2) with `-fsyntax-only`. The compile step then passes or
+  fails as with a real g++, and the run step finds no binary.
+- **Static-assert suites that need GNU extensions**: BoardConfig `run_profile_asserts.py` (it finds the Xtensa 14.2 g++
+  itself), PowerManager `test_batterylog_core` (compile with the Xtensa 14.2 g++; the esp32s3 package's 8.4 fails 17 of its
+  asserts), and `run_uc8279c_a4.py`, which fails at upstream's own pin.
+- Sanitizers, and any runner that passes a flag with no cl equivalent beyond the ones above (it prints
+  `cxx_msvc: ignoring <flag>`).
+
+## Traps
+
+- `Start-Process -Wait` on `cl.exe` from PowerShell hangs on the lingering `mspdbsrv.exe`. Do not wait on it that way:
+  run `cl` from `cmd /c` under a timeout, as `cxx_msvc.py` does.
+- A batch file splits `/DX=1` at the `=` when it reads positional parameters. Put arguments in a response file
+  (`cl @args.rsp`), as `cxx_msvc.py` does; `cxx_msvc.bat` passes `%*` straight to python.
+- Python on an MSYS path (`/c/...`) fails; the wrappers resolve their own directory with `pwd -W`. Give `CXX` a
+  `C:/...` path.
+- Run python runners with `-B` (`importlib` and `-m` write `__pycache__` next to the runner, inside the SDK tree).
+- cl's diagnostics are not g++'s: `-Werror` and the `-W*` flags are ignored, so a clean MSVC run is not a clean g++
+  `-Wall -Wextra -Werror` run. Syntax-check what you change with the Xtensa g++ too (UPSTREAM-SYNC.md, step 1).

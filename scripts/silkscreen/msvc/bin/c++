@@ -1,0 +1,5 @@
+#!/bin/sh
+# c++ -> MSVC cl.exe (cxx_msvc.py), for the SDK's sh host-test runners: put this directory first on PATH
+# (scripts/silkscreen/msvc/README.md).
+here=$(cd "$(dirname "$0")/.." && { pwd -W 2>/dev/null || pwd; })
+exec python "$here/cxx_msvc.py" "$@"

@@ -35,8 +35,11 @@ Pins:
   commits with `git add -A` sweeps in whatever new files it finds.
 - Working trees are clean. Commits stay local: never push, open a PR or retag without the user's approval.
 - Tools on the Windows bench host: Git Bash, `pio` (PlatformIO Core), clang-format 21 at `~/.local/bin`,
-  the xtensa g++ for syntax-only checks (`~/.platformio/packages/toolchain-xtensa-esp-elf/bin`). There is no
-  host C++ compiler, so host tests can only be compiled, not run.
+  the xtensa g++ for syntax-only checks (`~/.platformio/packages/toolchain-xtensa-esp-elf/bin`, 14.2: the
+  esp32s3 package's 8.4 fails 17 of the battery log core's `static_assert`s), and Visual Studio Build Tools
+  2022 (`cl` 14.44), which **runs** the SDK host tests: `scripts/silkscreen/msvc/` is a `c++` over `cl.exe`
+  (its README: use, what ran, the tests it cannot link, the traps). There is no g++ on the host. The tests that
+  `#define private public` are syntax-checked with the xtensa g++ instead.
 - `git config core.longpaths true` in every repo (the scripts also set it per call).
 
 ## Decision rule: match upstream
@@ -65,8 +68,9 @@ to the byte.
      a new field. Keep upstream's board code gated to its board.
    - **No clang-format in the SDK.** It has no `.clang-format`, so clang-format picks up the app's config and
      re-wraps hundreds of unrelated lines. Format SDK edits by hand.
-   - Syntax-check touched host tests with the xtensa g++ (`-std=gnu++17 -fsyntax-only`), and use
-     `static_assert`s on `constexpr` rules where a test cannot run.
+   - Run the touched host tests through the MSVC shim (`scripts/silkscreen/msvc/README.md`), syntax-check
+     the ones it cannot link with the xtensa g++ (`-std=gnu++17 -fsyntax-only`), and use `static_assert`s on
+     `constexpr` rules where a test cannot run.
    - Upstream's new host tests can put their stub directory ahead of ours (2026-10-10: `run_eego.sh` puts
      `eego_stubs` before `metalio_stubs`, and the shared line's `BoardConfig.h` and `SharedI2c.h` need the
      latter's `gpio.h` and `Wire.h`; 2026-10-11: `run_picco_touch.sh` and `picco_stubs`, which also lacked
