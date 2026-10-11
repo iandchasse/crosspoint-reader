@@ -2,16 +2,19 @@
 # Silkscreen build matrix for crosspoint-reader (docs/silkscreen/UPSTREAM-SYNC.md).
 #
 # Usage: scripts/silkscreen/build_matrix.sh [--full] [--label NAME] [env ...]
-#   no envs : silkscreen silkscreen-batlog silkscreen-test x4pro c3check
-#   --full  : adds silkscreen-gh_release, x4c, papermono and stickycheck
+#   no envs : silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog
+#             silkscreen-368-test x4pro c3check
+#   --full  : adds silkscreen-gh_release, silkscreen-368-gh_release, x4c, papermono and stickycheck
 # Prints one line per env (exit code, flash and RAM bytes, log path) and exits non-zero if any
 # env or check failed. Logs go to .cache/silkscreen-builds/ (gitignored).
 #
 # Order matters:
 #   1. scripts/check_sleep_wake_sources.sh (static guard).
-#   2. The real envs, from platformio.ini (silkscreen-batlog is the battery log's image).
-#   3. scripts/check_test_firmware.sh silkscreen-test, if that env was built: it reads
-#      .pio/build/silkscreen-test, which step 4 deletes.
+#   2. The real envs, from platformio.ini (silkscreen-batlog is the battery log's image; the
+#      silkscreen-368* envs are the 3.68" X3-panel variant's: docs/silkscreen/MODULARITY.md).
+#   3. The image checks, for each env of those that was built: scripts/check_test_firmware.sh for
+#      silkscreen-test and silkscreen-368-test, and scripts/silkscreen/check_no_touch.sh for every
+#      silkscreen-368* env. They read .pio/build/<env>, which step 4 deletes.
 #   4. The proxy envs, LAST. `default` and `sticky` extend [firmware_tuned], whose custom
 #      sdkconfig rebuild cannot run on the Windows bench host (pioarduino tool-scons vs
 #      PlatformIO Core), so c3check / stickycheck build their flags and sources on [base]
@@ -51,8 +54,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ ${#envs[@]} -eq 0 ]; then
-  envs=(silkscreen silkscreen-batlog silkscreen-test x4pro c3check)
-  [ $full = 1 ] && envs=(silkscreen silkscreen-gh_release silkscreen-batlog silkscreen-test x4pro x4c papermono c3check stickycheck)
+  envs=(silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog silkscreen-368-test x4pro c3check)
+  [ $full = 1 ] && envs=(silkscreen silkscreen-gh_release silkscreen-batlog silkscreen-test silkscreen-368 \
+    silkscreen-368-gh_release silkscreen-368-batlog silkscreen-368-test x4pro x4c papermono c3check stickycheck)
 fi
 
 real=()
@@ -113,10 +117,25 @@ for env in "${real[@]}"; do
 done
 
 for env in "${real[@]}"; do
-  if [ "$env" = silkscreen-test ]; then
-    bash scripts/check_test_firmware.sh silkscreen-test > "$LOGS/$label-testfw.log" 2>&1
-    rc=$?; echo "test firmware check exit=$rc: $(tail -1 "$LOGS/$label-testfw.log")"; [ $rc -ne 0 ] && failed=1
-  fi
+  case "$env" in
+    silkscreen-test) log="$LOGS/$label-testfw.log" ;;
+    silkscreen-368-test) log="$LOGS/$label-testfw-368.log" ;;
+    *) continue ;;
+  esac
+  bash scripts/check_test_firmware.sh "$env" > "$log" 2>&1
+  rc=$?; echo "test firmware check ($env) exit=$rc: $(tail -1 "$log")"; [ $rc -ne 0 ] && failed=1
+done
+
+# The 3.68" variant has no touch: the image must carry no touch driver and none of the other panel
+# families' code, and its own board tag.
+for env in "${real[@]}"; do
+  case "$env" in
+    silkscreen-368*)
+      log="$LOGS/$label-notouch-$env.log"
+      bash scripts/silkscreen/check_no_touch.sh "$env" > "$log" 2>&1
+      rc=$?; echo "no-touch audit ($env) exit=$rc: $(tail -1 "$log")"; [ $rc -ne 0 ] && failed=1
+      ;;
+  esac
 done
 
 if [ ${#proxy[@]} -gt 0 ]; then

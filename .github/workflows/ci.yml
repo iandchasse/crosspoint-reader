@@ -105,10 +105,16 @@ jobs:
             asset: firmware-eego_a4.bin
           - env: silkscreen
             asset: firmware-silkscreen.bin
+          # The 3.68" X3-panel variant (docs/silkscreen/MODULARITY.md): its own envs
+          # and board tag, no touch.
+          - env: silkscreen-368
+            asset: firmware-silkscreen-368.bin
           # Hardware test firmware (docs/silkscreen/TEST-SUITE.md): a CI artifact
           # only, never a release asset.
           - env: silkscreen-test
             asset: firmware-silkscreen-test.bin
+          - env: silkscreen-368-test
+            asset: firmware-silkscreen-368-test.bin
     steps:
       - uses: actions/checkout@v6
         with:
@@ -176,8 +182,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Test firmware carries no reader and its own board tag
-        if: matrix.env == 'silkscreen-test'
-        run: bash scripts/check_test_firmware.sh silkscreen-test
+        if: matrix.env == 'silkscreen-test' || matrix.env == 'silkscreen-368-test'
+        run: bash scripts/check_test_firmware.sh ${{ matrix.env }}
+
+      - name: 3.68" variant carries no touch driver and its own board tag
+        if: startsWith(matrix.env, 'silkscreen-368')
+        run: bash scripts/silkscreen/check_no_touch.sh ${{ matrix.env }}
 
       - name: Upload firmware artifact
         uses: actions/upload-artifact@v6
