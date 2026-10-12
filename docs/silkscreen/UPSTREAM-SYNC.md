@@ -74,7 +74,11 @@ to the byte.
    - Upstream's new host tests can put their stub directory ahead of ours (2026-10-10: `run_eego.sh` puts
      `eego_stubs` before `metalio_stubs`, and the shared line's `BoardConfig.h` and `SharedI2c.h` need the
      latter's `gpio.h` and `Wire.h`; 2026-10-11: `run_picco_touch.sh` and `picco_stubs`, which also lacked
-     `SharedAdc.h`'s `freertos/semphr.h`, `esp_system.h`, `soc/soc_caps.h` and `esp32-hal-periman.h`). Extend the
+     `SharedAdc.h`'s `freertos/semphr.h`, `esp_system.h`, `soc/soc_caps.h` and `esp32-hal-periman.h`; 2026-10-12:
+     `libs/hardware/Rtc/test/host/run.py` builds this line's `Rtc.cpp`, which includes `SharedI2c.h` and reads the
+     fallback-RTC fields, so its stubs gained those, `driver/gpio.h`, `esp32-hal-periman.h` and `esp_rom_sys.h`, and
+     BatteryMonitor's shared `Wire.h` stub `getClock()`, `setClock()` and `end()`; the shim had to take `-I` and its
+     path as two arguments and supply `localtime_r`). Extend the
      stubs so both compile, and syntax-check them. The SDK's host tests are listed by their READMEs and `run*.sh`
      / `run*.py` scripts; check them all, and note one that fails at upstream's own pin (2026-10-11:
      `run_uc8279c_a4.py`) instead of mending it.
@@ -178,8 +182,8 @@ to the byte.
      forbidden, so the SDK leaves a power pin the board biases itself (`InputPins::powerExternalPull`) out of it
      and both guards allow that one call behind that exemption.
    - *The 3.68" variant* ([MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368), run after every sync):
-     `upstream_status.sh` finds the SDK's macros, profile and driver selection, the strip upload's soft-lock fix and the
-     `BUSY_N` pull-up's release before sleep, the five 368 envs, both tags, `isX3Panel()` and its sites, the audit's
+     `upstream_status.sh` finds the SDK's macros, profile and driver selection, the strip upload's `txn.end()` (upstream's
+     own, ungated) and the `BUSY_N` pull-up's release before sleep, the five 368 envs, both tags, `isX3Panel()` and its sites, the audit's
      wiring and its control, and in CrossInk its envs, device type, key gate and `deviceHasX3Panel()` sites, but not
      what a merge changed around them. Read the incoming diff for each place
      that tests `gpio.deviceIsX3()` or `Board::XteinkX3`: a site about the X3's *panel* (a refresh mode, a gray base, a
@@ -193,9 +197,12 @@ to the byte.
      `FREEINK_DRIVER_UC8253_X3` must stay the C3 X3's alone), `XteinkDetect.cpp`'s variant block
      (`#if FREEINK_SILKSCREEN_368 ... #elif FREEINK_XTEINK_DISPLAY_PROBE`, ahead of the probe code), `EpdBus`'s X3
      `BUSY_N` pull-up (`FREEINK_EPD_X3_BUSY_N`) and its release before every sleep in
-     `PowerManager::powerDownRailsForSleep()`, `PowerManager::sleepPanelWithoutDriver()`'s 60 ms settle and
-     `Uc8279Driver::writeGrayscalePlaneStrip()`'s `txn.end()` (if upstream fixes that function, take theirs and drop
-     ours, and its `FREEINK_SILKSCREEN_368` line from the status script);
+     `PowerManager::powerDownRailsForSleep()` and `PowerManager::sleepPanelWithoutDriver()`'s 60 ms settle. The strip
+     upload's `txn.end()` in `Uc8279Driver::writeGrayscalePlaneStrip()` is no longer one of ours: upstream fixed that
+     function (Free-Ink PR #139, `c2d711a`, merged as `7fcd3b3`), and the sync of 2026-10-12 took theirs and dropped our
+     gated copy (`4988be4`, reverted by SDK `b460001`), so it has no `FREEINK_SILKSCREEN_368` line. The status script
+     fails a merge that loses that `txn.end()` (before `bus.cmd(CMD_PARTIAL_OUT)`) or puts a gate in the function, and the
+     host suite (`run_uc8279.py`) passes with upstream's text and fails on its pre-fix source (the control);
      `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (41 cases) must still hold. CrossInk's copy of this
      lens is its own page (its PORTING.md, drain checklist item 15).
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
