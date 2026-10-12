@@ -185,7 +185,7 @@ jobs:
         if: matrix.env == 'silkscreen-test' || matrix.env == 'silkscreen-368-test'
         run: bash scripts/check_test_firmware.sh ${{ matrix.env }}
 
-      - name: 3.68" variant carries no touch driver and its own board tag
+      - name: 3.68" variant carries no touch driver, only the UC8279d driver, no probe, and its own board tag
         if: startsWith(matrix.env, 'silkscreen-368')
         run: bash scripts/silkscreen/check_no_touch.sh ${{ matrix.env }}
 
