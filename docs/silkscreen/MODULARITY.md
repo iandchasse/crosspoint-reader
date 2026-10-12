@@ -10,7 +10,7 @@ Silkscreen is a base board meant to be built many ways: with or without a front 
 It records the conclusion of the modularity research of 2026-09-30, which was a synthesis checked by an independent verification pass, as amended by the owner's decisions. It also gives the state after the work that research led to.
 
 - **Status:** SDK `3ee11bc`, app `16374791`, with the follow-up review's fixes (SDK `923f61d`, app `fix(silkscreen): address follow-up review`) and the hardware audit's (SDK `65660a6`, app `f25a8651`). **Nothing here has run on a board.** Every probe threshold is derived from datasheets and the netlist, and waits for the [bring-up checklist](PORTING.md#bring-up-checklist-real-board).
-- **The 3.68" variant** ([below](#the-368-variant-silkscreen-368), 2026-10-11): SDK `c875022` to `48be3d0`, app `9385762a` to `4d9bb804` and the docs commit after it. Built and checked without hardware; its bench list is in [TEST-SUITE.md](TEST-SUITE.md#the-368-variant-silkscreen-368-test).
+- **The 3.68" variant** ([below](#the-368-variant-silkscreen-368), 2026-10-11): SDK `c875022` to `48be3d0`, app `9385762a` to `4d9bb804`, the docs commit after it and the fix pass (`9804cc72` to `6a89325a`, and its record). Built and checked without hardware; its bench list is in [TEST-SUITE.md](TEST-SUITE.md#the-368-variant-silkscreen-368-test).
 - `§` refers to `de-link_pcb/docs/HARDWARE.md`. SDK paths are relative to `freeink-sdk/libs/`.
 - The battery cost of every check is in [Battery cost of the checks](#battery-cost-of-the-checks); the drain rules they keep to are in [POWER.md](POWER.md).
 

@@ -33,7 +33,7 @@ Both firmwares carry the same log through the same SDK code. CrossPoint's page i
   `-DSILKSCREEN_BATLOG=1`, version `<x.y.z>-368-batlog`, with the release image's board tag (`silkscreen-368`) so the two swap
   over SD. Flash it with `pio run -e silkscreen-368-batlog -t upload`, and go back with
   `pio run -e silkscreen-368-gh_release -t upload`. It is the same log code and hooks (the variant is the same device and
-  `Board::Silkscreen`); it costs 9,012 B of flash and 528 B of RAM over the 368 release image. Two things differ for the
+  `Board::Silkscreen`); it costs 8,992 B of flash and 528 B of RAM over the 368 release image. Two things differ for the
   analyzer. The panel's deep-sleep current is not in hand (POWER.md row 17), so its reference floor (the no-touch 58 µA plus
   self-discharge, chosen because the `cfg` column's touch bit is 0 on this build) is the 4.26" board's: a floor a few µA
   above it is not by itself a fault, and the first campaign sets this panel's. And the version must not end in
