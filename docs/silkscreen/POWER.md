@@ -91,7 +91,7 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 
 ### The 3.68" variant (`silkscreen-368`)
 
-The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82, and no touch tail ([MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368)). Its panel is the X3's UC8279d and nothing else (owner decision, 2026-10-12). Nothing here has been measured: the one bench session so far (one panel, `SEO368NQW25`, which displayed with the UC8279d driver) took no current.
+The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82, and no touch tail ([MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368)). Its panel is the X3's UC8279d and nothing else (owner decision, 2026-10-11). Nothing here has been measured: the one bench session so far (one panel, `SEO368NQW25`, which displayed with the UC8279d driver) took no current.
 
 - **Row 17 is not in hand.** The UC8279d has no datasheet figure in the repo. The floor is the budget above less the 4.26" panel's 2-6 µA, plus this panel's own: unknown. P5 records the J2 flex-in/flex-out gap with no reference, and MEAS-01 is the test.
 - **No touch terms.** The +55 µA hibernate, +220 µA Monitor and ≈1.1 mA `TP_RST` rows do not exist: no tail, and no code that could miss a sleep command. `IO11` is still parked HIGH and held (inherited, at no cost), and `IO41` is never configured.

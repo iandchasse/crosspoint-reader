@@ -181,7 +181,7 @@ The same suite on the 3.68" X3-panel build (no touch, the SDK's X3 UC8279d drive
    | T4 `fails=busy_window` with `busy_ms` under 100 | no `BUSY_N` edge: panel absent or not answering | as the row above; if `BUSY_N` is held LOW every wait runs to 30 s: wait or power off, do not reflash |
    | FAIL `driver`, `x3_mode`, `geometry` or `controller` | the facade, the profile and the driver disagree: a build or SDK fault, not the panel | stop; report the row |
 
-   **Nothing to force.** The 3.68" variant supports the UC8279d only (owner decision, 2026-10-12): the build has no `display_flags` hook, `-DSILKSCREEN_DISPLAY_CONTROLLER=uc8279` is accepted and changes nothing, and `=uc8253` and `=ssd1677` stop the build with the reason. A panel that is not a UC8279d is not a case this firmware handles: record the P1 row and the picture instead.
+   **Nothing to force.** The 3.68" variant supports the UC8279d only (owner decision, 2026-10-11): the build has no `display_flags` hook, `-DSILKSCREEN_DISPLAY_CONTROLLER=uc8279` is accepted and changes nothing, and `=uc8253` and `=ssd1677` stop the build with the reason. A panel that is not a UC8279d is not a case this firmware handles: record the P1 row and the picture instead.
 
    **The serial wait, opt-in.** The 4.26" test firmware has none so that its wake timing is a release build's (P5's ghost-wake check judges 0.3 s), and the 3.68" one is the same. To catch the boot lines with a monitor, add to `platformio.local.ini`:
 
