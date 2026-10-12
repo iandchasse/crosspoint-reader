@@ -2,9 +2,9 @@
 
 The SDK's host suites (`freeink-sdk/libs/**/test/host/run*.sh`, `run*.py` and the command lines in their
 READMEs) build with `c++` or `$CXX`. The Windows bench host has no g++, but it has Visual Studio Build Tools 2022
-(`cl` 14.44, `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`). This directory is a GNU-style
-`c++` over `cl.exe`, so the suites run there. Before the 3.68" variant stage (2026-10-11) the runbook said the
-host had no C++ compiler and the suites were only syntax-checked.
+(MSVC 19.44, toolset 14.44, `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`). This directory is a
+GNU-style `c++` over `cl.exe`, so the suites run there. Before the 3.68" variant stage (2026-10-11) the runbook said
+the host had no C++ compiler and the suites were only syntax-checked.
 
 ## Use
 
@@ -27,8 +27,9 @@ CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeIn
   compiles `/std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus` with `NDEBUG` undefined, so `assert()` holds (the SDK's
   tests also `#undef NDEBUG`: an `assert()` that wraps a call must not vanish).
 - Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64` and `__builtin_expect`.
-- Passes every argument through a response file, runs `cl` under a timeout (`CXX_MSVC_TIMEOUT`, 600 s) and removes
-  its object directory. `VCVARS` names `vcvars64.bat` when Visual Studio is not in a default place.
+- Passes every argument through a response file (a line that holds a space is quoted, so a path with a space
+  works), runs `cl` under a timeout (`CXX_MSVC_TIMEOUT`, 600 s) and removes its object directory. `VCVARS` names
+  `vcvars64.bat` when Visual Studio is not in a default place.
 
 ## What ran (2026-10-11, SDK `48be3d0`, all pass)
 

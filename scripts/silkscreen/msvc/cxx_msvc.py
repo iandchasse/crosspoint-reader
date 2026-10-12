@@ -3,9 +3,10 @@ build and run on a host that has Visual Studio Build Tools and no g++. See READM
 
 It translates -D, -U, -I, -o and the sources, ignores -std=, -W*, -f*, -O* and -pthread (it always compiles
 /std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus, with NDEBUG undefined so assert() holds) and force-includes
-gnu_shim.h for the GNU builtins the SDK's drivers use. Every argument goes to cl through a response file: a
-batch file splits /DX=1 at the "=", and Start-Process -Wait on cl.exe hangs on the lingering mspdbsrv, so the
-compile runs under subprocess with a timeout (CXX_MSVC_TIMEOUT seconds, default 600).
+gnu_shim.h for the GNU builtins the SDK's drivers use. Every argument goes to cl through a response file (a
+line that holds a space is quoted): a batch file splits /DX=1 at the "=", and Start-Process -Wait on cl.exe
+hangs on the lingering mspdbsrv, so the compile runs under subprocess with a timeout (CXX_MSVC_TIMEOUT
+seconds, default 600).
 
 Environment: VCVARS names vcvars64.bat if it is not in one of the default Visual Studio 2022 places.
 """
@@ -24,6 +25,12 @@ VCVARS_DEFAULTS = [
     r"C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat",
     r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
 ]
+
+
+def rsp_line(arg):
+    """One response-file line: forward slashes, and quotes when it holds a space (cl splits unquoted lines there)."""
+    arg = arg.replace("\\", "/")
+    return '"%s"' % arg if " " in arg or "\t" in arg else arg
 
 
 def find_vcvars():
@@ -72,8 +79,8 @@ def main(args):
     objdir = tempfile.mkdtemp(prefix="msvc-obj-")
     try:
         rsp = pathlib.Path(objdir) / "args.rsp"
-        lines = [a.replace("\\", "/") for a in cl + sources]
-        lines += ["/Fo" + objdir + "\\", "/Fe:" + out]
+        lines = [rsp_line(a) for a in cl + sources]
+        lines += [rsp_line("/Fo" + objdir + "/"), rsp_line("/Fe:" + out)]
         rsp.write_text("\n".join(lines) + "\n", encoding="utf-8")
         bat = pathlib.Path(objdir) / "run.bat"
         bat.write_text('@echo off\r\ncall "%s" >nul 2>nul\r\ncl @"%s"\r\n' % (find_vcvars(), rsp))
