@@ -11,9 +11,11 @@
 #   battery log                    : the silkscreen-batlog env, the SDK's BatteryLog files and every app hook (CrossPoint
 #                                    and CrossInk) must still be there: a merge can drop a hook without breaking a build
 #   3.68" variant                  : the SDK's SILKSCREEN_PANEL_368 macro, profile (the UC8279d, fixed and forced) and driver
-#                                    selection, the silkscreen-368 envs and their board tags, the app's panel predicate and
-#                                    its sites, the no-touch audit (a dropped predicate site builds and then ghosts the first
-#                                    page, as a hook does)
+#                                    selection, the strip upload's soft-lock fix, the BUSY_N pull-up's release before sleep,
+#                                    the silkscreen-368 envs and their board tags, the app's panel predicate and its sites,
+#                                    the no-touch audit and its control, and in CrossInk its device type, key gate and
+#                                    panel sites (a dropped predicate site builds and then ghosts the first page, as a hook
+#                                    does)
 #   ../../de-link_pcb              : informational only (the PCB repo is the user's)
 # Exit status: 0 nothing to do, 1 a merge or a pin fix is needed (lines marked "!"), 2 error.
 # Read-only apart from `git fetch`.
@@ -144,7 +146,7 @@ fi
 # The 3.68" X3-panel variant (-DSILKSCREEN_PANEL_368=1, the silkscreen-368 envs; docs/silkscreen/MODULARITY.md). A merge
 # that drops the SDK's profile or driver selection, an env, a board tag or one of the panel predicate's sites still
 # builds every env: the variant then boots the wrong driver, shares the 4.26" board's tag, or ghosts its first page.
-echo "3.68\" variant (silkscreen-368: the SDK's profile and selection, the envs and tags, the panel predicate and its sites)"
+echo "3.68\" variant (silkscreen-368: the SDK's profile, selection, soft-lock fix and BUSY_N release, the envs and tags, the panel predicate and its sites)"
 v368miss=0
 v368_need() {  # dir file pattern min: the file holds at least min lines matching the pattern
   local n
@@ -165,6 +167,14 @@ v368_atmost() {  # dir file pattern max: the file holds at most max lines matchi
 v368_file() {  # dir file
   if [ ! -f "$1/$2" ]; then
     flag "3.68\" variant: $2 is missing from $(basename "$1")"
+    v368miss=$((v368miss + 1))
+  fi
+}
+v368_in_section() {  # dir file section pattern min: [section] of an ini file holds at least min non-comment matching lines
+  local n
+  n=$(awk -v sec="$3" -v pat="$4" '$0 ~ ("^\\[" sec "\\]") { s = 1; next } /^\[/ { s = 0 } s && !/^[[:space:]]*;/ && $0 ~ pat { c++ } END { print c + 0 }' "$1/$2" 2>/dev/null)
+  if [ "${n:-0}" -lt "$5" ]; then
+    flag "3.68\" variant: [$3] in $2 of $(basename "$1") has ${n:-0} line(s) matching '$4', expected at least $5"
     v368miss=$((v368miss + 1))
   fi
 }
@@ -191,12 +201,23 @@ v368_need "$SDK" libs/hardware/XteinkDetect/src/XteinkDetect.cpp 'controller for
 v368_file "$SDK" libs/hardware/XteinkDetect/test/host/test_silkscreen_368_policy.cpp
 v368_file "$SDK" libs/hardware/BoardConfig/test/host/run_profile_asserts.py
 v368_need "$SDK" libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp 'setDisplayX3();' 1
+# The strip upload's soft-lock fix (SDK 4988be4): Uc8279Driver ends its bus transaction before PARTIAL_OUT. Upstream's
+# copy holds it across bus.cmd(), which blocks on arduino-esp32's non-recursive SPI mutex (a frozen device, no panic),
+# and a merge that takes upstream's file builds every env. If upstream fixes the function and a sync takes theirs, the
+# gate line goes with ours (keep the txn.end() count).
+v368_need "$SDK" libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp 'FREEINK_SILKSCREEN_368' 1
+v368_need "$SDK" libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp 'txn\.end();' 1
+# The BUSY_N pull-up is for the awake panel only: powerDownRailsForSleep() strips both pulls and leaves a plain input
+# before every sleep (the IDF isolates the unheld pad at sleep entry too, so this is the second line; a pull-up left
+# on against a LOW BUSY_N costs 73 uA). A rename of busyPullUp, or a dropped block, passes every build and test.
+v368_need "$SDK" libs/hardware/PowerManager/src/PowerManager.cpp 'BoardConfig::displayBusyPullUp()' 1
+v368_need "$SDK" libs/hardware/PowerManager/src/PowerManager.cpp 'gpio_pullup_dis(busy);' 1
 v368_variant_app() {  # dir [sites]: what every app that has the variant carries (CrossInk names its envs and has no test firmware)
   local dir=$1
-  # HalDisplay.cpp's HALF -> resync and gray-base sites: five in CrossPoint (displayBuffer, displayBufferAsync,
-  # refreshDisplay and the two displayGrayscaleBase overloads), four in CrossInk. A merge that resolves one of
-  # them back to gpio.deviceIsX3() builds every env and ghosts that path on the variant.
-  local sites=${2:-4}
+  # HalDisplay.cpp's HALF -> resync and gray-base sites: five in both apps (displayBuffer, displayBufferAsync,
+  # refreshDisplay and the two displayGrayscaleBase overloads). A merge that resolves one of them back to
+  # gpio.deviceIsX3() builds every env and ghosts that path on the variant.
+  local sites=${2:-5}
   v368_need "$dir" lib/hal/HalDisplay.h 'isX3Panel' 1
   v368_need "$dir" lib/hal/HalDisplay.h 'FREEINK_SILKSCREEN_368' 1
   v368_need "$dir" lib/hal/HalDisplay.cpp 'isX3Panel()' "$sites"
@@ -205,8 +226,11 @@ v368_variant_app() {  # dir [sites]: what every app that has the variant carries
   v368_need "$dir" platformio.ini '^\[env:silkscreen-368\]' 1
   v368_need "$dir" platformio.ini 'DSILKSCREEN_PANEL_368=1' 1
   v368_need "$dir" scripts/silkscreen/build_matrix.sh 'silkscreen-368' 1
+  # The audit's control (it runs the audit on the 4.26" silkscreen image, which must fail): without it a pattern
+  # that matches nothing passes.
+  v368_need "$dir" scripts/silkscreen/build_matrix.sh 'notouch-control.log' 1
 }
-v368_variant_app "$CP" 5
+v368_variant_app "$CP"
 v368_need "$CP" src/network/FirmwareBoardTag.cpp '"silkscreen-368-test"' 1
 v368_need "$CP" platformio.ini '^\[env:silkscreen-368-gh_release\]' 1
 v368_need "$CP" platformio.ini '^\[env:silkscreen-368-test\]' 1
@@ -234,11 +258,39 @@ fi
 if [ -e "$CI/.git" ]; then
   if grep -q '^\[env:silkscreen-368\]' "$CI/platformio.ini" 2>/dev/null; then
     v368_variant_app "$CI"
+    # What only CrossInk's port carries (it has no test firmware, and it names its envs and its OTA device type):
+    # the battery-log env and its version suffix (the analyzer reads "-silkscreen-batlog" as CrossInk's), the
+    # variant's own device type (type "silkscreen" would match the variant's asset in the 4.26" board's OTA), the
+    # app's no-touch macro and no touch_flags, the key gate and the sites that ask the panel.
+    v368_need "$CI" platformio.ini '^\[env:silkscreen-368-batlog\]' 1
+    v368_need "$CI" platformio.ini '^custom_firmware_device_type = silkscreen368' 2
+    v368_in_section "$CI" platformio.ini silkscreen368 'DCROSSINK_APP_CAP_TOUCH=0' 1
+    v368_in_section "$CI" platformio.ini silkscreen368 'FIRMWARE_DEVICE_TYPE=.*silkscreen368' 1
+    v368_need "$CI" scripts/git_branch.py "'-368-silkscreen-batlog'" 1
+    v368_file "$CI" scripts/silkscreen/check_no_touch.sh
+    v368_need "$CI" include/DeviceCapabilities.h '^#elif FREEINK_SILKSCREEN_368' 1
+    # The ten deviceHasX3Panel() sites: v368_variant_app counts the HalDisplay ones and one in main.cpp only.
+    v368_need "$CI" src/main.cpp 'deviceHasX3Panel()' 2
+    v368_need "$CI" src/activities/ScreenTransitionRefresh.h 'deviceHasX3Panel()' 1
+    v368_need "$CI" src/activities/boot_sleep/SleepActivity.cpp 'deviceHasX3Panel()' 1
+    v368_need "$CI" src/components/themes/dashboard/DashboardTheme.cpp 'deviceHasX3Panel()' 3
+    v368_need "$CI" src/components/themes/minimal/MinimalTheme.cpp 'deviceHasX3Panel()' 1
+    v368_need "$CI" src/SettingsList.cpp 'deviceHasX3Panel()' 1
+    v368_need "$CI" src/network/CrossPointWebServer.cpp 'deviceHasX3Panel()' 1
+    if [ -f "$CI/platformio.ini" ]; then
+      n=$(awk '/^\[silkscreen368\]/ { s = 1; next } /^\[/ { s = 0 } s && !/^[[:space:]]*;/ && /touch_flags/ { c++ } END { print c + 0 }' "$CI/platformio.ini")
+      if [ "$n" -ne 0 ]; then
+        flag "3.68\" variant: [silkscreen368] in crossink's platformio.ini refers to touch_flags $n time(s): the variant has no touch tail"
+        v368miss=$((v368miss + 1))
+      fi
+    fi
   else
-    info "crossink: the variant is not ported there yet (no [env:silkscreen-368])"
+    flag "3.68\" variant: crossink has no [env:silkscreen-368]: port it (PORTING.md, drain checklist item 15)"
+    v368miss=$((v368miss + 1))
   fi
 fi
-[ $v368miss = 0 ] && info "the SDK's macro, profile and selection, the envs, the tags, the predicate and its sites are present"
+[ $v368miss = 0 ] && info "the SDK's macro, profile and selection, the strip upload's soft-lock fix, the BUSY_N release before sleep, "\
+"the envs, the tags, the predicate and its sites, the audit and its control, and CrossInk's own pieces are present"
 
 if [ -e "$PCB/.git" ]; then
   up=$(git -C "$PCB" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)
