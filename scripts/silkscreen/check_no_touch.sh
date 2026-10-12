@@ -11,8 +11,10 @@
 #     size (a no-touch image does not link it at all: it is 255 bytes with the driver);
 #   - any UC8253 driver (freeink::Uc8253*, the X3's or Murphy's, and their tables), the SSD1677 or UC8279
 #     X4 driver or the UC8179 driver, or display probe code the symbol table names (probeX3DisplayController,
-#     the two-pass VER / FLG / MTP read and their helpers) is linked: the variant's panel is the X3's
-#     UC8279d, fixed in its profile, and nothing identifies it;
+#     the two-pass VER / FLG / MTP read and their helpers) is linked, or an inlined probe makes
+#     applyXteinkDisplayController() or detectXteinkDisplayController() larger than a probe-free image's
+#     (256 bytes cap): the variant's panel is the X3's UC8279d, fixed in its profile, and nothing
+#     identifies it;
 #   - the UC8279d X3 driver (Uc8279Driver) is not linked, so a pass would prove nothing;
 #   - in a test image, the T11 / T12 touch tests are linked, or their no-touch stub is not;
 #   - the image's board tag is not the variant's (silkscreen-368, silkscreen-368-test for the test image).
@@ -34,10 +36,13 @@
 #     the image that links it. build_matrix.sh therefore runs this script on the 4.26" board's silkscreen
 #     image (ELF= and BIN=) after the 3.68" ones, and that run must fail on the touch names, the other
 #     panels' names, the stub cap and the missing UC8279d driver: the control.
-#   - A probe that was inlined has no symbol of its own. The 3.68" image built before the UC8279d-only
-#     change (the stock X3 VER read inlined into detectXteinkDisplayController()) is caught by its UC8253
-#     driver symbols, not by a probe name, and a probe inlined into an image that links no UC8253 driver
-#     would not be caught here.
+#   - A probe that was inlined has no symbol of its own. The stock X3 VER read and the two-pass read are
+#     inlined into freeink::applyXteinkDisplayController() and detectXteinkDisplayController(), so no probe
+#     name finds them (the 3.68" image built before the UC8279d-only change had neither
+#     probeX3DisplayController nor runDisplayProbePass in its table). The size of those two entry points is
+#     capped instead: without a probe the first only logs and returns (112 bytes in the variant's image, 1106
+#     with the probe) and the second is not linked (618 bytes with the probe). CrossInk's copy of this audit
+#     has had the same cap since its own UC8279d-only stage.
 #
 # Usage: scripts/silkscreen/check_no_touch.sh [env]    (default: silkscreen-368; build it first)
 # Exits 0 on a pass, 1 when a check fails (each is listed), 2 when the image or nm cannot be read.
@@ -148,6 +153,23 @@ if hits=$(grep -E "$other_mangled" <<<"$raw"); then
   fail "A UC8253, SSD1677, UC8279 X4 or UC8179 driver is linked into ${env} (mangled names, clones included):"
   echo "$hits" | head -20
 fi
+
+# The stock X3 VER read and the two-pass read are inlined into freeink::applyXteinkDisplayController() and
+# detectXteinkDisplayController(), so an image that still has them carries no symbol of its own for the
+# names above to find. Without the probe the first only logs and returns (112 bytes in the variant's
+# image, 1106 with a probe) and the second is not linked (618 bytes with the probe). An absent symbol
+# passes.
+probe_entry_cap() {  # name( max_bytes
+  local line size
+  line=$(grep -F -- " $1" <<<"$syms" | head -1)
+  [ -z "$line" ] && return 0
+  size=$((16#$(awk '{print $2}' <<<"$line")))
+  if [ "$size" -gt "$2" ]; then
+    fail "${1}...) is $size bytes in ${env} (without a probe it is at most $2): display-probe code is linked"
+  fi
+}
+probe_entry_cap 'freeink::applyXteinkDisplayController(' 256
+probe_entry_cap 'freeink::detectXteinkDisplayController(' 256
 
 driver='freeink::Uc8279Driver::'
 count=$(grep -c -F -- "$driver" <<<"$names" || true)

@@ -16,8 +16,9 @@
 #      silkscreen-test and silkscreen-368-test, and scripts/silkscreen/check_no_touch.sh for every
 #      silkscreen-368* env. They read .pio/build/<env>, which step 4 deletes. The same audit then
 #      runs on the 4.26" silkscreen image, which it must fail on the touch names, the other panels'
-#      names, the touch stub's size and the missing UC8279d driver: the control that its patterns
-#      still match a real touch build (skipped when that image is not on disk).
+#      names, the touch stub's size, the inlined probe's size and the missing UC8279d driver: the
+#      control that its patterns still match a real touch build (skipped when that image is not on
+#      disk).
 #   4. The proxy envs, LAST. `default` and `sticky` extend [firmware_tuned], whose custom
 #      sdkconfig rebuild cannot run on the Windows bench host (pioarduino tool-scons vs
 #      PlatformIO Core), so c3check / stickycheck build their flags and sources on [base]
@@ -145,9 +146,11 @@ done
 # The audit's control. Its patterns are names, and a name that matches nothing passes: if the SDK renames a
 # driver function, a 3.68" image that links the touch driver or another panel's driver goes green. The 4.26"
 # board's image links the touch driver, the SSD1677 and UC8279 X4 drivers and a 255-byte
-# resetAndHibernateTouch() (no 3.68" image links that symbol, so only this run shows its size cap live), and
-# it links no UC8279d driver, so the same audit on it must fail on each of those. Run only after an audit
-# above, and only when that image is on disk (silkscreen builds first in the default list).
+# resetAndHibernateTouch() (no 3.68" image links that symbol, so only this run shows its size cap live) and
+# the stock X3 probe inlined into applyXteinkDisplayController() (1106 bytes there, 112 without it: the
+# entry-point cap), and it links no UC8279d driver, so the same audit on it must fail on each of those.
+# Run only after an audit above, and only when that image is on disk (silkscreen builds first in the
+# default list).
 if [ $audited = 1 ]; then
   if [ -f .pio/build/silkscreen/firmware.elf ] && [ -f .pio/build/silkscreen/firmware.bin ]; then
     log="$LOGS/$label-notouch-control.log"
@@ -157,12 +160,13 @@ if [ $audited = 1 ]; then
     if [ $rc -eq 1 ] && grep -q "^Touch driver code is linked" "$log" \
         && grep -q "^A UC8253, SSD1677, UC8279 X4 or UC8179 driver, or display-probe code" "$log" \
         && grep -q "^InputManager::resetAndHibernateTouch() is [0-9]* bytes" "$log" \
+        && grep -q "^freeink::applyXteinkDisplayController(\.\.\.) is [0-9]* bytes" "$log" \
         && grep -q "^freeink::Uc8279Driver:: has 0 symbols" "$log"; then
-      echo "no-touch audit control (4.26\" silkscreen image): fails on the touch names, the other panels' names, the touch stub's size and the missing UC8279d driver, as it must"
+      echo "no-touch audit control (4.26\" silkscreen image): fails on the touch names, the other panels' names, the touch stub's size, the inlined probe's size and the missing UC8279d driver, as it must"
     else
       echo "no-touch audit control (4.26\" silkscreen image) exit=$rc: did NOT fail on all of the touch names, the other" \
-        "panels' names, the touch stub's size and the missing UC8279d driver, so the audit's patterns no longer match" \
-        "a touch build: see $log"
+        "panels' names, the touch stub's size, the inlined probe's size and the missing UC8279d driver, so the audit's" \
+        "patterns no longer match a touch build: see $log"
       failed=1
     fi
   else
