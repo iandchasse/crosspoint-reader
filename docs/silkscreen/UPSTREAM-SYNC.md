@@ -37,7 +37,7 @@ Pins:
 - Tools on the Windows bench host: Git Bash, `pio` (PlatformIO Core), clang-format 21 at `~/.local/bin`,
   the xtensa g++ for syntax-only checks (`~/.platformio/packages/toolchain-xtensa-esp-elf/bin`, 14.2: the
   esp32s3 package's 8.4 fails 17 of the battery log core's `static_assert`s), and Visual Studio Build Tools
-  2022 (`cl` 14.44), which **runs** the SDK host tests: `scripts/silkscreen/msvc/` is a `c++` over `cl.exe`
+  2022 (MSVC 19.44, toolset 14.44), which **runs** the SDK host tests: `scripts/silkscreen/msvc/` is a `c++` over `cl.exe`
   (its README: use, what ran, the tests it cannot link, the traps). There is no g++ on the host. The tests that
   `#define private public` are syntax-checked with the xtensa g++ instead.
 - `git config core.longpaths true` in every repo (the scripts also set it per call).
@@ -124,13 +124,16 @@ to the byte.
      `StatsUploadClient.cpp`). Search the incoming diff for `SecureHttpClient`, `HTTPClient`, `NetworkClient`,
      `readFileToStream` and `WebServer` raw callbacks.
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
-   time. It runs the sleep-wake guard, the real envs, the image checks (the test firmware's, and in CrossPoint the
-   3.68" variant's no-touch audit), then the proxy envs **last**: a
+   time. It runs the sleep-wake guard, the real envs, the image checks (CrossPoint's test firmware checks; in both apps the
+   3.68" variant's no-touch audit, then the same audit on the 4.26" `silkscreen` image as its control, which must
+   fail), then the proxy envs **last**: a
    different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
    (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
    call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `silkscreen-368`,
    `silkscreen-368-batlog`, `silkscreen-368-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`, `silkscreen-batlog`,
-   `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 20-40 minutes.
+   `silkscreen-368`, `silkscreen-368-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 40-70
+   minutes (CrossInk's seven envs took 46 minutes on 2026-10-12 with the machine quiet; earlier stage logs show 41
+   and 66).
    `silkscreen-batlog` is the battery log's own env ([BATTERY-LOG.md](BATTERY-LOG.md)): the release env's sources and flags
    plus `-DSILKSCREEN_BATLOG=1`. It must still build in both repos, and its size next to the release env's is the log's
    footprint. A hook that a conflict resolution left outside its `#if SILKSCREEN_BATLOG` blocker fails every env that lacks
@@ -175,8 +178,10 @@ to the byte.
      forbidden, so the SDK leaves a power pin the board biases itself (`InputPins::powerExternalPull`) out of it
      and both guards allow that one call behind that exemption.
    - *The 3.68" variant* ([MODULARITY.md](MODULARITY.md#the-368-variant-silkscreen-368), run after every sync):
-     `upstream_status.sh` finds the SDK's macros, profile and driver selection, the five 368 envs, both tags, `isX3Panel()`
-     and its sites and the audit's wiring, but not what a merge changed around them. Read the incoming diff for each place
+     `upstream_status.sh` finds the SDK's macros, profile and driver selection, the strip upload's soft-lock fix and the
+     `BUSY_N` pull-up's release before sleep, the five 368 envs, both tags, `isX3Panel()` and its sites, the audit's
+     wiring and its control, and in CrossInk its envs, device type, key gate and `deviceHasX3Panel()` sites, but not
+     what a merge changed around them. Read the incoming diff for each place
      that tests `gpio.deviceIsX3()` or `Board::XteinkX3`: a site about the X3's *panel* (a refresh mode, a gray base, a
      waveform choice, a sleep-screen path) must ask `display.isX3Panel()`, one about the X3 *board* (the gauge, the SD
      rail, side hints, device names) must not. A new driver or probe path that only `FREEINK_DEVICE_X3` links must stay
@@ -187,10 +192,12 @@ to the byte.
      `BoardConfig.h`'s driver macros (`FREEINK_DRIVER_UC8279` is the one line the variant adds itself to;
      `FREEINK_DRIVER_UC8253_X3` must stay the C3 X3's alone), `XteinkDetect.cpp`'s variant block
      (`#if FREEINK_SILKSCREEN_368 ... #elif FREEINK_XTEINK_DISPLAY_PROBE`, ahead of the probe code), `EpdBus`'s X3
-     `BUSY_N` pull-up (`FREEINK_EPD_X3_BUSY_N`), `PowerManager::sleepPanelWithoutDriver()`'s 60 ms settle and
+     `BUSY_N` pull-up (`FREEINK_EPD_X3_BUSY_N`) and its release before every sleep in
+     `PowerManager::powerDownRailsForSleep()`, `PowerManager::sleepPanelWithoutDriver()`'s 60 ms settle and
      `Uc8279Driver::writeGrayscalePlaneStrip()`'s `txn.end()` (if upstream fixes that function, take theirs and drop
-     ours); `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (41 cases) must still hold. CrossInk's copy
-     of this lens is its own `docs/silkscreen/` page once it has the variant.
+     ours, and its `FREEINK_SILKSCREEN_368` line from the status script);
+     `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (41 cases) must still hold. CrossInk's copy of this
+     lens is its own page (its PORTING.md, drain checklist item 15).
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
