@@ -32,12 +32,17 @@ CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeIn
 
 ## What ran (2026-10-11, SDK `48be3d0`, all pass)
 
-XteinkDetect `test_display_probe`, `test_silkscreen_policy`, `test_silkscreen_368_policy` (each build variant its
-README names); FreeInkDisplay `run_uc8253_power.py`, `run_uc8279.py`, `run_x3_diagnostics.py`; InputManager
-`run.sh`, `run_metalio.sh`, `run_picco.sh`, `run_picco_touch.sh`; BatteryMonitor, Imu, SDCardManager and
-HapticManager `run.sh`; BoardConfig `test_probe_checks`; FrontlightManager `test_load_policy`; PowerManager
-`run_sleep_panel.py`. A negative control fails as it must: `SLEEP_PANEL_SOURCE` pointing at the pre-fix
-`PowerManager.cpp` stops `run_sleep_panel.py` on `r.settleMs == 61`.
+At the SDK stage, through the scratchpad copy this directory came from: XteinkDetect `test_display_probe`,
+`test_silkscreen_policy`, `test_silkscreen_368_policy` (each build variant its README names); FreeInkDisplay
+`run_uc8253_power.py`, `run_uc8279.py`, `run_x3_diagnostics.py`; InputManager `run.sh`, `run_metalio.sh`,
+`run_picco.sh`, `run_picco_touch.sh`; BatteryMonitor, Imu, SDCardManager and HapticManager `run.sh`; BoardConfig
+`test_probe_checks`; FrontlightManager `test_load_policy`; PowerManager `run_sleep_panel.py`.
+
+Re-run from this directory when it was added (the same day, all pass): `test_silkscreen_368_policy` as is, forced
+`uc8279` and forced `uc8253` (through `bin/c++`); `run_sleep_panel.py` (both boards), `run_x3_diagnostics.py`,
+`run_uc8279.py` and `run_uc8253_power.py` (through `cxx_msvc.bat`). A negative control fails as it must:
+`SLEEP_PANEL_SOURCE` pointing at the pre-fix `PowerManager.cpp` (the SDK's `01740b4`) stops `run_sleep_panel.py` on
+`r.settleMs == 61`. The syntax mode compiled BatteryMonitor's `test_charge_ladder_decoder.cpp`.
 
 ## What it cannot do
 
