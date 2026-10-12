@@ -190,6 +190,9 @@ The same suite on the 3.68" X3-panel build (no touch, the SDK's X3 drivers; [MOD
    [silkscreen368]
    display_flags = -DSILKSCREEN_DISPLAY_CONTROLLER=uc8279
    ```
+
+   or
+
    ```
    [silkscreen368]
    display_flags = -DSILKSCREEN_DISPLAY_CONTROLLER=uc8253
