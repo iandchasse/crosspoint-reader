@@ -389,7 +389,7 @@ What only the reader image or bench equipment can check is listed under [Checks 
     - Measure with each panel. The GDEQ0426T82 sleeps at 2-6 µA. The UC8279D panel's figure is not in hand. Take it as the difference with the `J2` flex in and out, once the `R5` test below has ruled out back-feed, and record it in POWER.md (budget row 17).
     - Above ≈150 µA, work through the A/B list in POWER.md. It includes the J2-flex / R5 test for GPIO47/48 back-feed and the `espefuse` summary. In sleep the voltage across `R5` should be ≈0 V; every 0.1 V is 10 µA into `IO47` (§6.1). Across `R34` (33 Ω in `BUSY`) it should be ≈0 mV; every 1 mV is 30 µA into `IO48`.
     - Enter the readings in P5 after the wake: the current, the `J2` flex in or out, across `R5` and across `R34`. P5 passes `R5` under 20 mV, `R34` under 0.2 mV and, with an SSD1677 panel, a flex-in/out gap of at most 8 µA, and above the budget lists what a high reading points at ([POWER.md §4](POWER.md#4-measurement-and-bench-checks)).
-    - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (a test build). All should agree within about 2 µA.
+    - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (no image forces one: [TEST-SUITE.md](TEST-SUITE.md#checks-that-need-the-reader-image) gives the scratch patch). All should agree within about 2 µA.
     - On battery, also check that `D2` is dark and `USB_VBUS` ≈ 0 V.
 
 ### Checks that need the reader image
@@ -469,7 +469,7 @@ Queued work, in this order.
    - the reader-data check P8;
    - the board options OPT, and the bench tools U1 (Wi-Fi TX bursts) and U2 (sustained load) (B6).
 
-   Forced panics (P6) and the low-battery ramp (P7) were left out; they run on the reader image with a bench supply. See [TEST-SUITE.md](TEST-SUITE.md) and the table at the head of the [bring-up checklist](#bring-up-checklist-real-board).
+   Forced panics (P6) and the low-battery ramp (P7) were left out; they run on the reader image with a bench supply, and a forced panic needs a scratch `abort()` in `loop()` (no image has a panic hook). See [TEST-SUITE.md](TEST-SUITE.md) and the table at the head of the [bring-up checklist](#bring-up-checklist-real-board).
 3. **Modularity. Done 2026-09-30:** see [MODULARITY.md](MODULARITY.md).
    - **Panel family.** The panel family is the only build choice, with one env, profile and board tag each: the 4.26" and the 3.68" x3 now, the 5.76" (SSD2677) later.
    - **Probed at runtime.** The display controller (SSD1677 or UC8279D) and each ladder's pull-up are probed at a reset other than a deep-sleep wake and kept in RTC memory. The touch tail (FT6336U; a GT911 only with the alternate-jumper flag) is probed too and its result kept, but a tail found before is reset and its id read again at a wake. The RTC (U13, U14 or none) is identified at every boot past the wake decision. The power button's idle level is checked as a fault check.

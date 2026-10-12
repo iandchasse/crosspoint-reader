@@ -236,7 +236,7 @@ The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82
   - A short tap stays awake ≤0.3 s, with and without a card.
   - Scope IO47 across a ghost wake: no LOW excursion.
   - Tape the button down and trigger a sleep: the current falls to floor + ≈30 µA within ≈5 s, and the release gives one short wake.
-  - 3 forced panics: the device then stays at the floor.
+  - 3 forced panics: the device then stays at the floor (a scratch `abort()` in `loop()`; no image forces a panic: see MEAS-01 above).
 - **Battery:**
   - Ramp a supply down on J5: the device sleeps at ≈3.40 V, or ≈3.30 V as read with Wi-Fi on.
   - 10 min after the cutoff, resting P+ must be ≥3.5 V; otherwise raise `lowBatteryCutoffMv`.
