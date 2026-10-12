@@ -160,17 +160,11 @@ class SystemInfoTest final : public TestScreen {
 
   // The panel controller the boot resolved (probed, kept across the sleep, or
   // forced by the build) with the probe's IDs, in its own row before the boot row.
+  // The 3.68" variant probes nothing: its row says the controller is fixed in the build.
   void recordPanel() {
     char fails[24];
     const Verdict verdict = panelProbeVerdict(fails, sizeof(fails));
     formatPanelProbe(panelLine, sizeof(panelLine));
-#if FREEINK_SILKSCREEN_368
-    if (verdict == Verdict::Warn) {
-      // The warned reading is in `fails` (panelProbeVerdict()); a WARN names it in warns=.
-      record(verdict, "action=panel %s warns=%s fails=none", panelLine, fails);
-      return;
-    }
-#endif
     record(verdict, "action=panel %s fails=%s", panelLine, fails);
   }
 
