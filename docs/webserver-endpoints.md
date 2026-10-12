@@ -52,7 +52,7 @@ Response:
 | `freeHeap` | number | Free heap in bytes |
 | `uptime` | number | Seconds since boot |
 | `deviceId` | string | With `?plugin=<name>`: 64 hex chars, stable per device and plugin (SHA-256 of an on-device NVS secret and the name); omitted if NVS is unavailable |
-| `device` | string | `"X3"` or `"X4"` hardware detection |
+| `device` | string | `"X3"` or `"X4"` on the C3 builds (hardware detection); `"X3"` on the Silkscreen 3.68" variant (the panel family, fixed by the build); the board profile's name on every other ESP32-S3 board |
 
 ## File Management
 

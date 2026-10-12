@@ -247,7 +247,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Never" (default) - Always show battery percentage
   - "In Reader" - Show battery percentage everywhere except in reading mode
   - "Always" - Always hide battery percentage
-  - On Silkscreen the percentage moves in 5% steps (100 from 98% up), estimated from the cell's voltage (there is no fuel gauge): it reads a few percent low while the light is on or the device is busy, and high while charging. The diagnostic `silkscreen-batlog` build keeps 1% steps.
+  - On Silkscreen the percentage moves in 5% steps (100 from 98% up), estimated from the cell's voltage (there is no fuel gauge): it reads a few percent low while the light is on or the device is busy, and high while charging. The diagnostic `silkscreen-batlog` build (`silkscreen-368-batlog` on the 3.68" variant) keeps 1% steps.
 
 - **Refresh Frequency**: Set how often the screen does a full refresh while reading to reduce ghosting; options are every 1, 5, 10, 15, or 30 pages.
 
