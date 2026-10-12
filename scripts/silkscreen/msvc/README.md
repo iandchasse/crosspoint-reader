@@ -44,6 +44,19 @@ Re-run from this directory when it was added (the same day, all pass): `test_sil
 `SLEEP_PANEL_SOURCE` pointing at the pre-fix `PowerManager.cpp` (the SDK's `01740b4`) stops `run_sleep_panel.py` on
 `r.settleMs == 61`. The syntax mode compiled BatteryMonitor's `test_charge_ladder_decoder.cpp`.
 
+## What ran (2026-10-12, SDK `5fb944d`, all pass)
+
+For the 3.68" variant's UC8279d-only change: XteinkDetect `test_display_probe` (X3 and X4), `test_silkscreen_policy`
+(as is and forced `uc8279`) and `test_silkscreen_368_policy` (as is and with the `=uc8279` no-op) through `bin/c++`;
+FreeInkDisplay `run_uc8279.py` (with a bus-transaction model that fails a call made inside a held transaction),
+`run_uc8253_power.py` and `run_x3_diagnostics.py`, and PowerManager `run_sleep_panel.py`, through `cxx_msvc.bat`;
+BoardConfig `run_profile_asserts.py` (41 cases) with the Xtensa 14.2 g++, **not** the shim: with `CXX` set to the shim
+every case fails on `cl : Command line error D8004 : '/I' requires an argument`, because the suite needs
+`-fsyntax-only` and GNU extensions (leave `CXX` unset). Negative controls fail as they must: upstream's `0b60346`
+`PowerManager.cpp` and `Uc8279Driver.cpp` as `SLEEP_PANEL_SOURCE` and `UC8279_SOURCE` stop `run_sleep_panel.py` on the
+settle and `run_uc8279.py` on `EpdBus::cmd(0x92) while a beginTxn() Transaction is alive`. There is no forced-`uc8253`
+build of `test_silkscreen_368_policy` any more: the SDK refuses that value for the variant.
+
 ## What it cannot do
 
 - **Link a test that does `#define private public`.** MSVC mangles the access specifier into the name, so the
