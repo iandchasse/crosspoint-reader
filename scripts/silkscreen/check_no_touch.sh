@@ -7,10 +7,10 @@
 #   - a touch driver body is linked (the FT5x06 / FT6336U / GT911 / CST816S / GSLX680 / Picco / CHSC6x
 #     begin, poll and sleep code, the FocalTech id check, the hibernate and the multi-touch classifiers),
 #     or InputManager::resetAndHibernateTouch() is not the stub (7 bytes here, 255 with the driver);
-#   - the SSD1677 or UC8279 X4 driver, or the generic display probe (the two-pass VER / FLG / MTP read
-#     that would take a UC8253 for an UltraChip part), is linked: the variant's panel is the X3's and its
-#     controller is read by the stock X3 protocol only;
-#   - the X3 drivers (Uc8253X3Driver, Uc8279Driver) are not linked, so a pass would prove nothing;
+#   - the UC8253 X3 driver (Uc8253X3Driver and its LUTs), the SSD1677 or UC8279 X4 driver, or any display
+#     probe (the stock X3 VER read, probeX3DisplayController, or the two-pass VER / FLG / MTP read) is
+#     linked: the variant's panel is the X3's UC8279d, fixed in its profile, and nothing identifies it;
+#   - the UC8279d X3 driver (Uc8279Driver) is not linked, so a pass would prove nothing;
 #   - in a test image, the T11 / T12 touch tests are linked, or their no-touch stub is not;
 #   - the image's board tag is not the variant's (silkscreen-368, silkscreen-368-test for the test image).
 #
@@ -27,8 +27,10 @@
 # Usage: scripts/silkscreen/check_no_touch.sh [env]    (default: silkscreen-368; build it first)
 # Exits 0 on a pass, 1 when a check fails (each is listed), 2 when the image or nm cannot be read.
 # The nm binary comes from $NM, else from PlatformIO's Xtensa toolchain. ELF=<file> and BIN=<file> name
-# another image than .pio/build/<env>/firmware.{elf,bin}: the negative control is this script on the 4.26"
-# board's silkscreen image, which must fail on the touch driver and the SSD1677 driver.
+# another image than .pio/build/<env>/firmware.{elf,bin}: the negative controls are this script on the 4.26"
+# board's silkscreen and silkscreen-test images, which must fail on the touch driver, the SSD1677 driver and
+# the missing UC8279d driver, and on a 3.68" image built before the UC8279d-only change (the UC8253 driver
+# and the stock probe linked), which must fail on those two.
 set -u
 cd "$(dirname "$0")/../.." || exit 2
 
@@ -98,20 +100,21 @@ stub_cap() {  # name max_bytes
 }
 stub_cap 'InputManager::resetAndHibernateTouch()' 32
 
-# The other panel families: the variant links the X3 pair and nothing of the SSD1677, the UC8279 X4
-# driver or the generic probe (its own stock X3 probe, probeX3DisplayController, stays).
-other_panels='freeink::(Ssd1677Driver|ssd1677[A-Za-z]*|Uc8279X4Driver|uc8279X4[A-Za-z]*|Uc8179Driver|uc8179[A-Za-z]*)|runDisplayProbePass|probeDisplayController|matchUc81xx|verIsFloating|epdCmdRead|epdReadByte'
+# The other panels' code and every probe: the variant links the X3's UC8279d driver and nothing of the
+# UC8253 X3 driver, the SSD1677, the UC8279 X4 driver, the stock X3 VER read (probeX3DisplayController) or
+# the generic two-pass probe. Its controller is fixed in its profile and nothing identifies it at a boot
+# or a wake.
+other_panels='freeink::(Ssd1677Driver|ssd1677[A-Za-z]*|Uc8253X3Driver|uc8253X3[A-Za-z]*|Uc8279X4Driver|uc8279X4[A-Za-z]*|Uc8179Driver|uc8179[A-Za-z]*)|probeX3DisplayController|runDisplayProbePass|probeDisplayController|matchUc81xx|verIsFloating|epdCmdRead|epdReadByte'
 if hits=$(grep -E "$other_panels" <<<"$names"); then
-  fail "SSD1677, UC8279 X4 or generic display-probe code is linked into ${env}:"
+  fail "The UC8253 X3 driver, the SSD1677 or UC8279 X4 driver, or display-probe code (the stock X3 read, the two-pass read) is linked into ${env}:"
   echo "$hits" | head -20
 fi
 
-for driver in 'freeink::Uc8253X3Driver::' 'freeink::Uc8279Driver::'; do
-  count=$(grep -c -F -- "$driver" <<<"$names" || true)
-  if [ "${count:-0}" -lt 10 ]; then
-    fail "${driver} has ${count:-0} symbols in ${env}, expected the X3 driver linked"
-  fi
-done
+driver='freeink::Uc8279Driver::'
+count=$(grep -c -F -- "$driver" <<<"$names" || true)
+if [ "${count:-0}" -lt 10 ]; then
+  fail "${driver} has ${count:-0} symbols in ${env}, expected the X3 UC8279d driver linked"
+fi
 
 expected_tag="silkscreen-368"
 case "$env" in
@@ -136,6 +139,6 @@ if [ "$count" -ne 1 ] || [ "$tags" != "CROSSPOINT-BOARD-V1:${expected_tag};" ]; 
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "${env}: no touch driver, no SSD1677 / UC8279 X4 / generic probe code, the X3 drivers linked; board tag ${expected_tag} present once."
+  echo "${env}: no touch driver, no UC8253 / SSD1677 / UC8279 X4 driver, no display-probe code, the UC8279d X3 driver linked; board tag ${expected_tag} present once."
 fi
 exit "$status"
