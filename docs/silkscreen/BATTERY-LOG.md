@@ -8,8 +8,10 @@ see the microamp floor ([What it can and cannot find](#6-what-it-can-and-cannot-
 
 This page is the operating manual: what the build is, how to run a campaign, how to read the file, what to send for
 analysis and how to prove on a bench that the build adds no drain. It was written from the 2026-10-04 design review.
-**Nothing here has run on a board yet.** Every timing and current below marked [est] is an estimate, and the sleep-current
-claim is "expected zero, not measured" until the bench test M1 ([section 9](#9-bench-proof)) has run.
+**As of 2026-10-04 nothing here had run on a board.** The build has since run on the owner's unit: its first CSV (2026-10-10)
+holds 27 rows over 5.7 days from one build, `1.6.5-batlog`. That is all that is recorded here: every timing and current below
+marked [est] is the 2026-10-04 estimate, and the sleep-current claim is "expected zero, not measured" until the bench test M1
+([section 9](#9-bench-proof)) has run.
 
 Both firmwares carry the same log through the same SDK code. CrossPoint's page is this one; CrossInk's differences are in
 `crossink/docs/silkscreen/BATTERY-LOG.md`.
