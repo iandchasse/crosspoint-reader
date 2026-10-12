@@ -23,10 +23,12 @@ CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeIn
 
 ## What it does
 
-- Translates `-D`, `-U`, `-I`, `-o` and the sources; ignores `-std=`, `-W*`, `-f*`, `-O*` and `-pthread`. It always
+- Translates `-D`, `-U`, `-I` (the value joined to the flag or as the next argument), `-o` and the sources; ignores
+  `-std=`, `-W*`, `-f*`, `-O*` and `-pthread`. It always
   compiles `/std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus` with `NDEBUG` undefined, so `assert()` holds (the SDK's
   tests also `#undef NDEBUG`: an `assert()` that wraps a call must not vanish).
-- Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64` and `__builtin_expect`.
+- Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64`, `__builtin_expect` and POSIX
+  `localtime_r` (the UCRT has only `localtime_s`).
 - Passes every argument through a response file (a line that holds a space is quoted, so a path with a space
   works), runs `cl` under a timeout (`CXX_MSVC_TIMEOUT`, 600 s) and removes its object directory. `VCVARS` names
   `vcvars64.bat` when Visual Studio is not in a default place.
@@ -57,6 +59,25 @@ every case fails on `cl : Command line error D8004 : '/I' requires an argument`,
 `PowerManager.cpp` and `Uc8279Driver.cpp` as `SLEEP_PANEL_SOURCE` and `UC8279_SOURCE` stop `run_sleep_panel.py` on the
 settle and `run_uc8279.py` on `EpdBus::cmd(0x92) while a beginTxn() Transaction is alive`. There is no forced-`uc8253`
 build of `test_silkscreen_368_policy` any more: the SDK refuses that value for the variant.
+
+## What ran (2026-10-12 sync, SDK `336ec77`)
+
+After merging Free-Ink `7fcd3b3` (and reverting this line's gated copy of its strip-transaction fix first). Through
+the shim: FreeInkDisplay `run_uc8279.py`, `run_uc8253_power.py` and `run_x3_diagnostics.py`; PowerManager
+`run_sleep_panel.py`; **Rtc `run.py`** (upstream's new RX8130 timer test, built both with and without
+`FREEINK_CAP_RTC`: 18 RTC and 26 PMIC fault points; it needed the stubs of its own directory extended with the
+fallback-RTC fields, `driver/gpio.h`, `esp32-hal-periman.h` and `esp_rom_sys.h`, and the shim to take `-I`, `path` as two
+arguments and to supply `localtime_r`); InputManager `run.sh`, `run_metalio.sh`, `run_picco.sh`, `run_picco_touch.sh`;
+BatteryMonitor, Imu, HapticManager and SDCardManager `run.sh`; XteinkDetect `test_display_probe`,
+`test_silkscreen_policy` and `test_silkscreen_368_policy` (as is and forced `uc8279`); BoardConfig `test_probe_checks`
+and FrontlightManager `test_load_policy`; all pass. BoardConfig `run_profile_asserts.py` (41 cases, the Xtensa 14.2
+g++) passes, and the battery log core compiles with it. Syntax mode: `run_pro.py`, `run_picco.py`, InputManager
+`run_eego.sh` and AudioManager `run_metalio.sh`. `run_uc8279c_a4.py` fails to compile at upstream's own pin (its
+recording bus's `beginTxn()` returns `void`), as before.
+Negative controls fail as they must: `UC8279_SOURCE` set to a file made with `git show c2d711a^:libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp`
+(upstream's source before the fix; the shared line's `0b60346` holds the same bytes) stops `run_uc8279.py` on `EpdBus::cmd(0x92) while a beginTxn() Transaction is alive`, and
+`UC8253_SOURCE` set to `Uc8253X3Driver.cpp` without its strip's `txn.end()` stops `run_uc8253_power.py` on the same
+message. With upstream's ungated fix no configuration of `run_uc8279.py` fails.
 
 ## What it cannot do
 
