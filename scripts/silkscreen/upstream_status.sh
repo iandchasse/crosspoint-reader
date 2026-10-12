@@ -11,8 +11,9 @@
 #   battery log                    : the silkscreen-batlog env, the SDK's BatteryLog files and every app hook (CrossPoint
 #                                    and CrossInk) must still be there: a merge can drop a hook without breaking a build
 #   3.68" variant                  : the SDK's SILKSCREEN_PANEL_368 macro, profile (the UC8279d, fixed and forced) and driver
-#                                    selection, the strip upload's soft-lock fix, the BUSY_N pull-up's release before sleep,
-#                                    the silkscreen-368 envs and their board tags, the app's panel predicate and its sites,
+#                                    selection, the strip upload's transaction fix (upstream's, ungated: txn.end() before
+#                                    PARTIAL_OUT, no gate in that function), the BUSY_N pull-up's release before sleep, the
+#                                    silkscreen-368 envs and their board tags, the app's panel predicate and its sites,
 #                                    the no-touch audit and its control, and in CrossInk its device type, key gate and
 #                                    panel sites (a dropped predicate site builds and then ghosts the first page, as a hook
 #                                    does)
@@ -146,7 +147,7 @@ fi
 # The 3.68" X3-panel variant (-DSILKSCREEN_PANEL_368=1, the silkscreen-368 envs; docs/silkscreen/MODULARITY.md). A merge
 # that drops the SDK's profile or driver selection, an env, a board tag or one of the panel predicate's sites still
 # builds every env: the variant then boots the wrong driver, shares the 4.26" board's tag, or ghosts its first page.
-echo "3.68\" variant (silkscreen-368: the SDK's profile, selection, soft-lock fix and BUSY_N release, the envs and tags, the panel predicate and its sites)"
+echo "3.68\" variant (silkscreen-368: the SDK's profile, selection, strip-transaction fix and BUSY_N release, the envs and tags, the panel predicate and its sites)"
 v368miss=0
 v368_need() {  # dir file pattern min: the file holds at least min lines matching the pattern
   local n
@@ -201,12 +202,35 @@ v368_need "$SDK" libs/hardware/XteinkDetect/src/XteinkDetect.cpp 'controller for
 v368_file "$SDK" libs/hardware/XteinkDetect/test/host/test_silkscreen_368_policy.cpp
 v368_file "$SDK" libs/hardware/BoardConfig/test/host/run_profile_asserts.py
 v368_need "$SDK" libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp 'setDisplayX3();' 1
-# The strip upload's soft-lock fix (SDK 4988be4): Uc8279Driver ends its bus transaction before PARTIAL_OUT. Upstream's
-# copy holds it across bus.cmd(), which blocks on arduino-esp32's non-recursive SPI mutex (a frozen device, no panic),
-# and a merge that takes upstream's file builds every env. If upstream fixes the function and a sync takes theirs, the
-# gate line goes with ours (keep the txn.end() count).
-v368_need "$SDK" libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp 'FREEINK_SILKSCREEN_368' 1
-v368_need "$SDK" libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp 'txn\.end();' 1
+# The strip upload's transaction fix. Uc8279Driver::writeGrayscalePlaneStrip() must end its bus Transaction before
+# bus.cmd(CMD_PARTIAL_OUT): held across that command it blocks on arduino-esp32's non-recursive SPI mutex (a frozen
+# device, no panic). The fix is upstream's (Free-Ink PR #139, c2d711a, merged as 7fcd3b3 on 2026-10-12), ungated, and
+# every UC8279d build has it. This line carried a gated copy (4988be4) until b460001 reverted it to take upstream's text,
+# so the check is that the function ends the transaction first and carries no FREEINK_SILKSCREEN_368 (or any other)
+# gate: a later merge that takes an older file, or a gate that comes back, builds every env and freezes the first
+# grayscale image page.
+strip_fix=$(awk '
+  /Uc8279Driver::writeGrayscalePlaneStrip\(/ { fn = 1 }
+  fn {
+    if ($0 ~ /FREEINK_SILKSCREEN_368/ || $0 ~ /^[[:space:]]*#[[:space:]]*(if|ifdef|ifndef|elif|else)/) gate = 1
+    if (!ended && $0 ~ /^[[:space:]]*txn\.end\(\);/) ended = NR
+    if (!partialOut && $0 ~ /bus\.cmd\(CMD_PARTIAL_OUT\)/) partialOut = NR
+    opened = gsub(/\{/, "{"); closed = gsub(/\}/, "}")
+    depth += opened - closed
+    if (opened + closed > 0 && depth == 0) { fn = 0; seen = 1 }
+  }
+  END {
+    if (!seen) print "writeGrayscalePlaneStrip() not found"
+    else if (!partialOut) print "no bus.cmd(CMD_PARTIAL_OUT) in writeGrayscalePlaneStrip()"
+    else if (!ended) print "no txn.end() in writeGrayscalePlaneStrip()"
+    else if (ended > partialOut) print "txn.end() comes after bus.cmd(CMD_PARTIAL_OUT) in writeGrayscalePlaneStrip()"
+    else if (gate) print "a preprocessor gate (FREEINK_SILKSCREEN_368 or another) is in writeGrayscalePlaneStrip()"
+    else print "ok"
+  }' "$SDK/libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp" 2>/dev/null)
+if [ "${strip_fix:-}" != "ok" ]; then
+  flag "3.68\" variant: Uc8279Driver.cpp: ${strip_fix:-unreadable}: upstream's strip-transaction fix (Free-Ink #139) must stand, ungated"
+  v368miss=$((v368miss + 1))
+fi
 # The BUSY_N pull-up is for the awake panel only: powerDownRailsForSleep() strips both pulls and leaves a plain input
 # before every sleep (the IDF isolates the unheld pad at sleep entry too, so this is the second line; a pull-up left
 # on against a LOW BUSY_N costs 73 uA). A rename of busyPullUp, or a dropped block, passes every build and test.
@@ -289,7 +313,7 @@ if [ -e "$CI/.git" ]; then
     v368miss=$((v368miss + 1))
   fi
 fi
-[ $v368miss = 0 ] && info "the SDK's macro, profile and selection, the strip upload's soft-lock fix, the BUSY_N release before sleep, "\
+[ $v368miss = 0 ] && info "the SDK's macro, profile and selection, the strip upload's transaction fix (upstream's, ungated), the BUSY_N release before sleep, "\
 "the envs, the tags, the predicate and its sites, the audit and its control, and CrossInk's own pieces are present"
 
 if [ -e "$PCB/.git" ]; then
