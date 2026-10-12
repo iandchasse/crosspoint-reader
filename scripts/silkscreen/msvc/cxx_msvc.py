@@ -1,7 +1,8 @@
 """A GNU-style `c++` over MSVC's cl.exe, so the SDK's host-test runners (their `c++ ...` lines and `$CXX`) can
 build and run on a host that has Visual Studio Build Tools and no g++. See README.md in this directory.
 
-It translates -D, -U, -I, -o and the sources, ignores -std=, -W*, -f*, -O* and -pthread (it always compiles
+It translates -D, -U, -I (each joined to its value or with the value as the next argument), -o and the sources,
+ignores -std=, -W*, -f*, -O* and -pthread (it always compiles
 /std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus, with NDEBUG undefined so assert() holds) and force-includes
 gnu_shim.h for the GNU builtins the SDK's drivers use. Every argument goes to cl through a response file (a
 line that holds a space is quoted): a batch file splits /DX=1 at the "=", and Start-Process -Wait on cl.exe
@@ -57,6 +58,10 @@ def main(args):
     i = 0
     while i < len(args):
         a = args[i]
+        if a in ("-D", "-U", "-I") and i + 1 < len(args):
+            # The separate form (`-I`, `path`, as the Rtc runner writes it): join the value to its flag.
+            a += args[i + 1]
+            i += 1
         if a == "-o":
             out = args[i + 1]
             i += 2
