@@ -180,10 +180,17 @@ to the byte.
      that tests `gpio.deviceIsX3()` or `Board::XteinkX3`: a site about the X3's *panel* (a refresh mode, a gray base, a
      waveform choice, a sleep-screen path) must ask `display.isX3Panel()`, one about the X3 *board* (the gauge, the SD
      rail, side hints, device names) must not. A new driver or probe path that only `FREEINK_DEVICE_X3` links must stay
-     off for `FREEINK_SILKSCREEN_368`, and `scripts/silkscreen/check_no_touch.sh` must still pass for every
-     `silkscreen-368*` image. In the SDK the hotspots are `BoardConfig.h`'s driver macros, `XteinkDetect`'s stock-probe
-     selection and `EpdBus`'s X3 `BUSY_N` rule, and `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (37
-     cases) must still hold. CrossInk's copy of this lens is its own `docs/silkscreen/` page once it has the variant.
+     off for `FREEINK_SILKSCREEN_368`: the variant is the X3's UC8279d alone, fixed in its profile and probed by
+     nothing, so it links `Uc8279Driver` and no other panel driver and compiles no probe, and
+     `scripts/silkscreen/check_no_touch.sh` must still pass for every `silkscreen-368*` image (it fails one that
+     links `Uc8253X3Driver`, the SSD1677 or UC8279 X4 driver, or any probe code). In the SDK the hotspots are
+     `BoardConfig.h`'s driver macros (`FREEINK_DRIVER_UC8279` is the one line the variant adds itself to;
+     `FREEINK_DRIVER_UC8253_X3` must stay the C3 X3's alone), `XteinkDetect.cpp`'s variant block
+     (`#if FREEINK_SILKSCREEN_368 ... #elif FREEINK_XTEINK_DISPLAY_PROBE`, ahead of the probe code), `EpdBus`'s X3
+     `BUSY_N` pull-up (`FREEINK_EPD_X3_BUSY_N`), `PowerManager::sleepPanelWithoutDriver()`'s 60 ms settle and
+     `Uc8279Driver::writeGrayscalePlaneStrip()`'s `txn.end()` (if upstream fixes that function, take theirs and drop
+     ours); `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (41 cases) must still hold. CrossInk's copy
+     of this lens is its own `docs/silkscreen/` page once it has the variant.
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
