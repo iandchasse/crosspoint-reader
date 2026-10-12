@@ -10,9 +10,10 @@
 #                                    be the shared head, and CrossInk's own pin is classified
 #   battery log                    : the silkscreen-batlog env, the SDK's BatteryLog files and every app hook (CrossPoint
 #                                    and CrossInk) must still be there: a merge can drop a hook without breaking a build
-#   3.68" variant                  : the SDK's SILKSCREEN_PANEL_368 macro, profile and driver selection, the silkscreen-368
-#                                    envs and their board tags, the app's panel predicate and its sites, the no-touch audit
-#                                    (a dropped predicate site builds and then ghosts the first page, as a hook does)
+#   3.68" variant                  : the SDK's SILKSCREEN_PANEL_368 macro, profile (the UC8279d, fixed and forced) and driver
+#                                    selection, the silkscreen-368 envs and their board tags, the app's panel predicate and
+#                                    its sites, the no-touch audit (a dropped predicate site builds and then ghosts the first
+#                                    page, as a hook does)
 #   ../../de-link_pcb              : informational only (the PCB repo is the user's)
 # Exit status: 0 nothing to do, 1 a merge or a pin fix is needed (lines marked "!"), 2 error.
 # Read-only apart from `git fetch`.
@@ -153,6 +154,14 @@ v368_need() {  # dir file pattern min: the file holds at least min lines matchin
     v368miss=$((v368miss + 1))
   fi
 }
+v368_atmost() {  # dir file pattern max: the file holds at most max lines matching the pattern
+  local n
+  n=$(grep -c -- "$3" "$1/$2" 2>/dev/null)
+  if [ "${n:-0}" -gt "$4" ]; then
+    flag "3.68\" variant: $2 in $(basename "$1") has ${n:-0} line(s) matching '$3', expected at most $4"
+    v368miss=$((v368miss + 1))
+  fi
+}
 v368_file() {  # dir file
   if [ ! -f "$1/$2" ]; then
     flag "3.68\" variant: $2 is missing from $(basename "$1")"
@@ -164,12 +173,21 @@ v368_need "$SDK" "$SDKBC" '^#define FREEINK_SILKSCREEN_368 ' 1
 v368_need "$SDK" "$SDKBC" '^#define SILKSCREEN_PANEL_368 0' 1
 v368_need "$SDK" "$SDKBC" 'SILKSCREEN_368 = ' 1
 v368_need "$SDK" "$SDKBC" '^namespace silkscreen_368' 1
-v368_need "$SDK" "$SDKBC" '^#if FREEINK_DEVICE_X3 || FREEINK_SILKSCREEN_368' 2
+# The variant links the X3's UC8279d driver and not the UC8253 one: that driver's macro is the C3 X3's alone, so
+# the variant's own condition is on the UC8279 line only (a second such line would link the UC8253 driver).
+v368_need "$SDK" "$SDKBC" '^#if FREEINK_DEVICE_X3 || FREEINK_SILKSCREEN_368' 1
+v368_atmost "$SDK" "$SDKBC" '^#if FREEINK_DEVICE_X3 || FREEINK_SILKSCREEN_368' 1
 v368_need "$SDK" "$SDKBC" 'FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_PANEL_368' 2
+# ... and fixes its controller in data: the UC8279d, a forced probe policy, no verdict cache.
+v368_need "$SDK" "$SDKBC" 'p.displayController = DisplayController::UC8279;' 1
+v368_need "$SDK" "$SDKBC" 'p.displayProbe.forced = true;' 1
+v368_need "$SDK" "$SDKBC" 'p.displayProbe.cacheAcrossDeepSleep = false;' 1
 for f in libs/hardware/XteinkDetect/src/XteinkDetect.cpp libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp \
          libs/display/FreeInkDisplay/src/bus/EpdBus.cpp libs/hardware/PowerManager/src/PowerManager.cpp; do
   v368_need "$SDK" "$f" 'FREEINK_SILKSCREEN_368' 1
 done
+# XteinkDetect's own block for the variant (the forced log line is also the 4.26" board's, so two) and its test.
+v368_need "$SDK" libs/hardware/XteinkDetect/src/XteinkDetect.cpp 'controller forced by the build' 2
 v368_file "$SDK" libs/hardware/XteinkDetect/test/host/test_silkscreen_368_policy.cpp
 v368_file "$SDK" libs/hardware/BoardConfig/test/host/run_profile_asserts.py
 v368_need "$SDK" libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp 'setDisplayX3();' 1
