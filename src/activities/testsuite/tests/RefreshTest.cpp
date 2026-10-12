@@ -40,21 +40,22 @@ constexpr int QUESTION_LOOK = 1;
 // X4-class references for this panel and waveform set (Ssd1677Driver's default
 // config: FULL about 1800 ms, FAST about 500 ms; HalDisplay.h: HALF about
 // 1720 ms). A mean outside +/-50 % is flagged, not failed. A UC8279 panel runs
-// other waveforms: its runs set the baseline instead. So do the X3 drivers of
-// the Silkscreen 3.68" variant (X3_PANEL_BUILD, PanelFamily.h): no reference
-// yet, record it, and neither the FULL >= HALF > FAST order nor a promotion
-// is judged there, in the lettered runs or in the scope loops. HalDisplay turns
-// every HALF request into requestResync(1) on the X3 panel, so a HALF is a full
-// sync: Uc8253X3Driver::displayStart() reports it as FULL (its HALF scrub, CDI
-// 0xA9, runs only for a refresh that follows a power-down), Uc8279Driver::
-// displayStart() reports it as HALF (the same GC bank as FULL). The first paints
-// after begin() are full syncs on both (one on a UC8253, two on a UC8279d): a
-// FAST request reports FULL there.
+// other waveforms: its runs set the baseline instead. So does the X3 UC8279d
+// driver of the Silkscreen 3.68" variant (X3_PANEL_BUILD, PanelFamily.h): no
+// reference yet, record it, and neither the FULL >= HALF > FAST order nor a
+// promotion is judged there, in the lettered runs or in the scope loops. What
+// that driver does (Uc8279Driver::displayStart()): FULL and HALF both run its one
+// GC bank (there is no separate half bank), and are reported as asked; FAST runs
+// the DU bank only when the controller holds a previous frame, and is reported
+// FAST. A FAST runs the GC bank and is reported FULL for the first two content
+// paints after begin() (the boot budget, _initialFullsRemaining = 2) and for the
+// paint after a resync request. HalDisplay turns every HALF request into
+// requestResync(1) on the X3 panel, which is the same GC refresh, still HALF.
 constexpr uint32_t REFERENCE_MS[MODES] = {1800, 1720, 500};
 constexpr uint32_t REFERENCE_TOLERANCE_PCT = 50;
 constexpr char X3_NOTE[] =
-    "X3 drivers: a HALF is a resync, reported FULL by a UC8253 and HALF by a UC8279d, and the first paints after "
-    "boot run as FULL. Recorded, not failed. No reference times yet: these runs set them.";
+    "UC8279d: FULL and HALF run its one GC bank; FAST runs DU once a baseline exists, so the first two paints "
+    "after boot and the one after a resync run GC (FULL). Recorded, not failed. No reference times yet.";
 
 struct Variant {
   const char* name;  // on the screen
@@ -275,7 +276,8 @@ class RefreshTest final : public PanelRunTest {
 
   // Every end of a scope loop records it: the refreshes it ran and what the
   // driver reported. FAIL only on a refresh outside the BUSY window or, off the
-  // X3 pair, promoted: a HALF loop there is a run of full syncs (X3_PANEL_BUILD).
+  // X3 UC8279d driver, promoted: there a FAST that runs the GC bank (the first paints
+  // after begin(), the paint after a resync) is the driver's design (X3_PANEL_BUILD).
   void recordLoop(const bool completed) {
     const LoopStats& l = loopStats;
     char fails[48] = "";
@@ -456,11 +458,11 @@ class RefreshTest final : public PanelRunTest {
     }
     const int order = modeOrder();
     if (X3_PANEL_BUILD) {
-      // A UC8253 reports every HALF request as FULL, so its HALF column stays empty and the order cannot
-      // complete there; a UC8279d reports HALF as HALF.
-      page.row("FULL >= HALF > FAST", order < 0   ? "run all three (a UC8253 reports HALF as FULL)"
+      // The UC8279d reports a HALF as HALF, so all three columns fill. FULL and HALF are one bank (GC) there,
+      // so their times are about equal and "FULL >= HALF" can read no by noise: recorded, not judged.
+      page.row("FULL >= HALF > FAST", order < 0   ? "run all three"
                                       : order > 0 ? "yes (recorded)"
-                                                  : "no (recorded, not judged)");
+                                                  : "no (recorded; FULL and HALF are one bank)");
     } else {
       page.row("FULL >= HALF > FAST", order < 0 ? "run all three" : order > 0 ? "yes" : "NO");
     }

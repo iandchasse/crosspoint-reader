@@ -9,10 +9,12 @@
 // per refresh (the SPI transfers) shows the clock's effect. On the Silkscreen
 // 3.68" variant (X3_PANEL_BUILD, PanelFamily.h) the panel is the X3's, at the
 // profile's 10 MHz: no reference exists for a faster clock yet, record it, and
-// the X3 drivers report no gray pass, so that run is judged by its base refresh
-// and the operator's look. The screen opens on the profile clock there (a first
-// bench run is the reference the trials are compared with), and a mode no refresh
-// ran in reads n/a: a UC8253 reports its HALF turns, which are resyncs, as FULL.
+// the X3 UC8279d driver reports no gray pass, so that run is judged by its base
+// refresh and the operator's look. The screen opens on the profile clock there (a
+// first bench run is the reference the trials are compared with), and a mode no
+// refresh ran in reads n/a: the UC8279d runs a HALF turn on its one GC bank and
+// reports it HALF, and a FAST that runs GC (the first paints after begin(), the
+// paint after a resync) is reported FULL, so a FULL column can hold such turns.
 #include <Arduino.h>
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
@@ -64,8 +66,8 @@ constexpr char INTRO[] =
 constexpr char INTRO_X3[] =
     "Left/Right pick a clock, Confirm runs it: 20 B/W refreshes (4 FAST, then a HALF), the gray chart and a plain "
     "page. The panel is back at its own clock afterwards. The profile's is the X3's: faster is a trial, and no "
-    "reference exists for this panel yet, so record it. Run the profile clock first, then compare. The X3 "
-    "drivers do not report the gray pass.";
+    "reference exists for this panel yet, so record it. Run the profile clock first, then compare. The UC8279d "
+    "driver does not report the gray pass.";
 constexpr char CHART_FOOTER[] = "Any key or tap: continue.   Back: stop.";
 constexpr char PLAIN_TITLE[] = "T8  After the gray pass: FAST";
 constexpr char PLAIN_NOTE[] =
@@ -91,9 +93,8 @@ struct ClockResult {
 ClockResult results[CLOCK_COUNT];
 
 #if FREEINK_SILKSCREEN_368
-// The mean BUSY and host time of one mode of a run, or n/a when no refresh ran in it. A UC8253 reports every
-// HALF request as FULL (a resync), so its HALF column is empty and the HALF turns' data is under FULL; a 0
-// there would be a number nobody measured.
+// The mean BUSY and host time of one mode of a run, or n/a when no refresh ran in it: a 0 there would be a
+// number nobody measured. The UC8279d reports a HALF as HALF (its one GC bank), and a FAST that ran GC as FULL.
 void meansColumns(char* out, const size_t size, const char* key, const ClockResult& r, const int mode) {
   if (r.busy[mode].count == 0) {
     snprintf(out, size, "%s_busy=n/a %s_host=n/a", key, key);
@@ -225,7 +226,7 @@ class SpiClockTest final : public PanelRunTest {
       if (X3_PANEL_BUILD) {
         // No record of the gray waveform: the base refresh and the operator's look judge the run.
         result.grayOk = gray.base.inWindow();
-        LOG_INF("TEST", "T8 gray pass: not reported by the X3 drivers, strips %u ms", gray.renderMs);
+        LOG_INF("TEST", "T8 gray pass: not reported by the UC8279d driver, strips %u ms", gray.renderMs);
       } else {
         result.grayOk = gray.grayRan() && gray.gray.inWindow() && gray.base.inWindow();
         LOG_INF("TEST", "T8 gray pass: %s, BUSY %lu ms, strips %u ms", result.grayRan ? "ran" : "skipped",
@@ -259,7 +260,7 @@ class SpiClockTest final : public PanelRunTest {
     if (!X3_PANEL_BUILD && result.promoted != 0) addFailure(fails, sizeof(fails), "promoted");
     if (result.missingBuffer) addFailure(fails, sizeof(fails), "scratch");
     if (!result.grayOk) addFailure(fails, sizeof(fails), "gray");
-    // A promotion of the plain page is recorded, not judged, on the X3 pair (as T5 does).
+    // A promotion of the plain page is recorded, not judged, on the UC8279d driver (as T5 does).
     if (!result.plain.inWindow() || (!X3_PANEL_BUILD && result.plain.promoted())) {
       addFailure(fails, sizeof(fails), "plain_page");
     }

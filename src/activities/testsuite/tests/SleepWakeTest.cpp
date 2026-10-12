@@ -59,7 +59,7 @@ constexpr uint16_t R34_ENTRY_MAX_TENTHS = 9999;
 // J2 flex in vs out (same touch set-up): the GDEQ0426T82 sleeps at 2-6 uA, so a
 // gap above 8 uA (with the meter's digit) fails on an SSD1677 panel. The UC8279D
 // panel's own draw is not in hand: its gap is recorded, not judged. Neither is
-// the Silkscreen 3.68" variant's UC8253 or UC8279d; its 58-73 uA typical,
+// the Silkscreen 3.68" variant's UC8279d; its 58-73 uA typical,
 // 95 uA flag and 110 uA limit are the board's, with the 4.26" panel's 2-6 uA in them.
 constexpr int FLEX_GAP_MAX_UA = 8;
 // What a P5 record says of the limits above. On the 3.68" variant they are the 4.26" board's, with the

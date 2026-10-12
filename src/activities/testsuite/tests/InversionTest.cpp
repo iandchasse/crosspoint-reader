@@ -134,7 +134,8 @@ class InversionTest final : public PanelRunTest {
     for (int i = 0; i < STEP_COUNT; ++i) {
       appendf(ran, sizeof(ran), "%s%s", i != 0 ? "," : "", refreshModeName(samples[i].ran));
       appendf(expected, sizeof(expected), "%s%s", i != 0 ? "," : "", refreshModeName(STEPS[i].expect));
-      // The X3 drivers choose their own mode (a HALF is a resync): recorded in ran=, not judged.
+      // The UC8279d driver chooses its own mode (a HALF runs its GC bank; a FAST with no baseline runs GC too):
+      // recorded in ran=, not judged.
       if (!X3_PANEL_BUILD && samples[i].ran != STEPS[i].expect) ++wrongMode;
       if (!samples[i].inWindow()) ++bad;
     }

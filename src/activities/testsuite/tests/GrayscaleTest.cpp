@@ -5,8 +5,8 @@
 // the driver's state was cleaned up (a FAST that runs as HALF would mask it).
 // The plane buffers and the strip scratch are allocated when the screen opens
 // and freed when it closes, the same sizes the reader's tiled path uses.
-// The Silkscreen 3.68" variant's X3 drivers (X3_PANEL_BUILD, PanelFamily.h)
-// report no gray waveform, and no displayGrayscaleBase() settle either: those
+// The Silkscreen 3.68" variant's X3 UC8279d driver (X3_PANEL_BUILD, PanelFamily.h)
+// reports no gray waveform, and no displayGrayscaleBase() settle either: those
 // rows read "not reported", and the run is judged by what was reported (the B/W
 // refreshes) and by the operator's look.
 #include <Arduino.h>
@@ -42,14 +42,14 @@ struct Variant {
 
 constexpr Variant VARIANTS[] = {
 #if FREEINK_SILKSCREEN_368
-    // Neither X3 driver takes an async base (asyncBase is false in both), so the reader runs a blocking base
-    // and the strips there (routes 2-6): this one is a driver trial, and a garbled chart is not a reader fault.
+    // The UC8279d driver takes no async base (asyncBase is false), so the reader runs a blocking base and the
+    // strips there (routes 2-6): this one is a driver trial, and a garbled chart is not a reader fault.
     {"Text page, planes buffered", GrayPath::TiledPlanes, false,
-     "A driver trial, not the reader's route on the X3 pair (no async base there): a FAST base fired async, both "
+     "A driver trial, not the reader's route on this driver (no async base): a FAST base fired async, both "
      "planes rendered into 52 KB buffers while it runs, then streamed to the controller."},
     {"Text page, 80-row strips", GrayPath::TiledStrips, false,
      "A FAST base waited out, then an 8 KB scratch band by band (7,920 B here): the reader's strip path, which "
-     "is the only one on the X3 pair (no async base)."},
+     "is the only one on this driver (no async base)."},
 #else
     {"Text page, planes buffered", GrayPath::TiledPlanes, false,
      "The reader's anti-aliased page: a FAST base fired async, both planes rendered into 48 KB buffers while it "
@@ -289,7 +289,7 @@ class GrayscaleTest final : public PanelRunTest {
     snprintf(heading, sizeof(heading), "Last run: %s", VARIANTS[runVariant].name);
     page.heading(heading);
     if (X3_PANEL_BUILD && !pass.base.reported()) {
-      page.row("Base: asked / ran", "not reported by the X3 drivers");
+      page.row("Base: asked / ran", "not reported by the UC8279d driver");
     } else {
       page.rowf("Base: asked / ran", "%s / %s, seq = 0x%02X, BUSY %lu ms%s", refreshModeName(pass.base.requested),
                 refreshModeName(pass.base.ran), pass.base.sequence, static_cast<unsigned long>(pass.base.busyMs),
@@ -298,7 +298,7 @@ class GrayscaleTest final : public PanelRunTest {
     if (pass.missingBuffer) {
       page.row("Gray pass", "skipped: a buffer was missing");
     } else if (X3_PANEL_BUILD) {
-      page.row("Gray waveform", "not reported by the X3 drivers: look at the chart");
+      page.row("Gray waveform", "not reported by the UC8279d driver: look at the chart");
     } else if (pass.grayRan()) {
       page.rowf("Gray waveform", "seq = 0x%02X, BUSY %lu ms", pass.gray.sequence,
                 static_cast<unsigned long>(pass.gray.busyMs));

@@ -26,7 +26,7 @@ struct RefreshSample {
   uint16_t callMs = 0;       // the display call: SPI transfers, BUSY (unless async), power-down
   uint8_t requested = NONE;  // HalDisplay::RefreshMode
   uint8_t ran = NONE;        // the same order (Full, Half, Fast); NONE: no refresh reported
-  uint8_t sequence = 0;      // the update-sequence byte (SSD1677 0x22; X3 drivers: the CDI byte)
+  uint8_t sequence = 0;      // the update-sequence byte (SSD1677 0x22; X3 UC8279d driver: the CDI byte)
   uint8_t refreshes = 0;     // activations the call reported
   bool timedOut = false;
   bool async = false;         // fired without waiting

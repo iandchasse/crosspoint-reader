@@ -67,13 +67,13 @@ inline constexpr char SLEEP_PINS_HEADING[] = "Pins in sleep";
 // IO48 is the panel's BUSY: an SSD1677 holds it HIGH in deep sleep, while a
 // UC8279's BUSY_N level there is not in hand (PORTING.md B2, B3).
 inline constexpr const char* SLEEP_PIN_LINES[] = {
-    "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",         "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
+    "3.3 V: IO47 IO14 IO11 IO38 IO39 IO10",       "0 V: IO12 IO13 IO21 IO40 IO5-7 IO15-17",
 #if FREEINK_SILKSCREEN_368
-    "IO48: note it (UC8253, UC8279d: not in hand)",
+    "IO48: note it (UC8279d: not in hand)",
 #else
     "IO48: 3.3 V (SSD1677), note it (UC8279)",
 #endif
-    "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",         "Unheld, probe and note: IO1-4 IO8 IO9",
+    "IO42 < 0.385 V, SD_VDD (C36) < 0.5 V",       "Unheld, probe and note: IO1-4 IO8 IO9",
 #if FREEINK_SILKSCREEN_368
     "IO41: no touch in this build, never driven",
 #else
