@@ -191,6 +191,72 @@ TEST_F(ChapterHtmlSlimParserTest, StreamsGifDimensionsWithoutExtractingPayload) 
   std::filesystem::remove(imagePath);
 }
 
+TEST_F(ChapterHtmlSlimParserTest, AbandonedLayoutStopsExtractingLines) {
+  ParsedText text;
+  for (int i = 0; i < 100; ++i) text.addWord("word", EpdFontFamily::REGULAR);
+  bool stop = false;
+  size_t lines = 0;
+  text.layoutAndExtractLines(
+      renderer, 0, 80,
+      [&](std::unique_ptr<TextBlock>, uint32_t) {
+        ++lines;
+        stop = true;
+      },
+      true, 0, 100, SIZE_MAX, &stop);
+  EXPECT_EQ(lines, 1u);
+}
+
+class ParserStopTest : public ChapterHtmlSlimParserTest {};
+
+TEST_P(ParserStopTest, PageCallbackStopsParsingAndClosesFile) {
+  filepath = (std::filesystem::temp_directory_path() / "crosspoint-parser-stop.xhtml").string();
+  std::string html = "<html><body>";
+  for (int i = 0; i < 100; ++i) html += GetParam();
+  html += "</body></html>";
+  {
+    HalFile file;
+    ASSERT_TRUE(file.open(filepath.c_str(), "wb"));
+    ASSERT_EQ(file.write(html.data(), html.size()), html.size());
+  }
+  renderer.sdFont = true;
+  parser.viewportWidth = 160;
+  parser.viewportHeight = 32;
+  unsigned pages = 0;
+  size_t fontPreparationsAtStop = 0;
+  parser.completePageFn = [&](std::unique_ptr<Page> page, auto, auto, auto) {
+    ASSERT_NE(page, nullptr);
+    ++pages;
+    fontPreparationsAtStop = renderer.fontPreparations;
+    parser.requestStop();
+  };
+  EXPECT_FALSE(parser.parseAndBuildPages());
+  EXPECT_EQ(pages, 1u);
+  EXPECT_EQ(renderer.fontPreparations, fontPreparationsAtStop);
+  EXPECT_EQ(parser.xmlParser_, nullptr);
+  EXPECT_FALSE(parser.parseFile_.isOpen());
+  std::filesystem::remove(filepath);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FlowBoundaries, ParserStopTest,
+    ::testing::Values("<p>one two three four five six seven eight</p>", "one two three four five six seven eight ",
+                      "<p>one two three four five six</p><hr/>",
+                      "<table><tr><td>one two three four</td><td>five six seven eight</td></tr></table>"));
+
+TEST_F(ChapterHtmlSlimParserTest, StopDuringFinalFlushDoesNotEmitAnotherPage) {
+  parser.viewportWidth = 80;
+  parser.viewportHeight = 32;
+  for (int i = 0; i < 100; ++i) parser.currentTextBlock->addWord("word", EpdFontFamily::REGULAR);
+  unsigned pages = 0;
+  parser.completePageFn = [&](std::unique_ptr<Page> page, auto, auto, auto) {
+    ASSERT_NE(page, nullptr);
+    ++pages;
+    parser.requestStop();
+  };
+  EXPECT_FALSE(parser.finishParse());
+  EXPECT_EQ(pages, 1u);
+}
+
 TEST_F(ChapterHtmlSlimParserTest, RubySurvivesPartialParagraphExtraction) {
   ParsedText text;
   text.addWord("a", EpdFontFamily::REGULAR);
@@ -657,6 +723,120 @@ TEST_F(ChapterBlockDecorationTest, BlockEmphasisIsInheritedOverriddenAndRestored
   for (size_t i = 0; i < lines.size(); ++i) {
     const auto& block = *static_cast<const PageLine*>(lines[i])->getBlock();
     EXPECT_EQ((block.wordStyle(0) & EpdFontFamily::ITALIC) != 0, i == 0 || i == 2);
+  }
+}
+
+TEST_F(ChapterBlockDecorationTest, ExplicitFontInheritancePreservesInlineAndBlockEmphasis) {
+  open("body", "font-weight:normal;font-style:normal");
+  open("div", "font-weight:bold;font-style:italic");
+  open("p", "font-weight:inherit;font-style:inherit");
+  text("Block ");
+  open("small", "font-weight:inherit;font-style:inherit");
+  text("Small ");
+  close("small");
+  open("span", "font-weight:normal;font-style:normal");
+  text("Normal ");
+  open("span", "font-weight:inherit;font-style:inherit");
+  text("Nested ");
+  close("span");
+  close("span");
+  text("Restored");
+  close("p");
+  close("div");
+  open("p", "font-weight:inherit;font-style:inherit");
+  text("Outside");
+  close("p");
+  close("body");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  std::vector<std::pair<std::string, uint8_t>> actual;
+  for (const auto* element : lines) {
+    const auto& block = *static_cast<const PageLine*>(element)->getBlock();
+    for (uint16_t i = 0; i < block.wordCount(); ++i) actual.emplace_back(block.wordText(i), block.wordStyle(i));
+  }
+  const uint8_t emphasis = EpdFontFamily::BOLD | EpdFontFamily::ITALIC;
+  const std::vector<std::pair<std::string, uint8_t>> expected = {
+      {"Block", emphasis}, {"Small", emphasis}, {"Normal", 0}, {"Nested", 0}, {"Restored", emphasis}, {"Outside", 0}};
+  EXPECT_EQ(actual, expected);
+}
+
+TEST_F(ChapterBlockDecorationTest, InheritReplacesEarlierDeclarationsAndAllowsLaterOverrides) {
+  open("body", "font-weight:normal;font-style:normal");
+  open("div", "font-weight:bold;font-style:italic");
+  open("p", "font-weight:normal;font-style:normal;font-weight:inherit;font-style:inherit");
+  text("Inherited");
+  close("p");
+  open("p", "font-weight:inherit;font-style:inherit;font-weight:normal;font-style:normal");
+  text("Normal");
+  close("p");
+  close("div");
+  open("p", "font-weight:bold;font-style:italic;font-weight:inherit;font-style:inherit");
+  text("ParentNormal");
+  close("p");
+  close("body");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 3u);
+  for (size_t i = 0; i < lines.size(); ++i) {
+    const auto& block = *static_cast<const PageLine*>(lines[i])->getBlock();
+    EXPECT_EQ(block.wordStyle(0), i == 0 ? EpdFontFamily::BOLD | EpdFontFamily::ITALIC : 0);
+  }
+}
+
+TEST_F(ChapterBlockDecorationTest, InheritUsesSemanticParentEmphasisAndRestoresSiblingStyle) {
+  open("p", nullptr);
+  open("b", nullptr);
+  open("i", nullptr);
+  open("span", "font-weight:inherit;font-style:inherit");
+  text("Inherited");
+  close("span");
+  close("i");
+  close("b");
+  text(" Outside");
+  close("p");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 1u);
+  const auto& block = *static_cast<const PageLine*>(lines[0])->getBlock();
+  ASSERT_EQ(block.wordCount(), 2u);
+  EXPECT_EQ(block.wordStyle(0), EpdFontFamily::BOLD | EpdFontFamily::ITALIC);
+  EXPECT_EQ(block.wordStyle(1), EpdFontFamily::REGULAR);
+}
+
+TEST_F(ChapterBlockDecorationTest, FontInheritanceUsesWinningCssRuleBeforeInlineOverride) {
+  const auto path = std::filesystem::temp_directory_path() / "crosspoint-font-inheritance.css";
+  {
+    HalFile output;
+    ASSERT_TRUE(output.open(path.c_str(), "wb"));
+    const std::string css =
+        "p{font-weight:bold;font-style:italic}"
+        ".inherited{font-weight:normal;font-style:normal}"
+        "#inherited{font-weight:inherit;font-style:inherit}";
+    ASSERT_EQ(output.write(css.data(), css.size()), css.size());
+  }
+  {
+    HalFile input;
+    ASSERT_TRUE(input.open(path.c_str(), "rb"));
+    ASSERT_EQ(cssParser.loadFromStream(input), CssParser::ParseResult::Complete);
+  }
+  std::filesystem::remove(path);
+  open("body", "font-weight:normal;font-style:normal");
+  const XML_Char* inherited[] = {"id", "inherited", "class", "inherited", nullptr};
+  ChapterHtmlSlimParser::startElement(&parser, "p", inherited);
+  text("Normal");
+  close("p");
+  open("div", "font-weight:bold;font-style:italic");
+  ChapterHtmlSlimParser::startElement(&parser, "p", inherited);
+  text("Emphasis");
+  close("p");
+  const XML_Char* overridden[] = {"id", "inherited", "style", "font-weight:normal;font-style:normal", nullptr};
+  ChapterHtmlSlimParser::startElement(&parser, "p", overridden);
+  text("Override");
+  close("p");
+  close("div");
+  close("body");
+  const auto lines = elementsWithTag(TAG_PageLine);
+  ASSERT_EQ(lines.size(), 3u);
+  for (size_t i = 0; i < lines.size(); ++i) {
+    const auto& block = *static_cast<const PageLine*>(lines[i])->getBlock();
+    EXPECT_EQ(block.wordStyle(0), i == 1 ? EpdFontFamily::BOLD | EpdFontFamily::ITALIC : 0);
   }
 }
 

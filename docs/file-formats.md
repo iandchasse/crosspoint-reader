@@ -90,6 +90,16 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+### Version 64
+
+Version 64 preserves the binary layout but rebuilds completed and partial
+sections for corrected explicit font-weight/font-style inheritance. It retains
+version 63's GIF rendering and paragraph-boundary fixes. CSS cache version 19 stores
+`inherit` as value 2 in the existing font-style and font-weight bytes; the
+winning declaration is resolved against the parent before applying the element's
+style. Older CSS caches are rebuilt. Book metadata and reading progress are
+unchanged.
+
 ### Version 63
 
 Version 63 retains the version 60 rendering format and rebuilds completed and
@@ -324,7 +334,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 63
+#define EXPECTED_VERSION 64
 #define MAX_STRING_LENGTH 65535
 #define FOOTNOTE_NUMBER_LEN 32
 #define FOOTNOTE_HREF_LEN 256
