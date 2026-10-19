@@ -206,7 +206,11 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   // of users who already have SD plugins installed, while keeping the new
   // default disabled on clean installs.
   if (doc["pluginsEnabled"].isNull()) {
+#if CROSSPOINT_TEST_SUITE  // the hardware test firmware has no plugin system: PluginLocations is not built into it
+    pluginsEnabled = 0;
+#else
     pluginsEnabled = PluginLocations::anyPluginInstalledOnDisk() ? 1 : 0;
+#endif
     needsResave = true;
   }
 

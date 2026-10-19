@@ -29,7 +29,7 @@ void ActivityManager::goToReader(std::string path, bool /*allowFastInitialRefres
   goHome();
 }
 
-void ActivityManager::goToSettings() { goHome(); }
+void ActivityManager::goToSettings(SettingsSection /*openSection*/) { goHome(); }
 void ActivityManager::goToFileBrowser(std::string /*path*/) { goHome(); }
 void ActivityManager::goToLibrary() { goHome(); }
 void ActivityManager::goToBrowser() { goHome(); }
