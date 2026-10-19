@@ -81,6 +81,10 @@ template<typename... Args> void logDebug(Args&&...) {}
 enum class StrId { STR_DICT_LOOKING_UP, STR_DICT_NOT_FOUND, STR_DICT_LOW_MEMORY, STR_DICT_READ_FAILED,
                    STR_DICT_DECOMPRESS_ERROR, STR_DICT_RESTORE_FAILED, STR_DICT_HISTORY_FULL };
 struct RenderLock { ~RenderLock() {} };
+namespace BoardConfig {
+inline bool silkscreen = false;
+inline bool isSilkscreen() { return silkscreen; }
+}  // namespace BoardConfig
 unsigned long millis() { return 0; }
 struct HalMemory {
   struct Heap { size_t freeBytes = 1024 * 1024, largestBlockBytes = 1024 * 1024; };
@@ -299,6 +303,30 @@ int main() {
   assert(view.message == StrId::STR_DICT_HISTORY_FULL);
   for (int i = 0; i < 16; ++i) view.navigateDefinition(true);
   assert(view.lookup->depth == 0 && view.lookup->location.offset == 10 && view.content.currentPage == 1);
+  // Silkscreen (keys): a cancelled selection forgets the remembered range, so the next Confirm starts a new one;
+  // every other board keeps it for the next press, as upstream does. A finished selection stores its range on both.
+  for (const bool silkscreen : {false, true}) {
+    BoardConfig::silkscreen = silkscreen;
+    view.content.selection = {0, 1, 2, 0, true};
+    view.startSelection();
+    view.child.reset();
+    ActivityResult cancelled;
+    cancelled.isCancelled = true;
+    view.callback(std::move(cancelled));
+    assert(view.content.selection.valid == !silkscreen);
+    view.content.selection = {0, 1, 2, 0, true};
+    view.startSelection();
+    view.child.reset();
+    ClippingResult again;
+    again.action = ClippingResult::Action::Lookup;
+    again.text = "alias";
+    again.startWordIndex = 1;
+    again.endWordIndex = 3;
+    view.callback(ActivityResult{std::move(again)});
+    assert(view.content.selection.valid && view.content.selection.firstWord == 1 && view.content.selection.lastWord == 3);
+    view.lookup->pendingWord.clear();
+  }
+  BoardConfig::silkscreen = false;
   // Restoring a synonym target uses its entry location, never the ambiguous displayed headword.
   view.content = {};
   view.content.headword = "same";

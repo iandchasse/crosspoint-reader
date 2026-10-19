@@ -1,6 +1,7 @@
 #include "DictionaryDefinitionActivity.h"
 
 #include <BidiUtils.h>
+#include <BoardConfig.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalMemory.h>
@@ -529,7 +530,14 @@ void DictionaryDefinitionActivity::startSelection(const int x, const int y) {
   startActivityForResult(std::move(selection), [this](const ActivityResult& result) {
     RenderLock lock;
     lookup->selectionPages.clear();
-    if (result.isCancelled) return;
+    if (result.isCancelled) {
+      // Silkscreen: a remembered range keeps its start, which the keys cannot move (Left and Right move the end, and
+      // Back leaves the selection instead of clearing the range), so with keys alone only ranges containing that start
+      // could be looked up again. Touch starts a new range with a long press. A cancelled selection forgets the range,
+      // and the next Confirm starts a new one.
+      if (BoardConfig::isSilkscreen()) content.selection.valid = false;
+      return;
+    }
     const auto& selected = std::get<ClippingResult>(result.data);
     content.currentPage = content.selectionPage + selected.endPageOffset;
     content.selection = {selected.startPageOffset, selected.endPageOffset, selected.startWordIndex,
