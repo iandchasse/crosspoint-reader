@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks a built hardware test firmware (docs/silkscreen/TEST-SUITE.md):
-# - no reader, library, book-parsing, web-server, OTA, SD-update or plugin code
-#   and no light panel is linked into the image, so it cannot open a book;
+# - no reader, library, book-parsing, web-server, OTA, SD-update, plugin or Bluetooth
+#   radio code and no light panel is linked into the image, so it cannot open a book
+#   or start a radio;
 # - no static initialiser from reader code runs at boot, except the allowed
 #   ones below: PlatformIO links every object of lib/Epub and lib/LibraryIndex
 #   (shared headers pull them in), and --gc-sections keeps their initialisers
@@ -57,18 +58,21 @@ fi
 
 # Class and function names (demangled), each preceded by a non-identifier
 # character so TestSleepActivity does not match SleepActivity.
-forbidden='(^|[^A-Za-z0-9_])(ReaderActivity|EpubReaderActivity|XtcReaderActivity|HomeActivity|LibraryListActivity|FileBrowserActivity|BmpViewerActivity|OpdsBookBrowserActivity|CatalogActivity|PluginCatalogActivity|SleepActivity|FrontlightPanelActivity|SettingsActivity|SdFirmwareUpdateActivity|OtaUpdateActivity|CrossPointWebServerActivity|CrossPointWebServer|WebDAVHandler|OtaUpdater|Section|ChapterHtmlSlimParser|BookMetadataCache|pluginevents|pluginhttp|PluginLocations)::|(^|[^A-Za-z0-9_])(Epub|Xtc)::load|[^A-Za-z0-9_]XML_ParserCreate'
+forbidden='(^|[^A-Za-z0-9_])(ReaderActivity|EpubReaderActivity|XtcReaderActivity|HomeActivity|LibraryListActivity|FileBrowserActivity|BmpViewerActivity|OpdsBookBrowserActivity|CatalogActivity|PluginCatalogActivity|SleepActivity|FrontlightPanelActivity|SettingsActivity|SdFirmwareUpdateActivity|OtaUpdateActivity|CrossPointWebServerActivity|CrossPointWebServer|WebDAVHandler|OtaUpdater|Section|ChapterHtmlSlimParser|BookMetadataCache|pluginevents|pluginhttp|PluginLocations|NimBLE[A-Za-z0-9]*|BleKeyboardHost|BleSettingsActivity|SettingsListActivity|PluginHubInstallActivity|DetailsActivity|HttpDownloader|OpdsClient)::|(^|[^A-Za-z0-9_])(Epub|Xtc)::load|[^A-Za-z0-9_]XML_ParserCreate'
 if hits=$(grep -E "$forbidden" <<<"$syms"); then
-  echo "Reader, web-server, update, plugin or light-panel code is linked into ${env}:"
+  echo "Reader, web-server, update, plugin, Bluetooth or light-panel code is linked into ${env}:"
   echo "$hits" | head -40
   status=1
 fi
 
 # Static initialisers (raw names: nm -C leaves _GLOBAL__sub_I_<mangled> as it
 # is) from reader code. The allowed ones set up buffers, pointers and the
-# hyphenation tables only; any other is new and needs a look.
+# hyphenation tables, or (since 2026-10-19) only create a mutex or register an
+# atexit for an empty string: lib/Epub's Epub.cpp (the GIF generation mutex),
+# BookMetadataCache.cpp (the size-window mutex) and the SDK Opds lib's
+# OpdsFeedParser.cpp (kNoValue); any other is new and needs a look.
 reader_init='_GLOBAL__sub_I_.*(CrossPointWebServer|WebDAV|Hyphenat|ImageBlock|ImageDecoder|[0-9]library|Library|Epub|Xtc|Section|ChapterHtml|BookMetadata|Opds|KOReader|Reader|Plugin|Catalog)'
-allowed_init='_GLOBAL__sub_I__Z34getLanguageHyphenatorForPrimaryTag|_GLOBAL__sub_I__ZN10ImageBlockC2|_GLOBAL__sub_I__ZN19ImageDecoderFactory11jpegDecoderE|_GLOBAL__sub_I__ZN7library16libraryIndexPathEv'
+allowed_init='_GLOBAL__sub_I__Z34getLanguageHyphenatorForPrimaryTag|_GLOBAL__sub_I__ZN10ImageBlockC2|_GLOBAL__sub_I__ZN19ImageDecoderFactory11jpegDecoderE|_GLOBAL__sub_I__ZN7library16libraryIndexPathEv|_GLOBAL__sub_I__ZN4EpubC2ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEERKS5_|_GLOBAL__sub_I__ZN17BookMetadataCache10beginWriteEv|_GLOBAL__sub_I__ZN14OpdsFeedParser20setPreferredLanguageEPKc'
 if hits=$(grep -E "$reader_init" <<<"$raw" | grep -v -E "$allowed_init"); then
   echo "A static initialiser from reader code runs in ${env} (not in the allow-list):"
   echo "$hits" | head -40
