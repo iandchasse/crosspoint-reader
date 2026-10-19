@@ -6,6 +6,8 @@ scripts/silkscreen/*.sh text eol=lf
 # The MSVC shim's `c++` wrappers are sh scripts that Git Bash runs.
 scripts/silkscreen/msvc/bin/c++ text eol=lf
 scripts/silkscreen/msvc/bin-syntax/c++ text eol=lf
+scripts/silkscreen/msvc/bin-hostcc/c++ text eol=lf
+scripts/silkscreen/msvc/bin-hostcc/cc text eol=lf
 # The two guards build_matrix.sh runs are bash scripts too.
 scripts/check_sleep_wake_sources.sh text eol=lf
 scripts/check_test_firmware.sh text eol=lf

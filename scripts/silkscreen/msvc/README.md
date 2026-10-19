@@ -21,6 +21,37 @@ CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeIn
 
 (`..` is `crosspoint-reader`; use a path in `C:/...` form for `CXX`.) A compile takes 20-60 s.
 
+## Tests that compile a C file first (`hostcc`) and the app's host tests
+
+`cxx_msvc.py` takes C++ sources only. `hostcc.py` is a second wrapper with `-c`, `.c` sources and `.o` inputs, for the
+runners that build a C object and link it into a C++ test (ContentProtection's miniz, the app's MiniBidi):
+
+```sh
+# sh runners: `cc` and `c++` both come from bin-hostcc
+export PATH="$PWD/../scripts/silkscreen/msvc/bin-hostcc:$PATH"
+bash libs/book/ContentProtection/test/host/run.sh     # zip, lcp, test_protected, test_manifest_reserve (C3 and S3)
+```
+
+The app's python host tests (`test/test_*.py`) call `cc` and `c++` by name in a list-form `subprocess.run`, which cannot
+start a script, and they slice production source into a harness, so `run_app_host_tests.py` runs each one with those
+names replaced by `cc_hostcc.bat` and `cxx_hostcc.bat`. From `crosspoint-reader`:
+
+```sh
+python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py            # every test/test_*.py, then test/clipping_sync
+python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py test/test_selection_buttons.py
+```
+
+`test/clipping_sync/run.sh` is CRLF in a Windows work tree, so the runner feeds it to `sh -s` with the CRs removed, from
+its own directory. On this host two python tests fail for the host's reasons, not the tree's:
+`test_trusted_time.py` (its stub includes POSIX `<sys/time.h>`) and `test_patch_animatedgif.py` (it compares LF text
+with the CRLF files of the patched `.pio/libdeps`). The Google Test suites in `test/CMakeLists.txt` are not run: the
+configure step fetches Google Test from GitHub.
+
+Two of them, `test_selection_buttons.py` and `test/clipping_sync`, build code the Silkscreen port edits
+(`ClipSelectionActivity::loop()` is sliced out of the source, `ClippingSync.cpp` is compiled with stubs), so a port
+edit that the harness does not model stops them building: the second round's key path and cutoff poll are mirrored in
+them, with cases of their own.
+
 ## What it does
 
 - Translates `-D`, `-U`, `-I` (the value joined to the flag or as the next argument), `-o` and the sources; ignores
@@ -94,7 +125,19 @@ BoardConfig `run_profile_asserts.py` (41 cases), the battery log core's `static_
 `SILKSCREEN_BATLOG`), and the syntax checks of FreeInkDisplay `run_pro.py` and `run_picco.py`, InputManager `run_eego.sh` and
 AudioManager `run_metalio.sh` (no compile error; the run step finds no binary). The suites that call `cc` or `zip`
 (CatalogList, FreeInkFont, FreeInkBook, the last part of ContentProtection) cannot run on this host: the shim has no C
-compiler wrapper and the host no `zip`.
+compiler wrapper and the host no `zip`. (`hostcc` is that wrapper since the second round of the same day.)
+
+## What ran (2026-10-19, second round: SDK `bee6382`, app `3b83219b`)
+
+After merging Free-Ink `f9cc1be` and upstream `0fcdb3ec`. Through the shim and `hostcc`, all as before except as noted:
+the groups of the first round (BatteryMonitor, InputManager, FreeInkDisplay, PowerManager, Rtc, Imu, HapticManager,
+SDCardManager, XteinkDetect, BoardConfig, FrontlightManager, FreeInkUI, SecureNet; FreeInkDisplay `run_picco.py` now
+runs through the shim too, by `run_picco_shim.py`: the runner's facade `-fsyntax-only` step goes to `cxx_syntax.bat`), **ContentProtection `run.sh` in
+full** (upstream's new `test_manifest_reserve` for C3 and S3 included), the app's seven python host tests that this
+host can run (`test_ble_learning`, `test_clipping_highlight_planes`, `test_clipping_selection_text`,
+`test_list_viewport`, `test_recursive_dictionary`, `test_remote_button_input`, `test_selection_buttons`) and
+`test/clipping_sync` for both chips. BleKeyboardHost's test failed one check in one batch run under load and passed
+three re-runs (it mixes real threads with a fake clock).
 
 ## What it cannot do
 
@@ -103,6 +146,9 @@ compiler wrapper and the host no `zip`.
   AudioManager `run_metalio.sh`. Use the syntax mode: `bin-syntax` on `PATH`, or `CXX=cxx_syntax.bat`, which runs the
   PlatformIO Xtensa g++ (`toolchain-xtensa-esp-elf`, 14.2) with `-fsyntax-only`. The compile step then passes or
   fails as with a real g++, and the run step finds no binary.
+- **Suites whose command lines mix C and C++ sources or call `zip`**: CatalogList (its expat sources need
+  `winconfig.h` without `XML_GE`), FreeInkFont (`/TC` and `/TP` per file), FreeInkBook (`zip`). They need more than
+  `hostcc` does.
 - **Static-assert suites that need GNU extensions**: BoardConfig `run_profile_asserts.py` (it finds the Xtensa 14.2 g++
   itself) and PowerManager `test_batterylog_core` (compile with the Xtensa 14.2 g++; the esp32s3 package's 8.4 fails 17 of its
   asserts). `run_uc8279c_a4.py` failed at upstream's own pin until 2026-10-19 and runs through the shim now.

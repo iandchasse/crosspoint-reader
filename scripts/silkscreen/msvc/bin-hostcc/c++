@@ -1,0 +1,5 @@
+#!/bin/sh
+# c++ -> MSVC cl.exe with -c, .c and .o support (hostcc.py), for the sh runners that build a C object first: put this
+# directory first on PATH (scripts/silkscreen/msvc/README.md).
+here=$(cd "$(dirname "$0")/.." && { pwd -W 2>/dev/null || pwd; })
+exec python "$here/hostcc.py" cxx "$@"
