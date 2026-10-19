@@ -115,7 +115,7 @@ void drawGrayChart(const GfxRenderer& renderer, const char* title, const char* f
   const int height = renderer.getScreenHeight();
   const int line10 = renderer.getLineHeight(UI_10_FONT_ID);
   const int line12 = renderer.getLineHeight(UI_12_FONT_ID);
-  const int lineSerif = renderer.getLineHeight(NOTOSERIF_14_FONT_ID);
+  const int lineAa = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
   constexpr int margin = 16;
 
   int y = 12;
@@ -142,15 +142,16 @@ void drawGrayChart(const GfxRenderer& renderer, const char* title, const char* f
 
   renderer.drawText(UI_10_FONT_ID, margin, y, AA_LABEL);
   y += line10 + 2;
-  // Two-bit glyphs: ink in the B/W pass, their edge levels in the gray passes.
-  renderer.drawText(NOTOSERIF_14_FONT_ID, margin, y, AA_LINE_1);
-  renderer.drawText(NOTOSERIF_14_FONT_ID, margin, y + lineSerif, AA_LINE_2);
-  y += 2 * lineSerif + 10;
+  // Two-bit glyphs (the built-in NotoSans 14, the one family left in the image since upstream moved NotoSerif to an SD
+  // font, #4022): ink in the B/W pass, their edge levels in the gray passes.
+  renderer.drawText(NOTOSANS_14_FONT_ID, margin, y, AA_LINE_1);
+  renderer.drawText(NOTOSANS_14_FONT_ID, margin, y + lineAa, AA_LINE_2);
+  y += 2 * lineAa + 10;
   renderer.drawText(UI_10_FONT_ID, margin, y, BW_LABEL);
   y += line10 + 2;
   if (bwPass(renderer)) {
-    renderer.drawText(NOTOSERIF_14_FONT_ID, margin, y, AA_LINE_1);
-    renderer.drawText(NOTOSERIF_14_FONT_ID, margin, y + lineSerif, AA_LINE_2);
+    renderer.drawText(NOTOSANS_14_FONT_ID, margin, y, AA_LINE_1);
+    renderer.drawText(NOTOSANS_14_FONT_ID, margin, y + lineAa, AA_LINE_2);
   }
 
   if (footer != nullptr) renderer.drawText(UI_10_FONT_ID, margin, height - line10 - 8, footer);
