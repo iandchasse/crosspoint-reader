@@ -15,4 +15,7 @@ class OpdsHttpTransport final : public freeink::opds::OpdsTransport {
   bool postForm(const std::string& url, const std::string& body, std::string& outResponse, int& outStatus) override;
 
   std::string resolveUrl(const std::string& base, const std::string& ref) override;
+
+  // The OpdsClient's own login chain polls this (BAT-01, docs/silkscreen/POWER.md): the low-battery latch.
+  bool shouldAbort() override;
 };

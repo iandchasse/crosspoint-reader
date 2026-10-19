@@ -1,5 +1,7 @@
 #include "OpdsHttpTransport.h"
 
+#include <HalPowerManager.h>
+
 #include "network/HttpDownloader.h"
 #include "util/UrlUtils.h"
 
@@ -30,3 +32,6 @@ bool OpdsHttpTransport::postForm(const std::string& url, const std::string& body
 std::string OpdsHttpTransport::resolveUrl(const std::string& base, const std::string& ref) {
   return UrlUtils::buildUrl(base, ref);
 }
+
+// Always false on boards without a cutoff.
+bool OpdsHttpTransport::shouldAbort() { return powerManager.lowBatteryCutoffTripped(); }
