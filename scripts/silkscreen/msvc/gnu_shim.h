@@ -2,6 +2,9 @@
 #pragma once
 #include <intrin.h>
 #include <stdlib.h>
+// libstdc++ pulls <initializer_list> in through almost every header; MSVC's STL does not, and BoardConfig.h's
+// range-for over a braced pin list (parkSdmmcBus(), holdPowerRails()) needs its begin()/end().
+#include <initializer_list>
 #define __builtin_popcount __popcnt
 #define __builtin_bswap16 _byteswap_ushort
 #define __builtin_bswap32 _byteswap_ulong
