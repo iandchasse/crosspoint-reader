@@ -34,6 +34,11 @@ void applyCommonClientSetup(freeink::SecureHttpClient& http) {
   http.setUserAgent("CrossPoint-ESP32-" CROSSPOINT_VERSION);
 }
 
+// BAT-01 (docs/silkscreen/POWER.md): a transfer inside an activity holds loop(), whose cutoff check cannot run, so
+// every wait loop of the paths below that do not go through fetchResumable() polls the low-battery cutoff (always
+// false on boards without one), and the next loop pass sleeps. runGetSecure() does it inline with its cancel flag.
+bool cutoffTripped() { return powerManager.lowBatteryCutoffTripped(); }
+
 // Written after every request, and read by the UI right after a failure.
 int g_lastStatus = 0;
 // Whether the last answer came from another origin than the request started at.
@@ -148,16 +153,23 @@ bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData
     if (!options.acceptLanguage.empty()) http.addHeader("Accept-Language", options.acceptLanguage);
 
     LOG_DBG("HTTP", "wolfSSL GET: %s", current.c_str());
-    status = http.GET([&](const uint8_t* data, size_t len) {
-      const int st = http.getStatus();
-      const bool wanted = (st >= 200 && st < 300) || (options.captureErrorBody && st == 401);
-      if (!wanted) return true;  // redirect or error body: drain
-      if (!onData(data, len)) {
-        sinkStopped = true;
-        return false;
-      }
-      return true;
-    });
+    status = http.GET(
+        [&](const uint8_t* data, size_t len) {
+          const int st = http.getStatus();
+          const bool wanted = (st >= 200 && st < 300) || (options.captureErrorBody && st == 401);
+          if (!wanted) return true;  // redirect or error body: drain
+          if (!onData(data, len)) {
+            sinkStopped = true;
+            return false;
+          }
+          return true;
+        },
+        cutoffTripped);
+    if (http.aborted()) {
+      // The cutoff stopped it: the status line of a body cut short must not pass for an answer.
+      status = 0;
+      break;
+    }
     if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
       const std::string location = http.getHeader("location");
       if (location.empty() || !freeink::SecureHttpClient::resolveUrl(current, location, current)) break;
@@ -184,13 +196,19 @@ bool HttpDownloader::postForm(const std::string& url, const std::string& formBod
   applyCommonClientSetup(http);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   LOG_DBG("HTTP", "wolfSSL POST: %s", url.c_str());
-  const int status = http.sendRequest("POST", reinterpret_cast<const uint8_t*>(formBody.data()), formBody.size(),
-                                      [&outResponse](const uint8_t* data, size_t len) {
-                                        const size_t room =
-                                            MAX_RESPONSE_BYTES - std::min(outResponse.size(), MAX_RESPONSE_BYTES);
-                                        outResponse.append(reinterpret_cast<const char*>(data), std::min(len, room));
-                                        return true;
-                                      });
+  const int status = http.sendRequest(
+      "POST", reinterpret_cast<const uint8_t*>(formBody.data()), formBody.size(),
+      [&outResponse](const uint8_t* data, size_t len) {
+        const size_t room = MAX_RESPONSE_BYTES - std::min(outResponse.size(), MAX_RESPONSE_BYTES);
+        outResponse.append(reinterpret_cast<const char*>(data), std::min(len, room));
+        return true;
+      },
+      cutoffTripped);
+  if (http.aborted()) {
+    outResponse.clear();
+    if (statusOut) *statusOut = 0;
+    return false;
+  }
   if (statusOut) *statusOut = status > 0 ? status : 0;
   return status >= 200 && status < 300;
 }
@@ -232,7 +250,7 @@ HttpDownloader::DownloadError HttpDownloader::postToFile(const std::string& url,
         if (progress && http.hasContentLength()) progress(downloaded, http.getContentLength());
         return true;
       },
-      [cancelFlag] { return cancelFlag && *cancelFlag; });
+      [cancelFlag] { return (cancelFlag && *cancelFlag) || powerManager.lowBatteryCutoffTripped(); });
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
   if (file.isOpen()) file.close();

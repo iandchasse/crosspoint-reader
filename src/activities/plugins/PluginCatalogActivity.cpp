@@ -52,6 +52,10 @@ using pluginhttp::urlEncodeQuery;
 using pluginhttp::variantToString;
 
 namespace {
+// BAT-01 (docs/silkscreen/POWER.md): each catalog request runs on the loop task and blocks it, so its wait loops
+// poll the low-battery cutoff (always false on boards without one) and the next loop pass sleeps.
+bool abortAtCutoff() { return powerManager.lowBatteryCutoffTripped(); }
+
 constexpr size_t MAX_MANIFEST_SIZE = 8 * 1024;
 // In-DRAM responses (auth, download-url hops) are small; the cap bounds a
 // misbehaving server, not normal use.
@@ -333,7 +337,8 @@ bool PluginCatalogActivity::loadBrowseListIndex() {
 
   String response;
   const std::string url = substituted(manifest.browseListsUrl, nullptr);
-  const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_BROWSE_LIST_INDEX_RESPONSE);
+  const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_BROWSE_LIST_INDEX_RESPONSE,
+                                         nullptr, abortAtCutoff);
   if (status < 200 || status >= 300) {
     LOG_ERR("PCAT", "browse list index fetch failed: status=%d %s", status, url.c_str());
     return false;
@@ -437,7 +442,8 @@ PluginCatalogActivity::PluginCatalogActivity(GfxRenderer& renderer, MappedInputM
 PluginCatalogActivity::~PluginCatalogActivity() = default;
 
 int PluginCatalogActivity::apiRequest(const pluginhttp::RequestSpec& req, String& out) {
-  return pluginhttp::request(session.get(), req.url, req.method, req.body, req.headers, out, MAX_API_RESPONSE);
+  return pluginhttp::request(session.get(), req.url, req.method, req.body, req.headers, out, MAX_API_RESPONSE, nullptr,
+                             abortAtCutoff);
 }
 
 void PluginCatalogActivity::onEnter() {
@@ -632,7 +638,7 @@ bool PluginCatalogActivity::refreshCredentialToken() {
   if (!pluginhttp::mintPasswordToken(session.get(), substituted(manifest.authReq.url, nullptr), manifest.authReq.method,
                                      substituted(manifest.authReq.body, nullptr),
                                      substitutedHeaders(manifest.authReq.headers, nullptr), manifest.authTokenPath,
-                                     minted)) {
+                                     minted, abortAtCutoff)) {
     return false;
   }
   if (!saveToken(minted)) return false;
@@ -660,7 +666,7 @@ bool PluginCatalogActivity::fetchBrowseResponse() {
         substituted(manifest.isXmlList() ? manifest.browseReq.body : activeBrowseBody(), nullptr),
         substitutedHeaders(manifest.browseReq.headers, nullptr)};
     return pluginhttp::requestToFile(session.get(), req.url, req.method, req.body, req.headers, BROWSE_TMP_PATH,
-                                     MAX_BROWSE_RESPONSE);
+                                     MAX_BROWSE_RESPONSE, abortAtCutoff);
   };
   int status = run();
   // Rebuild templates with the refreshed token; retry only once.
@@ -1414,7 +1420,8 @@ void PluginCatalogActivity::showItemDetails(const int itemIndex) {
   if (!details.detailsUrl.empty()) {
     String response;
     const std::string url = substituted(details.detailsUrl, &item);
-    const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_ITEM_DETAILS_RESPONSE);
+    const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_ITEM_DETAILS_RESPONSE,
+                                           nullptr, abortAtCutoff);
     const bool html = details.detailsFormat == "html";
     if (status < 200 || status >= 300 || response.length() == 0) {
       LOG_INF("PCAT", "item details fetch failed: HTTP %d", status);
