@@ -1430,7 +1430,15 @@ void loop() {
   // The release of the press that woke the device is not the user's first input.
   // A Bluetooth remote's press (remoteActed) resets the sleep timeout below, as upstream has it, but
   // is not "input" to the awake ceiling, the input cap or the no-input wake timeout: those keep to
-  // keys, touch and tilt (POWER.md AW-01, WK-02).
+  // keys, touch and tilt (POWER.md AW-01, WK-02). While the sleep timeout has been lifted by remote
+  // presses alone, the ceiling governs instead of the timeout, so presses from a remote in a bag
+  // end at the ceiling and the cap like a held key does.
+  static bool timeoutLiftedByRemote = false;
+  if (userInput) {
+    timeoutLiftedByRemote = false;
+  } else if (remoteActed) {
+    timeoutLiftedByRemote = true;
+  }
   if (userInput && !wakePowerReleasePending) wakeNoInputArmed = false;
   if (userInput || remoteActed || activityManager.preventAutoSleep()) {
     lastActivityTime = millis();         // Reset inactivity timer
@@ -1473,14 +1481,15 @@ void loop() {
   // server for this long. The ceiling is never shorter than the user's timeout
   // (HalPowerManager::awakeCeilingMs()), so Never gets the profile's minutes.
   // enterDeepSleep() drops Wi-Fi. Where the user's timeout is reached later this
-  // pass (one is set, no screen holds auto-sleep off and no key is held), that
-  // timeout governs alone.
+  // pass (one is set, no screen holds auto-sleep off, no key is held and no
+  // Bluetooth remote has lifted it), that timeout governs alone.
   if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
     bool keyHeld = false;
     for (uint8_t button = HalGPIO::BTN_BACK; button <= HalGPIO::BTN_POWER; ++button) {
       if (gpio.isPressed(button)) keyHeld = true;
     }
-    const bool governedByTimeout = sleepTimeoutMs > 0 && !activityManager.preventAutoSleep() && !keyHeld;
+    const bool governedByTimeout =
+        sleepTimeoutMs > 0 && !activityManager.preventAutoSleep() && !keyHeld && !timeoutLiftedByRemote;
     if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
       LOG_INF("SLP", "No input or client traffic for %lu min on battery; sleeping",
               HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
