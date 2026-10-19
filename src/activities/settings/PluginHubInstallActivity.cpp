@@ -1,5 +1,6 @@
 #include "PluginHubInstallActivity.h"
 
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -138,6 +139,9 @@ void PluginHubInstallActivity::downloadFinished(const bool cancelled) {
     return;
   }
   state = State::DONE;
+  // Nothing more to fetch and the Done screen waits for a key: the radio goes off (AW-02,
+  // docs/silkscreen/POWER.md). An error screen keeps the link, as the plugin catalog's does, for Retry.
+  if (HalPowerManager::releaseIdleRadio("PHUB")) radioReleased = true;
   requestUpdate();
 }
 
