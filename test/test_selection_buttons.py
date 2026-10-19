@@ -115,7 +115,9 @@ popup_harness = r"""
 #include <vector>
 struct RenderLock { ~RenderLock() {} };
 struct Input { bool touch = false, back = false, confirm = false, outsideTap = false;
+  bool frontButtons = false;  // Silkscreen: keys beside the touch tail
   bool hasTouch() const { return touch; }
+  bool hasFrontButtons() const { return !touch || frontButtons; }
 };
 struct Popup {
   static constexpr int MAX_OPTIONS = 16;
@@ -136,6 +138,11 @@ struct ClipSelectionActivity {
   Popup actionPopup;
   Input mappedInput;
   int cancellations = 0;
+  // Silkscreen's key path in loop(): a finger on the glass, the queued key frames and a chosen action.
+  bool fingerDown = false;
+  size_t pendingButtonCount = 0;
+  bool touchInProgress() const { return fingerDown; }
+  void applyChosenAction() {}
   void requestUpdate() {}
   void cancel() { ++cancellations; }
   void loopButtons() {
@@ -171,6 +178,25 @@ int main() {
   usable.mappedInput.back = false;
   usable.loop();
   assert(usable.cancellations == 0);
+  // Silkscreen: keys beside the touch tail. With no finger on the glass the keys-only path runs (Back dismisses the
+  // popup, then the empty selector cancels); with a finger down the touch path does (an outside release dismisses).
+  for (const bool finger : {false, true}) {
+    ClipSelectionActivity selection;
+    selection.actionPopup.onSelectCallback = [&](int) { selection.cancel(); };
+    selection.mappedInput.touch = selection.mappedInput.frontButtons = true;
+    selection.fingerDown = finger;
+    selection.pendingButtonCount = 2;
+    selection.loop();
+    assert(selection.actionPopup.isActive() && selection.cancellations == 0);
+    assert(selection.pendingButtonCount == (finger ? 0u : 2u));
+    selection.mappedInput.back = !finger;
+    selection.mappedInput.outsideTap = finger;
+    selection.loop();
+    assert(!selection.actionPopup.isActive() && selection.cancellations == 0);
+    selection.mappedInput.back = selection.mappedInput.outsideTap = false;
+    selection.loop();
+    assert(selection.cancellations == 1);
+  }
 }
 """
 with tempfile.TemporaryDirectory() as directory:
