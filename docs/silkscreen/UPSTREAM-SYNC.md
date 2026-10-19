@@ -35,9 +35,11 @@ Pins:
   reviews do), but their `pio` runs must not: pioarduino's ComponentManager rewrites the *shared*
   `~/.platformio/packages/framework-arduinoespressif32-libs` while a build runs, and on 2026-10-19 two overlapping builds
   in the two checkouts ended one of them on `fatal error: esp_bt.h: No such file` in NimBLE-Arduino (the header was on
-  disk when looked at afterwards). Every `pio` call takes the lock directory `silkscreen-firmware/.pio-build.lock`
-  first (`mkdir` is atomic: if it exists, wait and retry), writes its name and a UTC time to `owner.txt` inside it, and
-  removes the directory when the build ends, a failed build included (a `trap`). Hold it for one env at a time, so the
+  disk when looked at afterwards). No script enforces this (`build_matrix.sh` only refuses to start while a `pio` runs,
+  which two syncs starting together defeat), so the agents agree on a convention: every `pio` call takes the lock
+  directory `silkscreen-firmware/.pio-build.lock` first (`mkdir` is atomic: if it exists, wait and retry), writes its name
+  and a UTC time to `owner.txt` inside it, and removes the directory when the build ends, a failed build included (a
+  `trap`). Hold it for one env at a time, so the
   other session takes its turn between envs. A lock whose `owner.txt` is older than 90 minutes with no `pio.exe`
   running is stale and may be removed. A build that overlapped another one is repeated under the lock before any size
   or diagnostic is trusted, and an image is frozen only from a build made under it.
@@ -163,10 +165,10 @@ to the byte.
    `silkscreen-368-batlog`, `silkscreen-368-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`, `silkscreen-batlog`,
    `silkscreen-368`, `silkscreen-368-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix took 40-70
    minutes until the Bluetooth page turner (CrossInk's seven envs took 46 minutes on 2026-10-12 with the machine quiet;
-   earlier stage logs show 41 and 66). Since 2026-10-19 NimBLE adds 189 object files to every env: an env built from
-   scratch takes 12 to 15 minutes (`silkscreen-test` 12:23, `silkscreen-batlog` 13:59, `silkscreen-368` 15:03) and one
-   rebuilt after a few source changes about 2.5 minutes, so a CrossPoint matrix from scratch takes about two hours,
-   and longer when two syncs share the build lock.
+   earlier stage logs show 41 and 66). Since 2026-10-19 NimBLE adds 189 object files to every CrossPoint reader env (the test envs
+   ignore it): a reader env built from scratch takes 14 to 16 minutes (`x4pro` 14:31, `silkscreen-368-batlog` 14:44,
+   `silkscreen-368-gh_release` 15:22) and one rebuilt after a few source changes about 2.5 minutes, so a CrossPoint
+   matrix from scratch takes about two hours, and longer when two syncs share the build lock.
    `silkscreen-batlog` is the battery log's own env ([BATTERY-LOG.md](BATTERY-LOG.md)): the release env's sources and flags
    plus `-DSILKSCREEN_BATLOG=1`. It must still build in both repos, and its size next to the release env's is the log's
    footprint. A hook that a conflict resolution left outside its `#if SILKSCREEN_BATLOG` blocker fails every env that lacks
