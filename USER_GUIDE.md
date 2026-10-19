@@ -317,6 +317,7 @@ Settings are grouped into **System**, **Display**, **Reader**, **Controls**, **L
   - "CrossPoint Sync" - Hold Confirm (~1 second) to launch KOReader sync directly.
   - "Dictionary" - Hold Confirm (~0.4 second) to start dictionary word selection on the current page (see [docs/dictionary.md](docs/dictionary.md)).
   - "Create Clipping" - Hold Confirm (~0.4 second) to start clipping selection on the current page.
+  - "Links and Footnotes" - Hold Confirm (~0.4 second) to open link selection; after following a link, hold Confirm to return to the previous location.
   - "Disabled" - Long-press is ignored; only short-press opens the reader menu.
   - "Frontlight" (Silkscreen) - Hold Confirm (~0.4 second) to open the frontlight panel.
 

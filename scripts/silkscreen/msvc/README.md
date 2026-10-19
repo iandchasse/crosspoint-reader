@@ -27,8 +27,9 @@ CXX="$PWD/../scripts/silkscreen/msvc/cxx_msvc.bat" python -B libs/display/FreeIn
   `-std=`, `-W*`, `-f*`, `-O*` and `-pthread`. It always
   compiles `/std:c++20 /EHsc /utf-8 /W1 /Zc:__cplusplus` with `NDEBUG` undefined, so `assert()` holds (the SDK's
   tests also `#undef NDEBUG`: an `assert()` that wraps a call must not vanish).
-- Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64`, `__builtin_expect` and POSIX
-  `localtime_r` (the UCRT has only `localtime_s`).
+- Force-includes `gnu_shim.h`: `__builtin_popcount`, `__builtin_bswap16/32/64`, `__builtin_expect`, POSIX
+  `localtime_r` (the UCRT has only `localtime_s`) and `<initializer_list>` (libstdc++ pulls it in through almost every
+  header, MSVC's STL does not, and `BoardConfig.h` range-fors over a braced pin list).
 - Passes every argument through a response file (a line that holds a space is quoted, so a path with a space
   works), runs `cl` under a timeout (`CXX_MSVC_TIMEOUT`, 600 s) and removes its object directory. `VCVARS` names
   `vcvars64.bat` when Visual Studio is not in a default place.
@@ -79,6 +80,22 @@ Negative controls fail as they must: `UC8279_SOURCE` set to a file made with `gi
 `UC8253_SOURCE` set to `Uc8253X3Driver.cpp` without its strip's `txn.end()` stops `run_uc8253_power.py` on the same
 message. With upstream's ungated fix no configuration of `run_uc8279.py` fails.
 
+## What ran (2026-10-19 sync, SDK `98f42c4`, all pass)
+
+After merging Free-Ink `25cd36c`. Through the shim: **BatteryMonitor `run.sh`** (the charge-ladder decoder, BQ27220, SGM41562 and
+upstream's new `test_adc_usb_detect.cpp`, which builds this line's `BatteryMonitor.cpp` and needed the shim's
+`<initializer_list>`), InputManager `run.sh`, `run_metalio.sh`, `run_picco.sh` and `run_picco_touch.sh`, FreeInkDisplay
+`run_uc8279.py`, `run_uc8253_power.py`, `run_x3_diagnostics.py` and **`run_uc8279c_a4.py`** (it compiles and passes at this
+pin: upstream's test changed), PowerManager `run_sleep_panel.py`, Rtc `run.py`, Imu, HapticManager and SDCardManager
+`run.sh`, XteinkDetect's display probe, Silkscreen policy and 3.68" policy tests (as is and forced `uc8279`), BoardConfig
+`test_probe_checks`, FrontlightManager `test_load_policy`, **FreeInkUI `run.sh`** (295918 checks), **BleKeyboardHost
+`run.sh`** (287 checks), SecureNet `run.sh` and ContentProtection's zip and lcp tests. With the Xtensa 14.2 g++:
+BoardConfig `run_profile_asserts.py` (41 cases), the battery log core's `static_assert`s (with and without
+`SILKSCREEN_BATLOG`), and the syntax checks of FreeInkDisplay `run_pro.py` and `run_picco.py`, InputManager `run_eego.sh` and
+AudioManager `run_metalio.sh` (no compile error; the run step finds no binary). The suites that call `cc` or `zip`
+(CatalogList, FreeInkFont, FreeInkBook, the last part of ContentProtection) cannot run on this host: the shim has no C
+compiler wrapper and the host no `zip`.
+
 ## What it cannot do
 
 - **Link a test that does `#define private public`.** MSVC mangles the access specifier into the name, so the
@@ -87,8 +104,8 @@ message. With upstream's ungated fix no configuration of `run_uc8279.py` fails.
   PlatformIO Xtensa g++ (`toolchain-xtensa-esp-elf`, 14.2) with `-fsyntax-only`. The compile step then passes or
   fails as with a real g++, and the run step finds no binary.
 - **Static-assert suites that need GNU extensions**: BoardConfig `run_profile_asserts.py` (it finds the Xtensa 14.2 g++
-  itself), PowerManager `test_batterylog_core` (compile with the Xtensa 14.2 g++; the esp32s3 package's 8.4 fails 17 of its
-  asserts), and `run_uc8279c_a4.py`, which fails at upstream's own pin.
+  itself) and PowerManager `test_batterylog_core` (compile with the Xtensa 14.2 g++; the esp32s3 package's 8.4 fails 17 of its
+  asserts). `run_uc8279c_a4.py` failed at upstream's own pin until 2026-10-19 and runs through the shim now.
 - Sanitizers, and any runner that passes a flag with no cl equivalent beyond the ones above (it prints
   `cxx_msvc: ignoring <flag>`).
 
@@ -99,7 +116,9 @@ message. With upstream's ungated fix no configuration of `run_uc8279.py` fails.
 - A batch file splits `/DX=1` at the `=` when it reads positional parameters. Put arguments in a response file
   (`cl @args.rsp`), as `cxx_msvc.py` does; `cxx_msvc.bat` passes `%*` straight to python.
 - Python on an MSYS path (`/c/...`) fails; the wrappers resolve their own directory with `pwd -W`. Give `CXX` a
-  `C:/...` path.
+  `C:/...` path, and put the shim's `bin` on `PATH` in its `/c/...` form: a `C:/...` entry splits at the colon and breaks
+  `PATH` (the shim's `python` is then not found). Git Bash also rewrites an argument that starts with `//` (a C++ comment
+  passed to a helper script) unless `MSYS_NO_PATHCONV=1` is set.
 - Run python runners with `-B` (`importlib` and `-m` write `__pycache__` next to the runner, inside the SDK tree).
 - cl's diagnostics are not g++'s: `-Werror` and the `-W*` flags are ignored, so a clean MSVC run is not a clean g++
   `-Wall -Wextra -Werror` run. Syntax-check what you change with the Xtensa g++ too (UPSTREAM-SYNC.md, step 1).

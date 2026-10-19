@@ -31,6 +31,16 @@ Pins:
 
 - Nobody is building or flashing from these checkouts. The build matrix wipes `.pio/build` (below), and a
   build running at the same time hits `firmware.map` locks or loses its outputs.
+- **Two syncs at once.** The CrossPoint and CrossInk syncs can run side by side (the merges, the host tests and the
+  reviews do), but their `pio` runs must not: pioarduino's ComponentManager rewrites the *shared*
+  `~/.platformio/packages/framework-arduinoespressif32-libs` while a build runs, and on 2026-10-19 two overlapping builds
+  in the two checkouts ended one of them on `fatal error: esp_bt.h: No such file` in NimBLE-Arduino (the header was on
+  disk when looked at afterwards). Every `pio` call takes the lock directory `silkscreen-firmware/.pio-build.lock`
+  first (`mkdir` is atomic: if it exists, wait and retry), writes its name and a UTC time to `owner.txt` inside it, and
+  removes the directory when the build ends, a failed build included (a `trap`). Hold it for one env at a time, so the
+  other session takes its turn between envs. A lock whose `owner.txt` is older than 90 minutes with no `pio.exe`
+  running is stale and may be removed. A build that overlapped another one is repeated under the lock before any size
+  or diagnostic is trusted, and an image is frozen only from a build made under it.
 - No other job (a Claude workflow, an editor's auto-save, a formatter) is writing to the repos. A job that
   commits with `git add -A` sweeps in whatever new files it finds.
 - Working trees are clean. Commits stay local: never push, open a PR or retag without the user's approval.
@@ -87,7 +97,9 @@ to the byte.
 2. **CrossPoint.** `git merge upstream/develop` on `silkscreen`.
    - For each conflict, find the upstream PR in the commit message and read it before resolving: keep
      upstream's intent, then re-apply the Silkscreen hunk on top.
-   - Conflict hotspots: `src/main.cpp`, `lib/hal/HalGPIO.*`, `lib/hal/HalPowerManager.*`, `src/SettingsList.h`,
+   - Conflict hotspots: `src/main.cpp`, `lib/hal/HalGPIO.*`, `lib/hal/HalPowerManager.*`, `src/SettingsList.h` and
+     `src/SettingsList.cpp` (upstream builds its shared list there since 2026-10-19; git cannot carry our edits of the
+     old inline list over, so re-apply them by hand), `src/activities/settings/SettingsActivity.cpp`,
      `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`,
      `src/activities/reader/ClipSelectionActivity.*` and `EpubReaderClippingListActivity.cpp` (the key-access
      hunks), `src/activities/ActivityManager.cpp`, `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on
@@ -106,6 +118,13 @@ to the byte.
      (upstream's entries in upstream's order, then Silkscreen's), and test a saved value against what the board
      offers (`longPressMenuValueAccepted()`, `shortPowerButtonValueAccepted()`), so other boards equal upstream.
      A web page that hides a row by a list position must ask the device where it is (`toggleFrontlightIndex`).
+   - 2026-10-19: Bookmark, Sync and Reader Menu took Short Power 7 to 9 and Footnotes took Long-press Confirm 6, so
+     Toggle Frontlight moved from 7 to 10 and the Frontlight panel from 6 to 7; the owner re-picks both. Where upstream
+     turns an option list into a function of its own (`shortPowerButtonOptions()`), take it whole and add Silkscreen's
+     entry with one line after it. Silkscreen does not offer Bookmark, Sync and Reader Menu (they are for touch boards
+     without keys: `hasFrontButtons()` answers `!hasTouch()` on every board upstream lists), because the power
+     double-click defers every short-click action and these act at the release in `MappedInputManager::update()`;
+     a saved 7 to 9 loads as Ignore on Silkscreen. List such a difference in the record, with its reason.
    - Silkscreen-only behaviour stays gated on the board (`BoardConfig::isSilkscreen()` or profile data), so every
      other board builds and behaves as upstream's.
    - Keep new reader, network and plugin code out of the test image (`check_test_firmware.sh` fails on it).
@@ -127,6 +146,10 @@ to the byte.
      (`ClippingSync.cpp`, `request()`) and CrossInk's web streams and sync uploads (`CutoffAbortPrint.h`,
      `StatsUploadClient.cpp`). Search the incoming diff for `SecureHttpClient`, `HTTPClient`, `NetworkClient`,
      `readFileToStream` and `WebServer` raw callbacks.
+     2026-10-19 found the same in `HttpDownloader` itself: `fetchUrl(FetchOptions)`, `postForm()` and `postToFile()` do not
+     go through `fetchResumable()`, whose abort predicate carries the cutoff, and the plugin catalog's `pluginhttp::request()`
+     calls took no predicate. `SecureHttpClient::GET()` and `sendRequest()` return the status line of a body the abort cut
+     short, so check `http.aborted()` as well as the status.
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
    time. It runs the sleep-wake guard, the real envs, the image checks (CrossPoint's test firmware checks; in both apps the
    3.68" variant's no-touch audit, then the same audit on the 4.26" `silkscreen` image as its control, which must
@@ -230,6 +253,18 @@ to the byte.
 - On Windows, stopping a shell or ending an agent can leave its `pio` children running, and a later build in the same
   checkout then fails on missing `.pio/build` paths. Before a build, check nothing is left
   (`tasklist //FI "IMAGENAME eq pio.exe"`; `build_matrix.sh` does this), and end leftovers with `taskkill /PID <pid> /T /F`.
+- A grep guard cannot see `#if`. Upstream's Picco USB hold (`HalPowerManager::holdWhileUsbPowered()`, 2026-10-19)
+  light-sleeps inside `#if FREEINK_DEVICE_PICCO`, so the sleep guard skips the lines of that exact arm and of no other
+  condition (an `#else` or `#elif` arm, a compound condition and every other device macro stay checked), and `nm` on a
+  Silkscreen ELF must show none of its symbols. A new device-gated block with sleep calls of its own needs that check
+  before the guard is widened again.
+- The test firmware has routing stubs of its own and leaves source files out of its build, so an upstream change can
+  pass every reader env and fail only in `silkscreen-test` and `silkscreen-368-test`. On 2026-10-19
+  `ActivityManager::goToSettings()` took a `SettingsSection` while the stub in `TestSuiteRouting.cpp` still defined the
+  old signature ("no declaration matches"), and `CrossPointSettings::fromJson()` called `PluginLocations`, which the test
+  build leaves out, so the link failed on one undefined reference. Build `silkscreen-test` first, before the long
+  matrix, because no reader env compiles the stubs. Read the link's undefined references, and gate the new call with
+  `CROSSPOINT_TEST_SUITE` as `main.cpp` does; do not add the file to the test build.
 - Never run `pio check` or any other `pio` command next to a build: on 2026-10-02 that broke PlatformIO's package
   install (esptool, urllib3 and charset-normalizer had to be restored).
 - A file appended to with `>>` must end in a newline first: CrossInk's `.gitattributes` did not, and the new rule was
