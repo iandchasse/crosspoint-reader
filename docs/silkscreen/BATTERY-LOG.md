@@ -115,8 +115,9 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
   footprint over a release env built after it is about 28 B smaller than these figures; the batlog image itself did
   not change size.
 - **OTA slot headroom** (the 6553600 B app slot less `firmware.bin`): CrossPoint (2026-10-19: the NotoSerif
-  fonts left the firmware and the Bluetooth page turner came in) `silkscreen` 1132656 B, `silkscreen-batlog` 1168096 B and
-  `c3check` 1120032 B, and `silkscreen-gh_release` 753328 B from before, not rebuilt since; CrossInk `silkscreen` 934800 B,
+  fonts left the firmware and the Bluetooth page turner came in, then the recursive dictionary lookup) `silkscreen` 1118992 B,
+  `silkscreen-batlog` 1154448 B and `c3check` 1110048 B (1132656, 1168096 and 1120032 B before the second round of that day), and
+  `silkscreen-gh_release` 753328 B from before, not rebuilt since; CrossInk `silkscreen` 934800 B,
   `silkscreen-batlog` 925984 B, `c3check` 224560 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
   the tight one, and the log does not touch it.
 - **The SD card:** one file, 2 MiB cap, about 230 B a row (about 9000 rows, about 15 months at 20 cycles a day). Eight

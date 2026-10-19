@@ -43,6 +43,11 @@ Pins:
   other session takes its turn between envs. A lock whose `owner.txt` is older than 90 minutes with no `pio.exe`
   running is stale and may be removed. A build that overlapped another one is repeated under the lock before any size
   or diagnostic is trusted, and an image is frozen only from a build made under it.
+- **A second round the same day.** Upstream can move again before the record of the first round is done (2026-10-19:
+  ten more app commits and a new SDK pin after the first merge). Run the steps again as a round of their own, with its own
+  row: `upstream_status.sh` with its fetch, the SDK pin first, then the new shared head to the CrossInk side, then the app.
+  Rebuild what the new commits reach (all of the envs when `platformio.ini`'s version string moved, as it did), freeze
+  the four owner images once, from the final tree, and do not chase a third round: report where the work stopped.
 - No other job (a Claude workflow, an editor's auto-save, a formatter) is writing to the repos. A job that
   commits with `git add -A` sweeps in whatever new files it finds.
 - Working trees are clean. Commits stay local: never push, open a PR or retag without the user's approval.
@@ -50,7 +55,9 @@ Pins:
   the xtensa g++ for syntax-only checks (`~/.platformio/packages/toolchain-xtensa-esp-elf/bin`, 14.2: the
   esp32s3 package's 8.4 fails 17 of the battery log core's `static_assert`s), and Visual Studio Build Tools
   2022 (MSVC 19.44, toolset 14.44), which **runs** the SDK host tests: `scripts/silkscreen/msvc/` is a `c++` over `cl.exe`
-  (its README: use, what ran, the tests it cannot link, the traps). There is no g++ on the host. The tests that
+  (its README: use, what ran, the tests it cannot link, the traps). `hostcc.py` adds `cc` and object files for the
+  suites that build a C file first (ContentProtection), and `run_app_host_tests.py` runs the app's python host tests
+  and `test/clipping_sync` (the Google Test suites are not run: configuring them downloads Google Test). There is no g++ on the host. The tests that
   `#define private public` are syntax-checked with the xtensa g++ instead.
 - `git config core.longpaths true` in every repo (the scripts also set it per call).
 
@@ -100,8 +107,12 @@ to the byte.
    - For each conflict, find the upstream PR in the commit message and read it before resolving: keep
      upstream's intent, then re-apply the Silkscreen hunk on top.
    - Conflict hotspots: `src/main.cpp`, `lib/hal/HalGPIO.*`, `lib/hal/HalPowerManager.*`, `src/SettingsList.h` and
-     `src/SettingsList.cpp` (upstream builds its shared list there since 2026-10-19; git cannot carry our edits of the
-     old inline list over, so re-apply them by hand), `src/activities/settings/SettingsActivity.cpp`,
+     `src/SettingsList.cpp` (upstream builds its shared list there since 2026-10-19 and #4085 rewrote it the same day
+     to `forEachBaseSetting()`, which `emit()`s each entry with its board condition; git cannot carry our edits over, so take
+     upstream's file whole and put the Silkscreen differences back by hand: the double-click row's condition,
+     the fading fix and the two key settings on `hasFrontButtons()`, two comments; then compare the file's key strings and
+     each board's conditions with the previous file, because the persisted keys follow the list),
+     `src/activities/settings/SettingsActivity.cpp`,
      `src/CrossPointSettings.*`, `src/activities/reader/EpubReaderActivity.cpp`,
      `src/activities/reader/ClipSelectionActivity.*` and `EpubReaderClippingListActivity.cpp` (the key-access
      hunks), `src/activities/ActivityManager.cpp`, `src/util/PluginEvents.cpp` (keep the Silkscreen early stop on
@@ -202,7 +213,11 @@ to the byte.
       `onEnter()` tests the opening long press with `wordAtPage()`; the clippings list's hint and the toolbar's
       `panelCursorShown` follow it too, and the second Confirm opens the Look Up / Clip / Bookmark list only where
       `hasTouch() && hasFrontButtons()` (upstream's code clips at once). Read each new touch-only control upstream
-      adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys.
+      adds to the selection, the lists or the reader menu against what a keys-only X4 reaches by keys. A state that
+      upstream *remembers* is a place to look: 2026-10-19 the recursive dictionary lookup (#4063) remembered the
+      selected range, and with keys alone its start could never be moved or cleared (touch restarts it with a long
+      press), so `DictionaryDefinitionActivity::startSelection()`'s result handler forgets a cancelled range on
+      Silkscreen (`4372b8bd`; a keys-only X4 has the limit as upstream wrote it).
    - *Sleep and wake calls in the SDK* (`PowerManager::armWakeOnPins()`, `deepSleep()`, `powerDownRailsForSleep()`;
      the apps' `HalPowerManager::startDeepSleep()`): read every upstream edit against POWER.md section 2's pin table
      and rules ZD-01, PB-01, PB-02 and WK-01, name the pads and pulls a change reaches on Silkscreen (IO18 is the only
@@ -273,6 +288,13 @@ to the byte.
   build leaves out, so the link failed on one undefined reference. Build `silkscreen-test` first, before the long
   matrix, because no reader env compiles the stubs. Read the link's undefined references, and gate the new call with
   `CROSSPOINT_TEST_SUITE` as `main.cpp` does; do not add the file to the test build.
+- Upstream's host tests slice or stub code the port edits. On 2026-10-19 (second round) two of them stopped building on
+  our tree: `test/test_selection_buttons.py` cuts `ClipSelectionActivity::loop()` out of the source up to the first touch
+  read and compiles it in a small harness, and `test/clipping_sync` builds `ClippingSync.cpp` with stubs. The port's key
+  path and its cutoff poll were not in the harnesses, and neither test had been run on this host before. Run the app's
+  host tests (`scripts/silkscreen/msvc/run_app_host_tests.py`), and when one stops building, give its harness the port's
+  members, leave upstream's cases as they are and add a case for the port edit (check that it fails with the edit cut
+  out); do not drop the test.
 - Never run `pio check` or any other `pio` command next to a build: on 2026-10-02 that broke PlatformIO's package
   install (esptool, urllib3 and charset-normalizer had to be restored).
 - A file appended to with `>>` must end in a newline first: CrossInk's `.gitattributes` did not, and the new rule was
