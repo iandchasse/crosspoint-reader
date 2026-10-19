@@ -8,17 +8,44 @@
 #   power-domain override, no ultra-low sleep mode. The one exception is upstream's
 #   RTC_PERIPH override in PowerManager::armWakeOnPins(), allowed only behind the
 #   InputPins::powerExternalPull exemption that keeps Silkscreen's IO18 out of it.
-# Comment lines are ignored. Exits non-zero and lists the offending lines.
+# Comment lines are ignored, and so are the lines of an `#if FREEINK_DEVICE_PICCO` arm: no Silkscreen
+# build defines that macro, so the arm is never compiled (upstream's HalPowerManager::holdWhileUsbPowered()
+# light-sleeps for the Picco's USB hold, 2026-10-19). Its #else and #elif arms are compiled for the other
+# boards, Silkscreen included, and stay checked. Exits non-zero and lists the offending lines.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
 roots=(src lib freeink-sdk/libs)
 power_manager="freeink-sdk/libs/hardware/PowerManager/src/PowerManager.cpp"
 
+# Whether line $2 of file $1 sits in the `#if FREEINK_DEVICE_PICCO` arm of a conditional (an #else or #elif
+# of the same conditional ends the arm; a nested conditional is followed to its #endif).
+in_picco_arm() {
+  awk -v target="$2" '
+    NR > target { exit }
+    /^[[:space:]]*#[[:space:]]*if/ {
+      depth++
+      if (!arm && $0 ~ /^[[:space:]]*#[[:space:]]*if[[:space:]]+FREEINK_DEVICE_PICCO[[:space:]]*(\/\/.*|\/\*.*)?$/) arm = depth
+      next
+    }
+    /^[[:space:]]*#[[:space:]]*(else|elif)/ { if (arm && depth == arm) arm = 0; next }
+    /^[[:space:]]*#[[:space:]]*endif/ { if (arm && depth == arm) arm = 0; depth--; next }
+    END { exit !(arm && NR >= target) }
+  ' "$1"
+}
+
 code_matches() {
-  grep -rnE --include='*.c' --include='*.cpp' --include='*.h' --include='*.hpp' "$1" "${roots[@]}" |
+  local hits line file number
+  hits=$(grep -rnE --include='*.c' --include='*.cpp' --include='*.h' --include='*.hpp' "$1" "${roots[@]}" |
     grep -v '/test/' |
-    grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)'
+    grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)')
+  [ -n "$hits" ] || return 1
+  while IFS= read -r line; do
+    file=${line%%:*}
+    number=${line#*:}
+    number=${number%%:*}
+    in_picco_arm "$file" "$number" || printf '%s\n' "$line"
+  done <<<"$hits" | grep .
 }
 
 status=0
