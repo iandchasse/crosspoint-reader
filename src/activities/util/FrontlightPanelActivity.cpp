@@ -16,6 +16,7 @@
 #include "components/UIThemeTokens.h"
 #include "components/icons/customListIcons.h"
 #include "components/icons/listIcons.h"
+#include "util/SlideSwitch.h"
 
 namespace fui = freeink::ui;
 
@@ -116,7 +117,7 @@ void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, v
   if (event.dragPermille < 0) return;
   self->brightness = std::max(MIN_BRIGHTNESS, percentFromPermille(event.dragPermille));
   Frontlight.setBrightness(self->brightness);
-  if (!self->lightOn && self->levelSwitchesOn()) {
+  if (!self->lightOn && self->levelSwitchesOn() && !slideSwitchOwnsLight()) {
     self->lightOn = true;
     self->lightOnChanged = true;
     Frontlight.setOn(true);
@@ -199,7 +200,7 @@ void FrontlightPanelActivity::adjustBrightness(const int delta) {
   if (next == brightness) return;
   brightness = static_cast<uint8_t>(next);
   Frontlight.setBrightness(brightness);
-  if (!lightOn && levelSwitchesOn()) {
+  if (!lightOn && levelSwitchesOn() && !slideSwitchOwnsLight()) {
     lightOn = true;
     lightOnChanged = true;
     Frontlight.setOn(true);
@@ -351,7 +352,7 @@ void FrontlightPanelActivity::loop() {
     return;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    toggleLight();
+    if (!slideSwitchOwnsLight()) toggleLight();
     return;
   }
 
@@ -470,7 +471,7 @@ void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
 
   if (Frontlight.present()) {
     addSliderRow(screen, tr(STR_BRIGHTNESS), brightness, ACTION_BRIGHTNESS, ACTION_BRIGHTNESS_STEP,
-                 /*showToggle=*/true);
+                 /*showToggle=*/!slideSwitchOwnsLight());
 #if FREEINK_CAP_FRONTLIGHT_PROBE
     if (noLightNote) drawNote(screen, tr(STR_FRONTLIGHT_NOT_DETECTED));
 #endif

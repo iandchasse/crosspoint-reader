@@ -103,6 +103,8 @@ jobs:
             asset: firmware-metalio_eink4.bin
           - env: eego_a4
             asset: firmware-eego_a4.bin
+          - env: picco
+            asset: firmware-picco.bin
           - env: silkscreen
             asset: firmware-silkscreen.bin
           # The 3.68" X3-panel variant (docs/silkscreen/MODULARITY.md): its own envs
