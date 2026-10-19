@@ -1,11 +1,13 @@
 #include <ArduinoJson.h>
 #include <ClippingStore.h>
 #include <HalMemory.h>
+#include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <KOReaderCredentialStore.h>
 #include <SecureHttpClient.h>
 
 #include <cassert>
+#include <climits>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -25,6 +27,7 @@ void reset() {
   fake::uploads.clear();
   fake::requests = 0;
   fake::failHttpAt = -1;
+  fake::cutoffAfterRequests = INT_MAX;
   fake::incomplete = false;
   fake::remoteResponse = "{\"cursor\":0,\"more\":false,\"items\":[]}";
   syncCredentials.enabled = true;
@@ -77,11 +80,34 @@ void maximumTextRoundTrip() {
   assert(stored == text);
   CLIPPINGS.unload();
 }
+// Silkscreen BAT-01: the sync runs inside the activity, so it stops at the low-battery cutoff on its own, before
+// it sends the next request (the probe, then one upload per clipping).
+void stopsAtLowBatteryCutoff() {
+  reset();
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
+  fake::syncHeap = 100000;
+#endif
+  add("pending clipping");
+  fake::cutoffAfterRequests = 0;
+  assert(!clippingSync::run(book, "hash"));
+  assert(fake::requests == 0 && fake::uploads.empty());
+  released();
+  reset();
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
+  fake::syncHeap = 100000;
+#endif
+  add("pending clipping");
+  fake::cutoffAfterRequests = 1;  // trips after the probe: the upload is not sent
+  assert(!clippingSync::run(book, "hash"));
+  assert(fake::requests == 1 && fake::uploads.empty());
+  released();
+}
 }  // namespace
 
 int main() {
   buildscratch::lend(framebuffer.data(), framebuffer.size());
   maximumTextRoundTrip();
+  stopsAtLowBatteryCutoff();
   for (int failure = 0; failure < 3; ++failure) {
     reset();
 #if defined(CONFIG_IDF_TARGET_ESP32S3) && CONFIG_IDF_TARGET_ESP32S3
