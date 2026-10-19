@@ -149,7 +149,10 @@ to the byte.
      2026-10-19 found the same in `HttpDownloader` itself: `fetchUrl(FetchOptions)`, `postForm()` and `postToFile()` do not
      go through `fetchResumable()`, whose abort predicate carries the cutoff, and the plugin catalog's `pluginhttp::request()`
      calls took no predicate. `SecureHttpClient::GET()` and `sendRequest()` return the status line of a body the abort cut
-     short, so check `http.aborted()` as well as the status.
+     short, so check `http.aborted()` as well as the status. A search of the incoming diff alone misses old SDK code that
+     a new caller makes reachable: the OPDS client's implicit OAuth login (`OpdsImplicitAuth.cpp`, up to ten requests of
+     its own) was in no diff and came up in a review. Also list every `SecureHttpClient` and `HTTPClient` user in the tree
+     (`git grep`) and check each against the cutoff; the ones left are single bounded requests (the KOReader sync's).
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
    time. It runs the sleep-wake guard, the real envs, the image checks (CrossPoint's test firmware checks; in both apps the
    3.68" variant's no-touch audit, then the same audit on the 4.26" `silkscreen` image as its control, which must
@@ -158,9 +161,12 @@ to the byte.
    (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
    call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `silkscreen-368`,
    `silkscreen-368-batlog`, `silkscreen-368-test`, `x4pro`, then `c3check`; CrossInk: `silkscreen`, `silkscreen-batlog`,
-   `silkscreen-368`, `silkscreen-368-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix takes 40-70
-   minutes (CrossInk's seven envs took 46 minutes on 2026-10-12 with the machine quiet; earlier stage logs show 41
-   and 66).
+   `silkscreen-368`, `silkscreen-368-batlog`, `x4-pro`, `x4-classic`, then `c3check`); a whole matrix took 40-70
+   minutes until the Bluetooth page turner (CrossInk's seven envs took 46 minutes on 2026-10-12 with the machine quiet;
+   earlier stage logs show 41 and 66). Since 2026-10-19 NimBLE adds 189 object files to every env: an env built from
+   scratch takes 12 to 15 minutes (`silkscreen-test` 12:23, `silkscreen-batlog` 13:59, `silkscreen-368` 15:03) and one
+   rebuilt after a few source changes about 2.5 minutes, so a CrossPoint matrix from scratch takes about two hours,
+   and longer when two syncs share the build lock.
    `silkscreen-batlog` is the battery log's own env ([BATTERY-LOG.md](BATTERY-LOG.md)): the release env's sources and flags
    plus `-DSILKSCREEN_BATLOG=1`. It must still build in both repos, and its size next to the release env's is the log's
    footprint. A hook that a conflict resolution left outside its `#if SILKSCREEN_BATLOG` blocker fails every env that lacks
