@@ -117,7 +117,7 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
     doc["dictionaryName"] = dictionaryName;
   }
   // These two list positions map to board-specific values (longPressMenuValues() and
-  // shortPowerButtonValues() in SettingsList.h), so the generic persistence loop skips them
+  // shortPowerButtonOptions() in SettingsList.h), so the generic persistence loop skips them
   // and they are saved by value.
   doc["longPressMenuFunction"] = longPressMenuFunction;
   doc["shortPwrBtn"] = shortPwrBtn;
