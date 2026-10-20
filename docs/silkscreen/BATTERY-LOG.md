@@ -120,7 +120,7 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
   `silkscreen-gh_release` 753328 B from before, not rebuilt since; CrossInk `silkscreen` 934800 B,
   `silkscreen-batlog` 925984 B, `c3check` 224560 B. After the render watchdog (2026-10-20): CrossPoint `silkscreen` 1117440 B,
   `silkscreen-batlog` 1152976 B, `silkscreen-368-gh_release` 1188192 B and `c3check` 1110048 B (unchanged); CrossInk `silkscreen`
-  1188336 B and `silkscreen-batlog` 1179632 B (its figures just above are those of 2026-10-04). The batlog image fits with room in both readers. CrossInk's `c3check` is
+  1188336 B and `silkscreen-batlog` 1179632 B (its figures just above are those of 2026-10-04). After the watchdog's fix pass (2026-10-20, only the images that were rebuilt): CrossPoint `silkscreen` 1116112 B and `silkscreen-batlog` 1151600 B; CrossInk `silkscreen` 1187104 B and `silkscreen-batlog` 1178304 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
   the tight one, and the log does not touch it.
 - **The SD card:** one file, 2 MiB cap, about 230 B a row (about 9000 rows, about 15 months at 20 cycles a day). Eight
   weeks of use writes 0.15-0.2 MB.
@@ -301,7 +301,7 @@ verified wake that stays up.
 | SD-fail ghost, late ghost (CrossPoint only) | `g_n` + 1 | the wake sample |
 | Release wake (the key was held at sleep entry and its release wakes the board) | **not recorded**; `fl_e` bit 4 on the entry row says it happened | none |
 | Reset-loop sleep (3 abnormal resets in a row) | **not recorded**; `ab` on the later row counts the crashes | none |
-| Render-watchdog sleep (a `render()` that ran 5 minutes on battery, [POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)) | **not recorded**; the next wake writes an orphan row (`k` B) | none |
+| Render-watchdog sleep (a `render()` with no progress for 5 minutes, or a sleep entry that took 3, on battery, [POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)) | **not recorded**; the next wake writes an orphan row (`k` B) (a hung sleep entry had staged its row in RAM, which the restart empties) | none |
 | Power-pin fault halt | not a re-sleep: it sleeps with no wake source, and the cycle is not recorded | none |
 
 The release-wake and reset-loop exits call **no battery-log hook**: they run before the wake decision, where nothing new
@@ -313,7 +313,7 @@ bit 1, `wk` `c`) every tap boots fully, so ghost counts are structurally zero.
 
 | You see | Meaning |
 |---|---|
-| A `k` B orphan row after a long awake time, with no flash or battery swap before it | The render watchdog slept the board after a hung render ([POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)): a restart empties RAM, so no entry was staged and no hook ran, as for the reset loop's sleep. The hung session's awake time (the bound plus up to one 5 s tick, at 30-45 mA [est]) is in no row, so the voltage step across that cycle is larger than any recorded awake time explains. The format and the analyzer are unchanged. |
+| A `k` B orphan row after a long awake time, with no flash or battery swap before it | The render watchdog slept the board after a hung render or a hung sleep entry ([POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)): a restart empties RAM, so no entry was staged (or the one a hung sleep entry had staged is gone) and no hook ran, as for the reset loop's sleep. The hung session's awake time (the bound, 5 min or 3 min for a sleep entry, plus up to one 5 s tick, at 30-45 mA [est]) is in no row, so the voltage step across that cycle is larger than any recorded awake time explains. The format and the analyzer are unchanged. |
 | `k = B` rows, `row` back at 1 | The record was lost: a flash, a power loss, the cell pulled, the EN button. `rst` tells flash from power loss. |
 | A gap in `row`, `drop` above 0 | A row did not reach the card (SD trouble, the 2 MiB cap, a sleep that began with a row still pending). |
 | Empty `utc` | No clock sync in this power-on domain yet; the analyzer back-fills from a later row. |

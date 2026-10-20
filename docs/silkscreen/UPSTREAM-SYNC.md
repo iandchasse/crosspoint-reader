@@ -167,9 +167,11 @@ to the byte.
      its own) was in no diff and came up in a review. Also list every `SecureHttpClient` and `HTTPClient` user in the tree
      (`git grep`) and check each against the cutoff; the ones left are single bounded requests (the KOReader sync's).
 6. **Build and checks.** In each repo, `scripts/silkscreen/build_matrix.sh` (`--full` before a release), one repo at a
-   time. It runs the sleep-wake guard, the real envs, the image checks (CrossPoint's test firmware checks; in both apps the
-   3.68" variant's no-touch audit, then the same audit on the 4.26" `silkscreen` image as its control, which must
-   fail), then the proxy envs **last**: a
+   time. It runs the sleep-wake guard, the render watchdog's source guard (`test_render_watchdog.py --source-only`), the
+   real envs, the image checks (CrossPoint's test firmware checks; after every env the render watchdog's image check,
+   `check_render_watchdog_elf.py`, which wants its hooks in each Silkscreen image and none in any other board's; a missing
+   guard or image-check script fails the matrix; in both apps the 3.68" variant's no-touch audit, then the same audit on
+   the 4.26" `silkscreen` image as its control, which must fail), then the proxy envs **last**: a
    different config file changes PlatformIO's project checksum, which wipes all of `.pio/build`. It refuses to start
    (exit 3) while any `pio` process runs. An agent whose shell commands are killed after 10 minutes builds one env per
    call in the same order (CrossPoint: `silkscreen`, `silkscreen-batlog`, `silkscreen-test`, `silkscreen-368`,
@@ -257,15 +259,27 @@ to the byte.
      immediately before `currentActivity->render(std::move(lock))` and `renderwatchdog::endRender()` immediately after
      it, all behind `FREEINK_CAP_POWER_POLICY`; `begin()` calls `renderwatchdog::start()` after it creates the render
      task. In `main.cpp`, `sleepWithoutDrivers()` holds the reset loop's sleep sequence for Silkscreen while
-     `sleepIfResetLoop()` keeps upstream's own lines in its `#else`; `setup()` calls `sleepIfRenderWatchdog()` right
-     after `sleepIfResetLoop()` and logs `renderwatchdog::takeReport()` after the wake-reason `switch`; `loop()` calls
-     `renderwatchdog::noteLoopPass()` right after `mappedInputManager.update()`, before any early return. Read the incoming
-     diffs of those functions, and of `Activity::render()`'s callers: a new activity whose `render()` can run for
-     minutes (a download, a scan, a wait for the user) is a restart-into-sleep on battery. `python -I -X utf8
-     scripts/silkscreen/test_render_watchdog.py --source-only` reads the order and the lock-free expiry path (run it
+     `sleepIfResetLoop()` keeps upstream's own lines in its `#else` and, in its Silkscreen branch, spends a pending
+     watchdog record before it sleeps (`renderwatchdog::resetLoopSlept()`); `enterDeepSleep()` calls
+     `renderwatchdog::beginSleepEntry()` as its first statement (the sleep screen is drawn by the loop task, outside the
+     render stamp, so this mark is the only cover of a hung sleep entry); `setup()` asks `renderwatchdog::holdsLogs()` and
+     calls `holdLastLogs(true)` before `HalSystem::begin()` (which would clear the log ring), calls
+     `sleepIfRenderWatchdog()` right after `sleepIfResetLoop()`, and after the wake-reason `switch` takes
+     `renderwatchdog::takeReport()` (`logWatchdogReport()` prints the held ring) and releases the ring
+     (`holdLastLogs(false)`, then `clearLastLogs()`); `loop()` calls `renderwatchdog::noteLoopPass()` right after
+     `mappedInputManager.update()`, before any early return. `lib/Logging` keeps `holdLastLogs()` and its early returns in
+     `addToLogRingBuffer()` and `clearLastLogs()`. The long renders re-stamp: `watchdogProgress()` after every
+     section-build chunk and popup in `EpubReaderActivity.cpp` and every cover in `HomeActivity.cpp` (CrossInk: also the
+     text index in `TxtReaderActivity.cpp`); a new upstream loop that builds or draws for long inside `render()` needs one
+     per chunk, or it is cut at 5 minutes on battery. Read the incoming diffs of those functions, and of
+     `Activity::render()`'s callers: a new activity whose `render()` can run for minutes without a chunk to re-stamp (a
+     download, a scan, a wait for the user) is a restart-into-sleep on battery. `python -I -X utf8
+     scripts/silkscreen/test_render_watchdog.py --source-only` reads the order of the hooks, the re-stamp sites, the log
+     hold, the pinned bounds and the lock-free expiry path (run it
      without `--source-only` and with `--control` through the MSVC shim to see the decision test and every control
      fail when its part is removed), `scripts/silkscreen/check_render_watchdog_elf.py <env>` reads the linked image
-     (`build_matrix.sh` runs both), and `upstream_status.sh` counts the hooks in both apps. If the SDK moves `adc::Lock`,
+     (`build_matrix.sh` runs both), and `upstream_status.sh` counts the hooks, the re-stamp sites and the guards in both
+     apps and that the SDK still defines `FREEINK_CAP_POWER_POLICY` as `(FREEINK_DEVICE_SILKSCREEN)`. If the SDK moves `adc::Lock`,
      `HalGPIO::isUsbConnected()`, `FrontlightConfig` or `esp_rom_printf`'s users, re-read POWER.md AW-04's list of what the
      expiry path calls: it may wait on nothing a stuck task can hold. CrossInk carries the same unit (its PORTING.md,
      drain checklist item 16).
