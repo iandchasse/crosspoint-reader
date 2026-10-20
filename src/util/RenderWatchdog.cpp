@@ -14,6 +14,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <cstdio>
 #include <cstring>
 
 // What may run once the watchdog has decided (docs/silkscreen/POWER.md, AW-04). The task that is stuck can hold any
@@ -32,14 +33,26 @@ constexpr UBaseType_t TASK_PRIORITY = 1;     // the render task's and the loop t
 constexpr BaseType_t TASK_CORE = 0;          // not the core of the render task and the loop task
 // As the battery log's burst: a miss is skipped, not waited out.
 constexpr TickType_t ADC_WAIT_TICKS = pdMS_TO_TICKS(20);
+// If the task could not be created at start(), noteLoopPass() tries again this often, this many times.
+constexpr uint32_t START_RETRY_MS = 60000;
+constexpr uint8_t START_RETRIES_MAX = 5;
+constexpr char SLEEP_ENTRY_NAME[] = "sleep entry";
 
-Stamp g_stamp;
+Stamp g_stamp;                             // the render task's mark
+Stamp g_sleepStamp;                        // the sleep entry's mark
 char g_activity[sizeof(Event::activity)];  // written before the stamp, read after it
 std::atomic<uint32_t> g_loopPassMs{0};
+std::atomic<void*> g_renderTask{
+    nullptr};  // the render task's handle, from beginRender(); progress() answers to it only
 TaskHandle_t g_task = nullptr;
+// The loop task's own bookkeeping for the retry: start() and noteLoopPass() both run on it.
+bool g_startWanted = false;
+uint8_t g_startTries = 0;
+uint32_t g_startTriedMs = 0;
 #if CROSSPOINT_TEST_SUITE
-std::atomic<uint32_t> g_boundOverrideMs{0};  // P9: a shorter bound, in RAM
-Event g_reported;                            // takeReport()'s record, for P9
+std::atomic<uint32_t> g_boundOverrideMs{0};       // P9: a shorter render bound, in RAM
+std::atomic<uint32_t> g_sleepBoundOverrideMs{0};  // P9: a shorter sleep-entry bound, in RAM
+Event g_reported;                                 // takeReport()'s record, for P9
 bool g_haveReported = false;
 // The task's stack headroom at the restart, kept beside the record (RTC_NOINIT: it survives the restart and the sleep),
 // for the report of the next boot. The word and its complement say that the value was written.
@@ -52,7 +65,7 @@ uint32_t g_reportedStackFree = 0;
 bool g_haveReportedStackFree = false;
 #endif
 
-// The bound in force: BOUND_MS, or, in the hardware test firmware, what P9 set.
+// The bounds in force: the constants, or, in the hardware test firmware, what P9 set.
 uint32_t currentBoundMs() {
 #if CROSSPOINT_TEST_SUITE
   const uint32_t shorter = g_boundOverrideMs.load(std::memory_order_relaxed);
@@ -61,11 +74,20 @@ uint32_t currentBoundMs() {
   return BOUND_MS;
 }
 
+uint32_t currentSleepEntryBoundMs() {
+#if CROSSPOINT_TEST_SUITE
+  const uint32_t shorter = g_sleepBoundOverrideMs.load(std::memory_order_relaxed);
+  if (shorter != 0) return shorter;
+#endif
+  return SLEEP_ENTRY_BOUND_MS;
+}
+
 // The record the restart leaves in RTC memory (RTC_NOINIT: it survives a software restart and deep sleep, and is
 // garbage after a power loss, which the magic word and the check reject).
 struct Record {
   uint32_t magic;
   uint32_t phase;
+  uint32_t kind;
   uint32_t stuckMs;
   uint32_t uptimeMs;
   char activity[sizeof(Event::activity)];
@@ -77,7 +99,7 @@ constexpr uint32_t PHASE_SLEPT = 2;            // that boot slept: the next one 
 RTC_NOINIT_ATTR Record g_record;
 
 uint32_t checksum(const Record& r) {
-  uint32_t sum = r.magic ^ (r.phase * 2654435761u) ^ (r.stuckMs * 40503u) ^ (r.uptimeMs * 69069u);
+  uint32_t sum = r.magic ^ (r.phase * 2654435761u) ^ (r.kind * 97u) ^ (r.stuckMs * 40503u) ^ (r.uptimeMs * 69069u);
   for (const char c : r.activity) sum = sum * 31u + static_cast<uint8_t>(c);
   return sum;
 }
@@ -86,6 +108,7 @@ void store(const uint32_t phase, const Event& e) {
   Record r{};
   r.magic = RECORD_MAGIC;
   r.phase = phase;
+  r.kind = static_cast<uint32_t>(e.kind);
   r.stuckMs = e.stuckMs;
   r.uptimeMs = e.uptimeMs;
   std::memcpy(r.activity, e.activity, sizeof(r.activity));
@@ -97,6 +120,7 @@ void store(const uint32_t phase, const Event& e) {
 bool take(const uint32_t phase, const uint32_t next, Event& out) {
   const Record r = g_record;
   if (r.magic != RECORD_MAGIC || r.phase != phase || r.check != checksum(r)) return false;
+  out.kind = r.kind == static_cast<uint32_t>(Kind::SleepEntry) ? Kind::SleepEntry : Kind::Render;
   out.stuckMs = r.stuckMs;
   out.uptimeMs = r.uptimeMs;
   std::memcpy(out.activity, r.activity, sizeof(out.activity));
@@ -166,6 +190,8 @@ void darkenLight() {
 #endif
 }
 
+// The light goes dark first and the line is printed after: the ROM's printf can wait a few milliseconds a character on
+// the USB-JTAG FIFO when nothing reads it, and the boost has no reason to wait for that.
 [[noreturn]] void restartIntoSleep(const Event& event) {
 #if CROSSPOINT_TEST_SUITE
   // The deepest the task's stack has been, the decision and its ADC reading included: P9 reports it, so that the
@@ -174,10 +200,15 @@ void darkenLight() {
   g_stackNote = {freeBytes, ~freeBytes};
 #endif
   store(PHASE_RESTARTING, event);
-  esp_rom_printf("[RWD] render() has run for %lu ms in %s on battery (bound %lu ms): restarting into deep sleep\n",
-                 static_cast<unsigned long>(event.stuckMs), event.activity,
-                 static_cast<unsigned long>(currentBoundMs()));
   darkenLight();
+  if (event.kind == Kind::SleepEntry) {
+    esp_rom_printf("[RWD] the sleep entry has run for %lu ms on battery (bound %lu ms): restarting into deep sleep\n",
+                   static_cast<unsigned long>(event.stuckMs), static_cast<unsigned long>(currentSleepEntryBoundMs()));
+  } else {
+    esp_rom_printf("[RWD] render() has run for %lu ms in %s on battery (bound %lu ms): restarting into deep sleep\n",
+                   static_cast<unsigned long>(event.stuckMs), event.activity,
+                   static_cast<unsigned long>(currentBoundMs()));
+  }
   vTaskSuspendAll();  // as esp_restart() does just before it; interrupts are off from the first line of the call
   esp_restart_noos();
 }
@@ -185,38 +216,71 @@ void darkenLight() {
 void taskMain(void*) {
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(TICK_MS));
-    const uint32_t stamp = g_stamp.get();  // the stamp first, then the clock: the stamp is never later than `now`
-    if (stamp == 0) continue;
+    // The stamps first, then the clock: a stamp is never later than `now`.
+    const uint32_t renderStamp = g_stamp.get();
+    const uint32_t sleepStamp = g_sleepStamp.get();
+    if (renderStamp == 0 && sleepStamp == 0) continue;
     const uint32_t now = millis();
-    const uint32_t bound = currentBoundMs();
-    if (!renderStuck(now, stamp, bound, true)) continue;               // not yet: the clock alone decides
-    if (!renderStuck(now, stamp, bound, onBatteryNow(now))) continue;  // then the question that reads a pin
+    const uint32_t renderBound = currentBoundMs();
+    const uint32_t sleepBound = currentSleepEntryBoundMs();
+    // Not yet: the clock alone decides. Then the question that reads a pin.
+    if (!decide(now, renderStamp, renderBound, sleepStamp, sleepBound, true).hung) continue;
+    const Hung hung = decide(now, renderStamp, renderBound, sleepStamp, sleepBound, onBatteryNow(now));
+    if (!hung.hung) continue;
     Event event;
-    event.stuckMs = now - stamp;
+    event.kind = hung.kind;
+    event.stuckMs = hung.stuckMs;
     event.uptimeMs = now;
-    std::memcpy(event.activity, g_activity, sizeof(event.activity));
-    event.activity[sizeof(event.activity) - 1] = '\0';
-    if (g_stamp.get() != stamp) continue;  // the render ended, or another began, while this looked
+    if (hung.kind == Kind::SleepEntry) {
+      std::memcpy(event.activity, SLEEP_ENTRY_NAME, sizeof(SLEEP_ENTRY_NAME));
+    } else {
+      std::memcpy(event.activity, g_activity, sizeof(event.activity));
+      event.activity[sizeof(event.activity) - 1] = '\0';
+    }
+    // A render that ended, began again or made progress, while this looked, is not hung.
+    if (g_stamp.get() != renderStamp || g_sleepStamp.get() != sleepStamp) continue;
     restartIntoSleep(event);
   }
+}
+
+void createTask(const uint32_t nowMs) {
+  g_startTriedMs = nowMs;
+  ++g_startTries;
+  xTaskCreatePinnedToCore(&taskMain, "RenderWatchdog", TASK_STACK_BYTES, nullptr, TASK_PRIORITY, &g_task, TASK_CORE);
+  if (g_task == nullptr) esp_rom_printf("[RWD] could not start the render watchdog task (try %u)\n", g_startTries);
 }
 
 }  // namespace
 
 void start() {
   if (g_task != nullptr) return;
-  xTaskCreatePinnedToCore(&taskMain, "RenderWatchdog", TASK_STACK_BYTES, nullptr, TASK_PRIORITY, &g_task, TASK_CORE);
-  if (g_task == nullptr) esp_rom_printf("[RWD] could not start the render watchdog task\n");
+  g_startWanted = true;
+  createTask(millis());
 }
 
 void beginRender(const char* activityName) {
+  g_renderTask.store(xTaskGetCurrentTaskHandle(), std::memory_order_relaxed);
   std::strncpy(g_activity, activityName != nullptr ? activityName : "", sizeof(g_activity) - 1);
   g_stamp.begin(millis());
 }
 
 void endRender() { g_stamp.end(); }
 
-void noteLoopPass() { g_loopPassMs.store(millis(), std::memory_order_relaxed); }
+void progress() {
+  if (xTaskGetCurrentTaskHandle() != g_renderTask.load(std::memory_order_relaxed)) return;
+  g_stamp.refresh(millis());
+}
+
+void beginSleepEntry() { g_sleepStamp.begin(millis()); }
+
+void noteLoopPass() {
+  const uint32_t now = millis();
+  g_loopPassMs.store(now, std::memory_order_relaxed);
+  if (g_task == nullptr && g_startWanted && g_startTries < START_RETRIES_MAX &&
+      now - g_startTriedMs >= START_RETRY_MS) {
+    createTask(now);
+  }
+}
 
 bool takeSleepRequest(Event& out) { return take(PHASE_RESTARTING, PHASE_SLEPT, out); }
 
@@ -231,8 +295,33 @@ bool takeReport(Event& out) {
   return true;
 }
 
+void resetLoopSlept() {
+  Event spent;
+  take(PHASE_RESTARTING, PHASE_SLEPT, spent);
+}
+
+bool holdsLogs() {
+  const Record r = g_record;
+  if (r.magic != RECORD_MAGIC || r.check != checksum(r)) return false;
+  return r.phase == PHASE_RESTARTING || r.phase == PHASE_SLEPT;
+}
+
+void describe(const Event& event, char* out, const size_t size) {
+  if (event.kind == Kind::SleepEntry) {
+    std::snprintf(out, size, "the sleep entry had run for %lu s without sleeping",
+                  static_cast<unsigned long>(event.stuckMs / 1000U));
+  } else {
+    std::snprintf(out, size, "render() of %s had run for %lu s", event.activity,
+                  static_cast<unsigned long>(event.stuckMs / 1000U));
+  }
+}
+
 #if CROSSPOINT_TEST_SUITE
 void setBoundForTest(const uint32_t boundMs) { g_boundOverrideMs.store(boundMs, std::memory_order_relaxed); }
+
+void setSleepEntryBoundForTest(const uint32_t boundMs) {
+  g_sleepBoundOverrideMs.store(boundMs, std::memory_order_relaxed);
+}
 
 bool running() { return g_task != nullptr; }
 
