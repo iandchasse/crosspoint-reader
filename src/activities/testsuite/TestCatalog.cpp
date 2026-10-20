@@ -47,6 +47,8 @@ constexpr TestInfo TESTS[] = {
     {"U2", "Sustained load", "Wi-Fi, card and refreshes on USB, for the LDO's temperature", createSustainedLoadTest},
     {"P5", "Sleep and wake", "Sleep paths, wake, sleep current procedure", createSleepWakeTest},
     {"P8", "Reader data", "Reader files on the card left untouched", createReaderDataTest},
+    {"P9", "Render watchdog", "A render() that never returns: restart into sleep, wake, record",
+     createRenderWatchdogTest},
 };
 static_assert(std::size(TESTS) <= MAX_TESTS, "raise MAX_TESTS");
 

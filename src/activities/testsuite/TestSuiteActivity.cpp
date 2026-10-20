@@ -15,6 +15,7 @@
 #include "components/UITheme.h"
 #include "tests/LightCheck.h"
 #include "tests/ReaderData.h"
+#include "tests/RenderWatchdogTest.h"
 
 namespace fui = freeink::ui;
 namespace text = testsuite::text;
@@ -23,6 +24,7 @@ namespace {
 // The row opened last, so a new menu (the home gesture) keeps the place.
 int lastOpened = 0;
 bool readerDataChecked = false;
+bool watchdogReported = false;
 }  // namespace
 
 void TestSuiteActivity::onEnter() {
@@ -36,6 +38,11 @@ void TestSuiteActivity::onEnter() {
   if (!readerDataChecked) {
     readerDataChecked = true;
     testsuite::readerdata::checkAtBoot();
+  }
+  // P9, once per boot: the render watchdog ended the session before the last sleep (a hang P9 caused, or not).
+  if (!watchdogReported) {
+    watchdogReported = true;
+    testsuite::watchdog::reportAtBoot();
   }
   const int count = listCount();
   for (int i = 0; i < count; ++i) {

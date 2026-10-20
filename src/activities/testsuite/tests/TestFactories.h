@@ -61,6 +61,8 @@ std::unique_ptr<Activity> createSleepWakeTest(const TestInfo& info, GfxRenderer&
                                               MappedInputManager& mappedInput);  // P5
 std::unique_ptr<Activity> createReaderDataTest(const TestInfo& info, GfxRenderer& renderer,
                                                MappedInputManager& mappedInput);  // P8
+std::unique_ptr<Activity> createRenderWatchdogTest(const TestInfo& info, GfxRenderer& renderer,
+                                                   MappedInputManager& mappedInput);  // P9
 
 }  // namespace testsuite
 #endif
