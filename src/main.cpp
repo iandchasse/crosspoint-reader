@@ -53,6 +53,9 @@
 #include "util/PluginEvents.h"
 #include "util/ScreenshotUtil.h"
 #include "util/Timezones.h"
+#if FREEINK_CAP_POWER_POLICY
+#include "util/RenderWatchdog.h"
+#endif
 #if CROSSPOINT_TEST_SUITE
 #include "activities/testsuite/TestSuite.h"
 #endif
@@ -790,6 +793,22 @@ static void haltOnPowerButtonFault() {
 }
 #endif
 
+#if FREEINK_CAP_POWER_POLICY
+// The sleep of a boot that must start nothing: this one and the render
+// watchdog's. No sleep entry has put the panel or a touch controller on an
+// always-on rail to sleep since the session before ended (a crash, or the
+// watchdog's restart), and a session that ended after a fast refresh leaves the
+// panel's analog block on. Reset each and send its sleep command without its
+// driver. The controller is resolved first so the panel gets its own command;
+// at a boot that is a probe, which is only a reset and a register read.
+static void sleepWithoutDrivers() {
+  resolvePanelController();
+  if (freeink::PowerManager::sleepPanelWithoutDriver()) LOG_DBG("PWR", "Panel reset and asleep");
+  gpio.resetTouchForSleep();
+  powerManager.startDeepSleepMinimal(gpio);
+}
+#endif
+
 // PowerConfig::abnormalResetLimit (0 on boards without one): after that many
 // panics, watchdog resets, brown-outs or aborted sleep entries in a row, go back
 // to deep sleep at once, before SD, touch, the panel or the radio start and
@@ -811,6 +830,9 @@ static void sleepIfResetLoop() {
   }
   LOG_ERR("PWR", "%u abnormal resets in a row; sleeping until the power button", count);
   freeink::PowerManager::clearAbnormalResets();
+#if FREEINK_CAP_POWER_POLICY
+  sleepWithoutDrivers();
+#else
   // No sleep entry has put the panel or a touch controller on an always-on rail
   // to sleep since the crash, and a crash after a fast refresh leaves the panel's
   // analog block on. Reset each and send its sleep command without its driver
@@ -821,7 +843,25 @@ static void sleepIfResetLoop() {
   if (freeink::PowerManager::sleepPanelWithoutDriver()) LOG_DBG("PWR", "Panel reset and asleep");
   gpio.resetTouchForSleep();
   powerManager.startDeepSleepMinimal(gpio);
+#endif
 }
+
+#if FREEINK_CAP_POWER_POLICY
+// POWER.md AW-04: the render watchdog restarted the chip because one render()
+// had run for its bound on battery (renderwatchdog::BOUND_MS), which left every
+// sleep path waiting on a lock that task held. The restart took the lock, the
+// SPI bus, the card and the radio with it, and this boot, which has started
+// none of them, sleeps by the reset loop's sequence. It is not an abnormal
+// reset: the count stays at zero and the wake the power key gives is an
+// ordinary boot.
+static void sleepIfRenderWatchdog() {
+  renderwatchdog::Event event;
+  if (!renderwatchdog::takeSleepRequest(event)) return;
+  LOG_ERR("PWR", "Render watchdog: render() of %s had run for %lu s at the restart; sleeping", event.activity,
+          static_cast<unsigned long>(event.stuckMs / 1000U));
+  sleepWithoutDrivers();
+}
+#endif
 
 #if FREEINK_CAP_DISPLAY_PROBE_POLICY
 // DisplayProbeConfig boards: the controller this boot chose and how, with the
@@ -991,6 +1031,9 @@ void setup() {
   silentRebootPayload = 0;
 
   sleepIfResetLoop();
+#if FREEINK_CAP_POWER_POLICY
+  sleepIfRenderWatchdog();
+#endif
 
   const bool earlyWakeDecision = BoardConfig::powerPolicy().earlyWakeDecision;
   gpio.begin(/*deferTouch=*/earlyWakeDecision);
@@ -1197,6 +1240,14 @@ void setup() {
       break;
   }
 
+#if FREEINK_CAP_POWER_POLICY
+  // The session that ended in the render watchdog's restart left a note for the boot after its sleep, this one.
+  if (renderwatchdog::Event watchdogEvent; renderwatchdog::takeReport(watchdogEvent)) {
+    LOG_ERR("PWR", "The session before the last sleep ended in the render watchdog: render() of %s had run for %lu s",
+            watchdogEvent.activity, static_cast<unsigned long>(watchdogEvent.stuckMs / 1000U));
+  }
+#endif
+
   // Brightness and warmth are always restored. A normal wake starts with the
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
@@ -1324,6 +1375,9 @@ void loop() {
 
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   mappedInputManager.update();
+#if FREEINK_CAP_POWER_POLICY
+  renderwatchdog::noteLoopPass();  // the render watchdog's proof that this task still runs (POWER.md AW-04)
+#endif
 
 #if SILKSCREEN_BATLOG
   tickBatteryLog();  // before the exclusive-storage branch, so USB Drive time counts

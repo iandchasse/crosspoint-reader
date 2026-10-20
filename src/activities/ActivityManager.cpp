@@ -33,6 +33,9 @@
 #include "util/BmpViewerActivity.h"
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
+#if FREEINK_CAP_POWER_POLICY
+#include "util/RenderWatchdog.h"
+#endif
 #if CROSSPOINT_TEST_SUITE
 #include "testsuite/TestSuite.h"
 #endif
@@ -71,6 +74,10 @@ void ActivityManager::begin() {
                           renderTaskCore  // Keep long renders/cover decodes off CPU 0's idle watchdog when available
   );
   assert(renderTaskHandle != nullptr && "Failed to create render task");
+#if FREEINK_CAP_POWER_POLICY
+  // Silkscreen: a render() that never returns keeps the render lock, and with it every sleep path (POWER.md AW-04).
+  renderwatchdog::start();
+#endif
 }
 
 void ActivityManager::renderTaskTrampoline(void* param) {
@@ -90,7 +97,14 @@ void ActivityManager::renderTaskLoop() {
       // The sleep screen forces normal polarity itself (SleepActivity).
       display.setInverted(SETTINGS.screenInverted != 0);
       const uint32_t renderingVisit = screenVisit;
+#if FREEINK_CAP_POWER_POLICY
+      // The watchdog's clock starts here, with the lock held: time spent waiting for it is not rendering.
+      renderwatchdog::beginRender(currentActivity->name.c_str());
+#endif
       currentActivity->render(std::move(lock));
+#if FREEINK_CAP_POWER_POLICY
+      renderwatchdog::endRender();
+#endif
       paintedVisit.store(renderingVisit, std::memory_order_release);
     }
     // Notify any task blocked in requestUpdateAndWait() that the render is done.
