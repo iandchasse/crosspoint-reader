@@ -123,7 +123,14 @@ fi
 for env in "${real[@]}"; do
   log="$LOGS/$label-$env.log"
   pio run -e "$env" > "$log" 2>&1
-  report "$env" $? "$log"
+  rc=$?
+  report "$env" $rc "$log"
+  # POWER.md AW-04: the render watchdog's hooks are in the linked image (Silkscreen envs), and in no other board's.
+  if [ $rc -eq 0 ] && [ -f scripts/silkscreen/check_render_watchdog_elf.py ]; then
+    case "$env" in silkscreen*) mode="" ;; *) mode="--absent" ;; esac
+    python -I -X utf8 scripts/silkscreen/check_render_watchdog_elf.py "$env" $mode > "$LOGS/$label-$env-wdelf.log" 2>&1
+    wrc=$?; echo "render watchdog image check ($env) exit=$wrc: $(tail -1 "$LOGS/$label-$env-wdelf.log")"; [ $wrc -ne 0 ] && failed=1
+  fi
 done
 
 for env in "${real[@]}"; do
@@ -186,7 +193,12 @@ fi
 for env in "${proxy[@]}"; do
   log="$LOGS/$label-$env.log"
   pio run -c "$PROXY" -e "$env" > "$log" 2>&1
-  report "$env" $? "$log"
+  rc=$?
+  report "$env" $rc "$log"
+  if [ $rc -eq 0 ] && [ -f scripts/silkscreen/check_render_watchdog_elf.py ]; then
+    python -I -X utf8 scripts/silkscreen/check_render_watchdog_elf.py "$env" --absent > "$LOGS/$label-$env-wdelf.log" 2>&1
+    wrc=$?; echo "render watchdog image check ($env) exit=$wrc: $(tail -1 "$LOGS/$label-$env-wdelf.log")"; [ $wrc -ne 0 ] && failed=1
+  fi
 done
 
 exit $failed
