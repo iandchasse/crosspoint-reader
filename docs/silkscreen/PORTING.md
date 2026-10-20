@@ -203,6 +203,9 @@ default_envs = silkscreen
 
 ## Upstream merges
 
+Since 2026-10-20 a sync is recorded by `scripts/silkscreen/sync.sh --accept` in [SYNC-LOG.md](SYNC-LOG.md); the table below is the hand-written
+history up to the two rounds of 2026-10-19.
+
 The branch takes upstream by merge, never by rebase: older parent commits pin SDK commits that must stay reachable from the SDK branch. The SDK branch merges the freeink-sdk commit that upstream CrossPoint pins, not Free-Ink `main` (which is ahead of the pin), and the parent merge that moves upstream's pin moves ours to that SDK merge. Each merge commit lists the commits it takes and every conflict resolution.
 
 | Parent merge | Upstream `develop` | SDK | What it brought |
