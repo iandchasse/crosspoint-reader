@@ -10,6 +10,9 @@
 #                                    be the shared head, and CrossInk's own pin is classified
 #   battery log                    : the silkscreen-batlog env, the SDK's BatteryLog files and every app hook (CrossPoint
 #                                    and CrossInk) must still be there: a merge can drop a hook without breaking a build
+#   render watchdog                : the unit, its hooks in ActivityManager.cpp and main.cpp, the shared sleep and the source
+#                                    guard, in both apps (POWER.md AW-04): a merge that drops a hook builds every env and
+#                                    leaves the watchdog silently off
 #   3.68" variant                  : the SDK's SILKSCREEN_PANEL_368 macro, profile (the UC8279d, fixed and forced) and driver
 #                                    selection, the strip upload's transaction fix (upstream's, ungated: txn.end() before
 #                                    PARTIAL_OUT, no gate in that function), the BUSY_N pull-up's release before sleep, the
@@ -143,6 +146,56 @@ if [ -e "$CI/.git" ]; then
   batlog_need "$CI" scripts/git_branch.py "'silkscreen-batlog'" 2
 fi
 [ $blmiss = 0 ] && info "the env, the SDK files, both writers and every hook are present"
+
+# The render watchdog (docs/silkscreen/POWER.md, AW-04), in both apps. Its hooks sit in upstream's ActivityManager.cpp and
+# main.cpp, and a merge that loses one still builds every env: the watchdog is then silently off (or a restart-into-sleep
+# lands at the wrong point). Counts the hooks, and runs the source guard, which reads their order and the lock-free
+# expiry path (test_render_watchdog.py --source-only; check_render_watchdog_elf.py reads the linked image and needs a build).
+echo "render watchdog (AW-04: the unit, its four hooks in ActivityManager.cpp and main.cpp, the shared sleep, the guards)"
+rwdmiss=0
+rwd_need() {  # dir file pattern min: the file holds at least min lines matching the pattern
+  local n
+  n=$(grep -c -- "$3" "$1/$2" 2>/dev/null)
+  if [ "${n:-0}" -lt "$4" ]; then
+    flag "render watchdog: $2 in $(basename "$1") has ${n:-0} line(s) matching '$3', expected at least $4"
+    rwdmiss=$((rwdmiss + 1))
+  fi
+}
+rwd_file() {  # dir file
+  if [ ! -f "$1/$2" ]; then
+    flag "render watchdog: $2 is missing from $(basename "$1")"
+    rwdmiss=$((rwdmiss + 1))
+  fi
+}
+rwd_app() {  # dir
+  local dir=$1 f
+  for f in src/util/RenderWatchdog.h src/util/RenderWatchdog.cpp scripts/silkscreen/test_render_watchdog.py            scripts/silkscreen/render_watchdog_host_test.cpp; do
+    rwd_file "$dir" "$f"
+  done
+  rwd_need "$dir" scripts/silkscreen/build_matrix.sh 'test_render_watchdog.py' 1
+  rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::beginRender(' 1
+  rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::endRender()' 1
+  rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::start()' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::noteLoopPass()' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::takeSleepRequest(' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::takeReport(' 1
+  rwd_need "$dir" src/main.cpp '^static void sleepWithoutDrivers()' 1
+  rwd_need "$dir" src/main.cpp '^static void sleepIfRenderWatchdog()' 1
+  rwd_need "$dir" src/main.cpp '^ *sleepIfRenderWatchdog();' 1
+  rwd_need "$dir" src/main.cpp 'sleepWithoutDrivers();' 2
+  if command -v python > /dev/null 2>&1 && [ -f "$dir/scripts/silkscreen/test_render_watchdog.py" ]; then
+    if ! (cd "$dir" && python -I -X utf8 scripts/silkscreen/test_render_watchdog.py --source-only > /dev/null 2>&1); then
+      flag "render watchdog: test_render_watchdog.py --source-only fails in $(basename "$dir"): run it for the reason"
+      rwdmiss=$((rwdmiss + 1))
+    fi
+  fi
+}
+rwd_file "$CP" scripts/silkscreen/check_render_watchdog_elf.py
+rwd_app "$CP"
+if [ -e "$CI/.git" ]; then
+  rwd_app "$CI"
+fi
+[ $rwdmiss = 0 ] && info "the unit, the hooks, the shared sleep and the source guard are present in both apps"
 
 # The 3.68" X3-panel variant (-DSILKSCREEN_PANEL_368=1, the silkscreen-368 envs; docs/silkscreen/MODULARITY.md). A merge
 # that drops the SDK's profile or driver selection, an env, a board tag or one of the panel predicate's sites still

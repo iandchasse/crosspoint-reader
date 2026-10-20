@@ -299,6 +299,7 @@ verified wake that stays up.
 | SD-fail ghost, late ghost (CrossPoint only) | `g_n` + 1 | the wake sample |
 | Release wake (the key was held at sleep entry and its release wakes the board) | **not recorded**; `fl_e` bit 4 on the entry row says it happened | none |
 | Reset-loop sleep (3 abnormal resets in a row) | **not recorded**; `ab` on the later row counts the crashes | none |
+| Render-watchdog sleep (a `render()` that ran 5 minutes on battery, [POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)) | **not recorded**; the next wake writes an orphan row (`k` B) | none |
 | Power-pin fault halt | not a re-sleep: it sleeps with no wake source, and the cycle is not recorded | none |
 
 The release-wake and reset-loop exits call **no battery-log hook**: they run before the wake decision, where nothing new
@@ -310,6 +311,7 @@ bit 1, `wk` `c`) every tap boots fully, so ghost counts are structurally zero.
 
 | You see | Meaning |
 |---|---|
+| A `k` B orphan row after a long awake time, with no flash or battery swap before it | The render watchdog slept the board after a hung render ([POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04)): a restart empties RAM, so no entry was staged and no hook ran, as for the reset loop's sleep. The hung session's awake time (the bound plus up to one 5 s tick, at 30-45 mA [est]) is in no row, so the voltage step across that cycle is larger than any recorded awake time explains. The format and the analyzer are unchanged. |
 | `k = B` rows, `row` back at 1 | The record was lost: a flash, a power loss, the cell pulled, the EN button. `rst` tells flash from power loss. |
 | A gap in `row`, `drop` above 0 | A row did not reach the card (SD trouble, the 2 MiB cap, a sleep that began with a row still pending). |
 | Empty `utc` | No clock sync in this power-on domain yet; the analyzer back-fills from a later row. |

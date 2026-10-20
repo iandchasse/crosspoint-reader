@@ -8,9 +8,10 @@
 //
 // What the hung render() holds is what a stuck display driver can hold, because the claim being tested is that the
 // watchdog waits for none of it: the render lock (TestScreen::render() leaves it with the caller), the ADC lock
-// (InputManager's ladder poll waits for it without a bound, so the loop task stops passing and the watchdog has to
-// read the charge pin itself, with the lock held), and the SPI bus twice over (the second SPI.beginTransaction()
-// waits for the class's own non-recursive lock, which the first holds, with the HAL's bus lock: the freeze).
+// (InputManager's ladder poll waits for it without a bound, which should stop the loop task passing too, so that the
+// watchdog has to read the charge pin itself, with the lock held), and the SPI bus twice over (the second
+// SPI.beginTransaction() waits for the class's own non-recursive lock, which the first holds, with the HAL's bus
+// lock: the freeze).
 #include "RenderWatchdogTest.h"
 
 #include <Arduino.h>

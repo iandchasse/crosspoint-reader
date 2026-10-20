@@ -251,6 +251,24 @@ to the byte.
      host suite (`run_uc8279.py`) passes with upstream's text and fails on its pre-fix source (the control);
      `libs/hardware/BoardConfig/test/host/run_profile_asserts.py` (41 cases) must still hold. CrossInk's copy of this
      lens is its own page (its PORTING.md, drain checklist item 15).
+   - *The render watchdog* ([POWER.md AW-04](POWER.md#31-the-render-watchdog-aw-04), run after every sync): its hooks sit in
+     upstream's files, and a merge that loses one builds every env and fails nothing. In `ActivityManager.cpp`,
+     `renderTaskLoop()` takes `RenderLock lock;`, then calls `renderwatchdog::beginRender()` as the statement
+     immediately before `currentActivity->render(std::move(lock))` and `renderwatchdog::endRender()` immediately after
+     it, all behind `FREEINK_CAP_POWER_POLICY`; `begin()` calls `renderwatchdog::start()` after it creates the render
+     task. In `main.cpp`, `sleepWithoutDrivers()` holds the reset loop's sleep sequence for Silkscreen while
+     `sleepIfResetLoop()` keeps upstream's own lines in its `#else`; `setup()` calls `sleepIfRenderWatchdog()` right
+     after `sleepIfResetLoop()` and logs `renderwatchdog::takeReport()` after the wake-reason `switch`; `loop()` calls
+     `renderwatchdog::noteLoopPass()` right after `mappedInputManager.update()`, before any early return. Read the incoming
+     diffs of those functions, and of `Activity::render()`'s callers: a new activity whose `render()` can run for
+     minutes (a download, a scan, a wait for the user) is a restart-into-sleep on battery. `python -I -X utf8
+     scripts/silkscreen/test_render_watchdog.py --source-only` reads the order and the lock-free expiry path (run it
+     without `--source-only` and with `--control` through the MSVC shim to see the decision test and every control
+     fail when its part is removed), `scripts/silkscreen/check_render_watchdog_elf.py <env>` reads the linked image
+     (`build_matrix.sh` runs both), and `upstream_status.sh` counts the hooks in both apps. If the SDK moves `adc::Lock`,
+     `HalGPIO::isUsbConnected()`, `FrontlightConfig` or `esp_rom_printf`'s users, re-read POWER.md AW-04's list of what the
+     expiry path calls: it may wait on nothing a stuck task can hold. CrossInk carries the same unit (its PORTING.md,
+     drain checklist item 16).
    - *Tooling and rules:* the analyzer's tests pass (`cd scripts/silkscreen && python -m unittest test_battery_log_report`;
      they compare its column table, flag bits and notch table with `BatteryLogCore.h` and `BatteryMonitor.cpp`, so a
      changed battery curve upstream fails them on purpose), the two apps' `BatteryLogWriter` files still agree (CrossInk's
