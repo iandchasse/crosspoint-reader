@@ -129,7 +129,6 @@ class RenderWatchdogTest final : public TestScreen {
   RenderWatchdogTest(const TestInfo& info, GfxRenderer& renderer, MappedInputManager& mappedInput)
       : TestScreen(info, renderer, mappedInput) {}
 
- public:
   // Leaving the screen disarms the sleep-entry hang and puts the sleep-entry bound back.
   void onExit() override {
     disarmSleepHang();
