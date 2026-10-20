@@ -425,9 +425,9 @@ What only the reader image or bench equipment can check is listed under [Checks 
     - Repeat after each sleep path: menu, auto-sleep, ghost wake, release wake, the 15-min ceiling, the loop and boot cutoffs, and 3 forced panics in a row (no image forces one: [TEST-SUITE.md](TEST-SUITE.md#checks-that-need-the-reader-image) gives the scratch patch). All should agree within about 2 µA.
     - On battery, also check that `D2` is dark and `USB_VBUS` ≈ 0 V.
 12. **B11 - Render watchdog** ([POWER.md §3.1](POWER.md#31-the-render-watchdog-aw-04); the test is [P9](TEST-SUITE.md#p9-render-watchdog)). Set up as for B10: a µA meter at `J5`, card fitted, light off, `J6` empty, then USB off.
-    - Open P9, Confirm, pick "Hang render()". The keys stop; about 30-35 s later the board restarts and sleeps, and the panel keeps the "Hung" page. The current from 60 s after the restart is the floor of B10, and the pins are in POWER.md section 2's sleep state.
+    - Open P9, Confirm (or Right, which holds the ADC lock too), pick "Hang render()". The keys stop; about 30-35 s later the board restarts and sleeps, and the panel keeps the "Hung" page. The current from 60 s after the restart is the floor of B10, and the pins are in POWER.md section 2's sleep state.
     - Press POWER: a normal boot into the menu, no abnormal reset counted. The first opening of the menu records the P9 row (`action=watchdog`): PASS when the activity is `Test_P9`, `stuck_ms` is 30000-36000 and `stack_free` is at least 1024 (the first measurement of the watchdog task's 4096-byte stack).
-    - With USB in when P9 is armed, nothing happens; pull the cable and the board sleeps within about 5 s (the row is WARN `late`, which is right).
+    - With USB in when Confirm arms P9, nothing happens; pull the cable and the board sleeps within about 5 s (the row is WARN `late`, which is right). With Right, the watchdog acts at 30-35 s even on USB: it cannot read the pin.
     - The same on `silkscreen-368-test`: the restart's boot has no touch controller to put to sleep, and the panel's sleep is the driver-free one with the 60 ms settle, which has only a host test behind it so far.
 
 ### Checks that need the reader image

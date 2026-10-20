@@ -7,11 +7,12 @@
 // restart it causes.
 //
 // What the hung render() holds is what a stuck display driver can hold, because the claim being tested is that the
-// watchdog waits for none of it: the render lock (TestScreen::render() leaves it with the caller), the ADC lock
-// (InputManager's ladder poll waits for it without a bound, which should stop the loop task passing too, so that the
-// watchdog has to read the charge pin itself, with the lock held), and the SPI bus twice over (the second
-// SPI.beginTransaction() waits for the class's own non-recursive lock, which the first holds, with the HAL's bus
-// lock: the freeze).
+// watchdog waits for none of it: the render lock (TestScreen::render() leaves it with the caller) and the SPI bus
+// twice over (the second SPI.beginTransaction() waits for the class's own non-recursive lock, which the first holds,
+// with the HAL's bus lock: the freeze). Confirm hangs with those. Right adds the ADC lock, which InputManager's
+// ladder poll waits for without a bound: the loop task then stops passing, and the watchdog has to read the charge
+// pin itself, which it cannot with that lock held, so it acts as on battery once the loop has been stale for 15 s,
+// USB or not (the bias POWER.md AW-04 documents). Without the ADC lock the pin can be read and the USB rule holds.
 #include "RenderWatchdogTest.h"
 
 #include <Arduino.h>
@@ -57,28 +58,45 @@ void addToList(char* list, const size_t size, const char* name) {
 }
 
 constexpr int QUESTION_HANG = 1;
+constexpr int QUESTION_HANG_ADC = 2;
 constexpr const char* HANG_ANSWERS[] = {"Cancel", "Hang render()"};
 constexpr char HANG_HEADING[] = "Hang render()?";
 constexpr char HANG_BODY[] =
     "The render task will never return. Keys stop. About 30-35 s on battery the watchdog restarts the chip into deep "
     "sleep; press POWER to wake. On USB nothing happens until the cable is out. Reset the board to cancel.";
+constexpr char HANG_ADC_BODY[] =
+    "As Hang, and the ADC lock is held too, so the charge pin cannot be read: the watchdog acts as on battery about "
+    "30-35 s later, USB or not. Press POWER to wake. Reset the board to cancel.";
 
 constexpr char INTRO[] =
     "Hangs render() for good, as the 3.68\" panel's freeze did, to watch the render watchdog end the session on "
     "battery: restart, deep sleep with this screen on the panel, wake on POWER, then a P9 row from the boot. Unplug "
-    "USB first (it acts on battery only), measure the sleep current as P5 does, then wake it.";
+    "USB first (it acts on battery only), measure the sleep current as P5 does, then wake it. Right also holds the "
+    "ADC lock.";
 constexpr char HUNG_TEXT[] =
-    "Hung. The render lock, the ADC lock and the SPI bus are held. Within about 35 s on battery the chip restarts "
+    "Hung. The render lock and the SPI bus are held. Within about 35 s on battery the chip restarts into deep sleep "
+    "and the panel keeps this screen. Press POWER to wake: the menu opens and P9 shows its result.";
+constexpr char HUNG_ADC_TEXT[] =
+    "Hung. The render lock, the SPI bus and the ADC lock are held. Within about 35 s, USB or not, the chip restarts "
     "into deep sleep and the panel keeps this screen. Press POWER to wake: the menu opens and P9 shows its result.";
 constexpr char NOT_RUNNING_TEXT[] = "The watchdog task is not running: nothing to test.";
 
-// What a stuck display driver can hold. The ADC lock is taken for good, and so is the SPI bus: the second
-// beginTransaction() blocks in the class's own lock, with the first one's HAL lock held.
-[[noreturn]] void hangForGood() {
-  const freeink::adc::Lock adc;
+enum class Hang : uint8_t { None, Spi, SpiAndAdc };
+
+// What a stuck display driver can hold: the SPI bus is taken for good, and the second beginTransaction() blocks in
+// the class's own lock with the first one's HAL lock held. Never returns.
+[[noreturn]] void hangOnSpi() {
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+[[noreturn]] void hangForGood(const Hang hang) {
+  if (hang == Hang::SpiAndAdc) {
+    const freeink::adc::Lock adc;  // never released: hangOnSpi() does not return
+    hangOnSpi();
+  }
+  hangOnSpi();
 }
 
 class RenderWatchdogTest final : public TestScreen {
@@ -90,21 +108,27 @@ class RenderWatchdogTest final : public TestScreen {
   void onStart() override { taskRunning = renderwatchdog::running(); }
 
   const char* slotLabel(const Slot slot) const override {
-    return slot == Slot::Confirm && taskRunning && !hangPending.load() ? "Hang" : nullptr;
+    if (!taskRunning || hang.load() != Hang::None) return nullptr;
+    return slot == Slot::Confirm ? "Hang" : slot == Slot::Right ? "Hang+ADC" : nullptr;
   }
 
-  void onSlot(const Slot) override { ask(QUESTION_HANG, HANG_HEADING, HANG_BODY, HANG_ANSWERS, 2); }
+  void onSlot(const Slot slot) override {
+    if (slot == Slot::Confirm) ask(QUESTION_HANG, HANG_HEADING, HANG_BODY, HANG_ANSWERS, 2);
+    if (slot == Slot::Right) ask(QUESTION_HANG_ADC, HANG_HEADING, HANG_ADC_BODY, HANG_ANSWERS, 2);
+  }
 
   void onAnswer(const int question, const int answer) override {
-    if (question != QUESTION_HANG || answer != 1 || !taskRunning) return;
+    if ((question != QUESTION_HANG && question != QUESTION_HANG_ADC) || answer != 1 || !taskRunning) return;
+    const Hang mode = question == QUESTION_HANG_ADC ? Hang::SpiAndAdc : Hang::Spi;
     const bool usb = gpio.isUsbConnected();
+    const char* modeName = mode == Hang::SpiAndAdc ? "spi_adc" : "spi";
     renderwatchdog::setBoundForTest(TEST_BOUND_MS);
-    LOG_INF("TEST", "P9: render() hangs for good; bound %lu ms, supply %s", static_cast<unsigned long>(TEST_BOUND_MS),
-            usb ? "usb" : "battery");
-    record(Verdict::Info, "action=arm bound_ms=%lu supply=%s expect_ms=%lu..%lu",
+    LOG_INF("TEST", "P9: render() hangs for good (%s); bound %lu ms, supply %s", modeName,
+            static_cast<unsigned long>(TEST_BOUND_MS), usb ? "usb" : "battery");
+    record(Verdict::Info, "action=arm mode=%s bound_ms=%lu supply=%s expect_ms=%lu..%lu", modeName,
            static_cast<unsigned long>(TEST_BOUND_MS), usb ? "usb" : "battery",
            static_cast<unsigned long>(TEST_BOUND_MS), static_cast<unsigned long>(TEST_BOUND_MS + WINDOW_MS));
-    hangPending.store(true);
+    hang.store(mode);
     requestUpdate();
   }
 
@@ -112,11 +136,13 @@ class RenderWatchdogTest final : public TestScreen {
   // the hang comes after the frame is on the panel.
   void render(RenderLock&& lock) override {
     TestScreen::render(std::move(lock));
-    if (hangPending.load()) hangForGood();
+    const Hang mode = hang.load();
+    if (mode != Hang::None) hangForGood(mode);
   }
 
   void drawBody(TestPage& page) const override {
-    if (!hangPending.load()) {
+    const Hang mode = hang.load();
+    if (mode == Hang::None) {
       page.paragraph(INTRO, 8);
       page.gap(6);
     }
@@ -127,16 +153,16 @@ class RenderWatchdogTest final : public TestScreen {
     page.rowf("Bound once hung", "%lu s, RAM only", static_cast<unsigned long>(TEST_BOUND_MS / 1000UL));
     page.setCompact(false);
     page.gap(6);
-    if (hangPending.load()) {
+    if (mode != Hang::None) {
       page.heading("Hung");
-      page.paragraph(HUNG_TEXT, 7);
+      page.paragraph(mode == Hang::SpiAndAdc ? HUNG_ADC_TEXT : HUNG_TEXT, 7);
     } else if (!taskRunning) {
       page.paragraph(NOT_RUNNING_TEXT, 3);
     }
   }
 
   bool taskRunning = false;
-  std::atomic<bool> hangPending{false};  // set by the loop task, read by the render task
+  std::atomic<Hang> hang{Hang::None};  // set by the loop task, read by the render task
 };
 
 // "Test P9" for a row: no spaces in a value.
