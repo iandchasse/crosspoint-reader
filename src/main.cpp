@@ -58,6 +58,7 @@
 #endif
 #if CROSSPOINT_TEST_SUITE
 #include "activities/testsuite/TestSuite.h"
+#include "activities/testsuite/tests/RenderWatchdogTest.h"
 #endif
 #if SILKSCREEN_BATLOG
 #include <BatteryLog.h>
@@ -642,6 +643,15 @@ static void tickBatteryLog() {
 // Enter deep sleep mode. unattended: a power-button wake that got no input
 // (PowerConfig::wakeNoInputTimeoutS) is going back to sleep.
 void enterDeepSleep(bool fromTimeout = false, bool unattended = false) {
+#if FREEINK_CAP_POWER_POLICY
+  // POWER.md AW-04: the sleep entry has begun. It never returns (startDeepSleep() ends it), so it is never cleared; one
+  // that has not slept after renderwatchdog::SLEEP_ENTRY_BOUND_MS on the cell is restarted into the driver-free sleep.
+  renderwatchdog::beginSleepEntry();
+#endif
+#if CROSSPOINT_TEST_SUITE
+  testsuite::watchdog::hangSleepEntryIfArmed();  // P9: the test that wedges the sleep entry
+                                                 // (docs/silkscreen/TEST-SUITE.md)
+#endif
 #if SILKSCREEN_BATLOG
   stageBatteryLogEntry(fromTimeout, unattended);
 #endif
@@ -831,6 +841,9 @@ static void sleepIfResetLoop() {
   LOG_ERR("PWR", "%u abnormal resets in a row; sleeping until the power button", count);
   freeink::PowerManager::clearAbnormalResets();
 #if FREEINK_CAP_POWER_POLICY
+  // A render watchdog restart that is still waiting for its sleep is spent by this one: the next boot reports it and
+  // does not sleep again (a no-op without one).
+  renderwatchdog::resetLoopSlept();
   sleepWithoutDrivers();
 #else
   // No sleep entry has put the panel or a touch controller on an always-on rail
@@ -848,18 +861,38 @@ static void sleepIfResetLoop() {
 
 #if FREEINK_CAP_POWER_POLICY
 // POWER.md AW-04: the render watchdog restarted the chip because one render()
-// had run for its bound on battery (renderwatchdog::BOUND_MS), which left every
-// sleep path waiting on a lock that task held. The restart took the lock, the
-// SPI bus, the card and the radio with it, and this boot, which has started
-// none of them, sleeps by the reset loop's sequence. It is not an abnormal
-// reset: the count stays at zero and the wake the power key gives is an
-// ordinary boot.
+// had run for its bound on battery without progress (renderwatchdog::BOUND_MS),
+// or one sleep entry had run for its (SLEEP_ENTRY_BOUND_MS) without sleeping,
+// which left every sleep path waiting on a lock that task held or the sleep
+// screen never finishing. The restart took the lock, the SPI bus, the card and
+// the radio with it, and this boot, which has started none of them, sleeps by
+// the reset loop's sequence. It is not an abnormal reset: the count stays at
+// zero and the wake the power key gives is an ordinary boot.
 static void sleepIfRenderWatchdog() {
   renderwatchdog::Event event;
   if (!renderwatchdog::takeSleepRequest(event)) return;
-  LOG_ERR("PWR", "Render watchdog: render() of %s had run for %lu s at the restart; sleeping", event.activity,
-          static_cast<unsigned long>(event.stuckMs / 1000U));
+  char what[96];
+  renderwatchdog::describe(event, what, sizeof(what));
+  LOG_ERR("PWR", "Render watchdog: %s at the restart; sleeping", what);
   sleepWithoutDrivers();
+}
+
+// The boot after that sleep, which stays up: the session before it ended in the watchdog's restart. The log line, then
+// the last lines that session logged, which the ring in RTC memory kept (setup() holds the ring from the first line, so
+// that nothing between the restart and here overwrote it): the hung session's own account of where it was.
+static void logWatchdogReport(const renderwatchdog::Event& event) {
+  char what[96];
+  renderwatchdog::describe(event, what, sizeof(what));
+  LOG_ERR("PWR", "The session before the last sleep ended in the render watchdog: %s", what);
+#ifdef ENABLE_SERIAL_LOG
+  const std::string lines = getLastLogs();
+  for (size_t from = 0; from < lines.size();) {
+    size_t to = lines.find('\n', from);
+    if (to == std::string::npos) to = lines.size();
+    if (to > from) LOG_ERR("PWR", "  held: %.*s", static_cast<int>(to - from), lines.c_str() + from);
+    from = to + 1;
+  }
+#endif
 }
 #endif
 
@@ -991,6 +1024,13 @@ void setupDisplayAndFonts(bool seamless = false) {
 
 void setup() {
   BoardConfig::holdPowerRails();
+#if FREEINK_CAP_POWER_POLICY
+  // POWER.md AW-04: the render watchdog's restart (and the sleep after it) left the hung session's last log lines in
+  // the ring in RTC memory. HalSystem::begin() would clear it as an ordinary boot's; keep it, and keep new lines out of
+  // it, until the report below has printed it.
+  const bool watchdogLogsHeld = renderwatchdog::holdsLogs();
+  if (watchdogLogsHeld) holdLastLogs(true);
+#endif
 
 #ifdef ENABLE_SERIAL_LOG
 #ifdef CROSSPOINT_WAIT_FOR_USB_SERIAL
@@ -1242,9 +1282,10 @@ void setup() {
 
 #if FREEINK_CAP_POWER_POLICY
   // The session that ended in the render watchdog's restart left a note for the boot after its sleep, this one.
-  if (renderwatchdog::Event watchdogEvent; renderwatchdog::takeReport(watchdogEvent)) {
-    LOG_ERR("PWR", "The session before the last sleep ended in the render watchdog: render() of %s had run for %lu s",
-            watchdogEvent.activity, static_cast<unsigned long>(watchdogEvent.stuckMs / 1000U));
+  if (renderwatchdog::Event watchdogEvent; renderwatchdog::takeReport(watchdogEvent)) logWatchdogReport(watchdogEvent);
+  if (watchdogLogsHeld) {
+    holdLastLogs(false);
+    clearLastLogs();  // the report owns the old lines now; this session's log starts empty
   }
 #endif
 

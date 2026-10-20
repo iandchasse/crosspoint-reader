@@ -25,6 +25,20 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#if FREEINK_CAP_POWER_POLICY
+#include "util/RenderWatchdog.h"
+#endif
+
+namespace {
+// Silkscreen's render watchdog (docs/silkscreen/POWER.md, AW-04): this render() has just made progress (one cover of
+// the Home screen's thumbnails), so its five minutes start over. Does nothing from any task but the render task, and on
+// other boards.
+inline void watchdogProgress() {
+#if FREEINK_CAP_POWER_POLICY
+  renderwatchdog::progress();
+#endif
+}
+}  // namespace
 
 int HomeActivity::getMenuItemCount() const {
   int count = 4;  // File Browser, Library, File transfer, Settings
@@ -167,6 +181,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   int progress = 0;
   for (RecentBook& book : recentBooks) {
+    watchdogProgress();  // one cover at a time
     // The cover grid shares one slot size; generating at any other height
     // would rescale the dithered thumb at draw time and alias badly.
     const int thumbHeight = coverGridUi ? coverGridUi->thumbHeightFor() : coverHeight;

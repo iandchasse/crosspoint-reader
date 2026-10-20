@@ -60,8 +60,20 @@
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
 #include "util/ScreenshotUtil.h"
+#if FREEINK_CAP_POWER_POLICY
+#include "util/RenderWatchdog.h"
+#endif
 
 namespace {
+// Silkscreen's render watchdog (docs/silkscreen/POWER.md, AW-04): this render() has just made progress (one chunk of a
+// section build, the popup of a build that starts), so its five minutes start over. Does nothing from any task but the
+// render task, and on other boards.
+inline void watchdogProgress() {
+#if FREEINK_CAP_POWER_POLICY
+  renderwatchdog::progress();
+#endif
+}
+
 // The X4 Pro and X4 Classic carry the X4's panel but sit outside isXteinkDevice()
 // (that helper also gates power management). Overlay refresh choices are per-panel:
 // this family runs the grayscale anti-aliasing pass, so chrome painted over a
@@ -401,6 +413,7 @@ bool EpubReaderActivity::buildTickHeapGate() {
 }
 
 void EpubReaderActivity::showBuildPopup(GfxRenderer& renderer, int& pagesUntilFullRefresh) {
+  watchdogProgress();
   if (!buildPopupPending || !renderer.hasFrameBuffer()) return;
   GUI.drawPopup(renderer, tr(STR_INDEXING));
   pagesUntilFullRefresh = 1;
@@ -1667,6 +1680,7 @@ void EpubReaderActivity::renderBook() {
         GUI.drawPopup(renderer, tr(STR_INDEXING));
         pagesUntilFullRefresh = 1;
         const auto popupFn = [this]() {
+          watchdogProgress();
           if (renderer.hasFrameBuffer()) GUI.drawPopup(renderer, tr(STR_INDEXING));
         };
         if (!makeRoomForChapterBuild()) {
@@ -1755,6 +1769,7 @@ void EpubReaderActivity::renderBook() {
               showBuildError();
               return;
             }
+            watchdogProgress();
           }
           buildPopupPending = false;
         }
@@ -1824,6 +1839,7 @@ void EpubReaderActivity::renderBook() {
         showBuildError();
         return;
       }
+      watchdogProgress();
     }
   }
   if (section->isBuilding()) {
@@ -1834,6 +1850,7 @@ void EpubReaderActivity::renderBook() {
         showBuildError();
         return;
       }
+      watchdogProgress();
     }
   }
 
