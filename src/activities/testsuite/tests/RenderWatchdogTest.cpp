@@ -49,6 +49,11 @@ constexpr uint32_t WINDOW_MS = renderwatchdog::TICK_MS + 1000;
 // The watchdog task's stack is 4096 bytes. Less than this free at the restart fails, less than WARN warns.
 constexpr uint32_t STACK_FAIL_BYTES = 512;
 constexpr uint32_t STACK_WARN_BYTES = 1024;
+// A name for a list in a row's fails= or warns=, joined with '+'.
+void addToList(char* list, const size_t size, const char* name) {
+  const size_t used = strlen(list);
+  snprintf(list + used, size - used, "%s%s", used != 0 ? "+" : "", name);
+}
 
 constexpr int QUESTION_HANG = 1;
 constexpr const char* HANG_ANSWERS[] = {"Cancel", "Hang render()"};
@@ -174,19 +179,23 @@ void reportAtBoot() {
     LOG_ERR("TEST", "The render watchdog ended the last session in %s after %lu s, not in P9", event.activity,
             static_cast<unsigned long>(event.stuckMs / 1000UL));
   } else {
+    // Early is a defect. Late is a warning: with USB in when P9 was armed the watchdog waits for the cell, and the
+    // restart then comes within one tick of the cable coming out, however long after the bound that was.
     char fails[24] = "";
-    if (event.stuckMs < TEST_BOUND_MS || event.stuckMs > TEST_BOUND_MS + WINDOW_MS) strcat(fails, "window");
-    if (haveStack && stackFree < STACK_FAIL_BYTES) strcat(fails, fails[0] != '\0' ? "+stack" : "stack");
-    const bool stackWarn = haveStack && stackFree < STACK_WARN_BYTES;
-    verdict = fails[0] != '\0' ? Verdict::Fail : stackWarn ? Verdict::Warn : Verdict::Pass;
-    snprintf(details, sizeof(details),
-             "action=watchdog activity=%s stuck_ms=%lu uptime_ms=%lu expect_ms=%lu..%lu stack_free=%s %s=%s", activity,
-             static_cast<unsigned long>(event.stuckMs), static_cast<unsigned long>(event.uptimeMs),
-             static_cast<unsigned long>(TEST_BOUND_MS), static_cast<unsigned long>(TEST_BOUND_MS + WINDOW_MS), stack,
-             verdict == Verdict::Warn ? "warns" : "fails",
-             verdict == Verdict::Warn ? "stack"
-             : fails[0] != '\0'       ? fails
-                                      : "none");
+    char warns[24] = "";
+    if (event.stuckMs < TEST_BOUND_MS) addToList(fails, sizeof(fails), "early");
+    if (event.stuckMs > TEST_BOUND_MS + WINDOW_MS) addToList(warns, sizeof(warns), "late");
+    if (haveStack && stackFree < STACK_FAIL_BYTES) addToList(fails, sizeof(fails), "stack");
+    if (haveStack && stackFree >= STACK_FAIL_BYTES && stackFree < STACK_WARN_BYTES) {
+      addToList(warns, sizeof(warns), "stack");
+    }
+    verdict = fails[0] != '\0' ? Verdict::Fail : warns[0] != '\0' ? Verdict::Warn : Verdict::Pass;
+    snprintf(
+        details, sizeof(details),
+        "action=watchdog activity=%s stuck_ms=%lu uptime_ms=%lu expect_ms=%lu..%lu stack_free=%s fails=%s warns=%s",
+        activity, static_cast<unsigned long>(event.stuckMs), static_cast<unsigned long>(event.uptimeMs),
+        static_cast<unsigned long>(TEST_BOUND_MS), static_cast<unsigned long>(TEST_BOUND_MS + WINDOW_MS), stack,
+        fails[0] != '\0' ? fails : "none", warns[0] != '\0' ? warns : "none");
   }
   recordResult(*test, verdict, details);
 }
