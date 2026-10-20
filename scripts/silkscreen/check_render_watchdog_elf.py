@@ -42,12 +42,14 @@ TOOLCHAINS = {
     243: (PACKAGES / "toolchain-riscv32-esp" / "bin", "riscv32-esp-elf-"),
 }
 
-# function-name prefix (demangled; a clone such as `setup() [clone .part.0]` counts) -> calls it must contain
+# function-name prefixes (demangled; a clone such as `setup() [clone .part.0]` counts; `|` separates the functions that
+# together hold the calls: the compiler may inline main.cpp's static helpers into setup() or leave them out of line)
+# -> calls they must contain
 EXPECTED = {
     "ActivityManager::renderTaskLoop()": ["renderwatchdog::beginRender(", "renderwatchdog::endRender()"],
     "ActivityManager::begin(": ["renderwatchdog::start()"],
     "loop()": ["renderwatchdog::noteLoopPass()"],
-    "setup()": [
+    "setup()|sleepIfRenderWatchdog()|sleepIfResetLoop()": [
         "renderwatchdog::takeSleepRequest(",
         "renderwatchdog::takeReport(",
         "sleepWithoutDrivers()",
@@ -159,9 +161,10 @@ def check_present(elf: Path, expected=None) -> list[str]:
     if not any(name.startswith("renderwatchdog::start()") for _, _, name in syms):
         problems.append("the image has no renderwatchdog::start(): RenderWatchdog.cpp is empty here")
     for prefix, wanted in expected.items():
-        homes = [s for s in syms if s[2].startswith(prefix)]
-        if not homes:
-            problems.append(f"no function `{prefix}` in the image")
+        prefixes = prefix.split("|")
+        homes = [s for s in syms if s[2].startswith(tuple(prefixes))]
+        if not any(s[2].startswith(prefixes[0]) for s in homes):
+            problems.append(f"no function `{prefixes[0]}` in the image")
             continue
         seen: set[str] = set()
         for start, size, _ in homes:
