@@ -118,7 +118,9 @@ the sleep goes on. Nothing the log adds between the sleep decision and `esp_deep
   fonts left the firmware and the Bluetooth page turner came in, then the recursive dictionary lookup) `silkscreen` 1118992 B,
   `silkscreen-batlog` 1154448 B and `c3check` 1110048 B (1132656, 1168096 and 1120032 B before the second round of that day), and
   `silkscreen-gh_release` 753328 B from before, not rebuilt since; CrossInk `silkscreen` 934800 B,
-  `silkscreen-batlog` 925984 B, `c3check` 224560 B. The batlog image fits with room in both readers. CrossInk's `c3check` is
+  `silkscreen-batlog` 925984 B, `c3check` 224560 B. After the render watchdog (2026-10-20): CrossPoint `silkscreen` 1117440 B,
+  `silkscreen-batlog` 1152976 B, `silkscreen-368-gh_release` 1188192 B and `c3check` 1110048 B (unchanged); CrossInk `silkscreen`
+  1188336 B and `silkscreen-batlog` 1179632 B (its figures just above are those of 2026-10-04). The batlog image fits with room in both readers. CrossInk's `c3check` is
   the tight one, and the log does not touch it.
 - **The SD card:** one file, 2 MiB cap, about 230 B a row (about 9000 rows, about 15 months at 20 cycles a day). Eight
   weeks of use writes 0.15-0.2 MB.
