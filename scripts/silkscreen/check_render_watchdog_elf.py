@@ -8,22 +8,27 @@ check still passes, and the watchdog is silently off. This reads the machine cod
   python -I -X utf8 scripts/silkscreen/check_render_watchdog_elf.py [env | --elf PATH] [--absent] [--control]
 
 Without --absent (the Silkscreen envs): the image must call the watchdog's hooks from the functions they belong to,
-and its task must exist:
+and its task must exist (EXPECTED below is the table):
   ActivityManager::renderTaskLoop()  calls renderwatchdog::beginRender(...) and renderwatchdog::endRender()
   ActivityManager::begin(...)        calls renderwatchdog::start()
   loop()                             calls renderwatchdog::noteLoopPass()
-  setup()                            calls renderwatchdog::takeSleepRequest(...), renderwatchdog::takeReport(...) and
-                                     sleepWithoutDrivers()
-With --absent (every other board's env): the image must hold no renderwatchdog:: symbol and no sleepWithoutDrivers().
+  enterDeepSleep(...)                calls renderwatchdog::beginSleepEntry()
+  setup() and the static helpers     call takeSleepRequest, takeReport, resetLoopSlept, holdsLogs, describe,
+  it may inline                      holdLastLogs, clearLastLogs and sleepWithoutDrivers()
+  EpubReaderActivity::*, HomeActivity::*, TxtReaderActivity::*   call renderwatchdog::progress()
+With --absent (every other board's env): the image must hold no renderwatchdog:: symbol and no sleepWithoutDrivers(),
+and must be a whole image (it has setup() and loop()), so that an image with its symbols stripped cannot pass.
 
---control, on an image that passes, asks each function about a hook that belongs to another one (loop() about
-beginRender, setup() about start, ...): every such question must come back "not called", which shows that the check
-can say no.
+--control, on an image that passes (it refuses any other), asks each function about a hook that belongs to another
+one (loop() about beginRender, setup() about start, ...): every such question must come back "not called", which shows
+that the check can say no. The questions are the distinct (function, hook) pairs of the table, and the count printed is
+that number.
 
 The binutils come from $NM / $OBJDUMP, else PlatformIO's toolchain-xtensa-esp-elf (the RISC-V boards' images, for
---absent, from toolchain-riscv32-esp). A call is a direct call
-(callN <symbol>) or a call through a literal (l32r into a register, then callxN), which is how a call across the
-image's 5 MB of flash is made. Exit 0 when everything holds, 1 when something does not, 2 when the check cannot run.
+--absent, from toolchain-riscv32-esp). The whole image is disassembled once, in one pass, and every question is
+answered from that. A call is a direct call (callN <symbol>) or a call through a literal (l32r into a register, then
+callxN), which is how a call across the image's 5 MB of flash is made. Exit 0 when everything holds, 1 when something
+does not, 2 when the check cannot run.
 """
 import argparse
 import bisect
@@ -32,6 +37,7 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,15 +55,29 @@ EXPECTED = {
     "ActivityManager::renderTaskLoop()": ["renderwatchdog::beginRender(", "renderwatchdog::endRender()"],
     "ActivityManager::begin(": ["renderwatchdog::start()"],
     "loop()": ["renderwatchdog::noteLoopPass()"],
-    "setup()|sleepIfRenderWatchdog()|sleepIfResetLoop()": [
+    "enterDeepSleep(": ["renderwatchdog::beginSleepEntry()"],
+    "setup()|sleepIfRenderWatchdog()|sleepIfResetLoop()|logWatchdogReport(": [
         "renderwatchdog::takeSleepRequest(",
         "renderwatchdog::takeReport(",
+        "renderwatchdog::resetLoopSlept()",
+        "renderwatchdog::holdsLogs()",
+        "renderwatchdog::describe(",
+        "holdLastLogs(",
+        "clearLastLogs()",
         "sleepWithoutDrivers()",
     ],
+    # the long renders that re-stamp (one call per chunk of a section build, per cover, per twenty pages of a text index)
+    "EpubReaderActivity::": ["renderwatchdog::progress()"],
+    "HomeActivity::": ["renderwatchdog::progress()"],
+    "TxtReaderActivity::": ["renderwatchdog::progress()"],
 }
-
+# Entries whose class does not exist in every app (CrossInk has a text reader that CrossPoint does not): an image
+# without any such function is not asked.
+OPTIONAL = {"TxtReaderActivity::"}
 
 MACHINE = 94
+HEADER = re.compile(r"^([0-9a-f]+) <(.*)>:$")
+INSN = re.compile(r"^\s*[0-9a-f]+:\t[0-9a-f ]+\t(\S+)\s*(.*)$")
 
 
 def tool(name: str, env: str) -> str:
@@ -116,84 +136,118 @@ def symbols(elf: Path):
     return found
 
 
-def calls_in(elf: Path, image: Image, syms, start: int, size: int) -> set[str]:
-    """Names of the functions called from the code at [start, start + size)."""
-    addrs = [s[0] for s in syms]
+class Analysis:
+    """An image read once: its function symbols, and for each function the names it calls."""
 
-    def name_at(address: int) -> str:
-        k = bisect.bisect_right(addrs, address) - 1
-        if k >= 0 and syms[k][0] <= address < syms[k][0] + max(syms[k][1], 1):
-            return syms[k][2]
-        return f"?{address:#x}"
+    def __init__(self, elf: Path, disassemble: bool = True):
+        self.syms = symbols(elf)
+        self.calls: dict[int, set[str]] = {}
+        if disassemble:
+            self._disassemble(elf, Image(elf))
 
-    text = run([tool("objdump", "OBJDUMP"), "-d", "-C", f"--start-address={start:#x}", f"--stop-address={start + size:#x}",
-                str(elf)])
-    literals: dict[str, int | None] = {}
-    found: set[str] = set()
-    for line in text.splitlines():
-        m = re.match(r"^\s*[0-9a-f]+:\t[0-9a-f ]+\t(\S+)\s*(.*)$", line)
-        if not m:
-            continue
-        op, args = m.group(1), m.group(2)
-        if op.startswith("l32r"):
-            a = re.match(r"(a\d+), ([0-9a-f]+)", args)
-            if a:
-                literals[a.group(1)] = image.word(int(a.group(2), 16))
-        elif op.startswith("callx"):
-            reg = args.split()[0] if args.split() else ""
-            target = literals.get(reg)
-            if target is not None:
-                found.add(name_at(target))
-        elif op.startswith("call"):
-            t = re.match(r"([0-9a-f]+) <", args)
-            if t:
-                found.add(name_at(int(t.group(1), 16)))
-        elif re.match(r"(movi|mov|addi|add|l32i)", op):
-            literals.pop(args.split(",")[0].strip(), None)
-    return found
+    def _disassemble(self, elf: Path, image: Image) -> None:
+        addrs = [s[0] for s in self.syms]
+
+        def name_at(address: int) -> str:
+            k = bisect.bisect_right(addrs, address) - 1
+            if k >= 0 and self.syms[k][0] <= address < self.syms[k][0] + max(self.syms[k][1], 1):
+                return self.syms[k][2]
+            return f"?{address:#x}"
+
+        with tempfile.TemporaryFile() as errors:
+            proc = subprocess.Popen([tool("objdump", "OBJDUMP"), "-d", "-C", str(elf)], stdout=subprocess.PIPE,
+                                    stderr=errors, text=True, encoding="utf-8", errors="replace")
+            current: set[str] | None = None
+            literals: dict[str, int | None] = {}
+            for line in proc.stdout:
+                head = HEADER.match(line)
+                if head:
+                    current = self.calls.setdefault(int(head.group(1), 16), set())
+                    literals = {}
+                    continue
+                if current is None:
+                    continue
+                m = INSN.match(line)
+                if not m:
+                    continue
+                op, args = m.group(1), m.group(2)
+                if op.startswith("l32r"):
+                    a = re.match(r"(a\d+), ([0-9a-f]+)", args)
+                    if a:
+                        literals[a.group(1)] = image.word(int(a.group(2), 16))
+                elif op.startswith("callx"):
+                    reg = args.split()[0] if args.split() else ""
+                    target = literals.get(reg)
+                    if target is not None:
+                        current.add(name_at(target))
+                elif op.startswith("call"):
+                    t = re.match(r"([0-9a-f]+) <", args)
+                    if t:
+                        current.add(name_at(int(t.group(1), 16)))
+                elif re.match(r"(movi|mov|addi|add|l32i)", op):
+                    literals.pop(args.split(",")[0].strip(), None)
+            code = proc.wait()
+            if code != 0:
+                errors.seek(0)
+                sys.exit(f"check_render_watchdog_elf: objdump failed: "
+                         f"{errors.read().decode('utf-8', 'replace').strip()[:200]}")
+
+    def homes(self, prefix: str):
+        """The function symbols a table key names (`|` separates alternatives)."""
+        return [s for s in self.syms if s[2].startswith(tuple(prefix.split("|")))]
+
+    def has_home(self, prefix: str) -> bool:
+        first = prefix.split("|")[0]
+        return any(s[2].startswith(first) for s in self.homes(prefix))
+
+    def called_by(self, prefix: str) -> set[str]:
+        seen: set[str] = set()
+        for start, _, _ in self.homes(prefix):
+            seen |= self.calls.get(start, set())
+        return seen
 
 
-def check_present(elf: Path, expected=None) -> list[str]:
-    image = Image(elf)
-    syms = symbols(elf)
+def check_present(analysis: Analysis, expected=None) -> list[str]:
     expected = EXPECTED if expected is None else expected
     problems = []
-    if not any(name.startswith("renderwatchdog::start()") for _, _, name in syms):
+    if not any(name.startswith("renderwatchdog::start()") for _, _, name in analysis.syms):
         problems.append("the image has no renderwatchdog::start(): RenderWatchdog.cpp is empty here")
     for prefix, wanted in expected.items():
-        prefixes = prefix.split("|")
-        homes = [s for s in syms if s[2].startswith(tuple(prefixes))]
-        if not any(s[2].startswith(prefixes[0]) for s in homes):
-            problems.append(f"no function `{prefixes[0]}` in the image")
+        if not analysis.has_home(prefix):
+            if prefix not in OPTIONAL:
+                problems.append(f"no function `{prefix.split('|')[0]}` in the image")
             continue
-        seen: set[str] = set()
-        for start, size, _ in homes:
-            seen |= calls_in(elf, image, syms, start, size)
+        seen = analysis.called_by(prefix)
         for call in wanted:
             if not any(name.startswith(call) for name in seen):
                 problems.append(f"`{prefix}` does not call `{call}`")
     return problems
 
 
-def control(elf: Path) -> list[str]:
-    """Each hook asked of a function that does not hold it: all must be reported missing."""
-    hooks = [(f, c) for f, calls in EXPECTED.items() for c in calls]
-    wrong = []
-    for function, _ in hooks:
-        for owner, call in hooks:
-            if owner != function and not any(c == call for c in EXPECTED[function]):
-                wrong.append((function, call))
+def control(analysis: Analysis) -> list[str]:
+    """Each hook asked of a function that does not hold it: all must be reported missing. Only on an image that passes:
+    on one that does not, the questions would come back "missing" for the wrong reason."""
+    present = check_present(analysis)
+    if present:
+        return [f"--control needs an image that passes the check; it reports: {present[0]}"]
+    live = {function: calls for function, calls in EXPECTED.items() if analysis.has_home(function)}
+    wrong = sorted({(function, call) for function in live for owner in live if owner != function
+                    for call in live[owner] if call not in live[function]})
     problems = []
     for function, call in wrong:
-        if not check_present(elf, {function: [call]}):
+        if not check_present(analysis, {function: [call]}):
             problems.append(f"CONTROL NOT CAUGHT: `{function}` is not expected to call `{call}`, and the check passed it")
-    print(f"{len(wrong)} wrong pairings asked, {len(problems)} passed")
+    print(f"{len(wrong)} distinct wrong pairings asked, {len(problems)} passed")
     return problems
 
 
-def check_absent(elf: Path) -> list[str]:
-    names = [name for _, _, name in symbols(elf) if name.startswith(("renderwatchdog::", "sleepWithoutDrivers"))]
-    return [f"this image holds {len(names)} watchdog symbol(s), e.g. `{names[0]}`"] if names else []
+def check_absent(analysis: Analysis) -> list[str]:
+    # An image whose symbols are stripped holds no watchdog symbol either: it must be a whole image to count.
+    names = [name for _, _, name in analysis.syms]
+    if not any(n.startswith("setup()") for n in names) or not any(n.startswith("loop()") for n in names):
+        return ["this image has no setup() or no loop() symbol (stripped?): its absence of watchdog symbols proves nothing"]
+    found = [n for n in names if n.startswith(("renderwatchdog::", "sleepWithoutDrivers"))]
+    return [f"this image holds {len(found)} watchdog symbol(s), e.g. `{found[0]}`"] if found else []
 
 
 def main() -> int:
@@ -216,7 +270,9 @@ def main() -> int:
     if MACHINE != 94 and not args.absent:
         print(f"{label}: a Silkscreen image is an Xtensa one; this is machine {MACHINE}")
         return 1
-    problems = control(elf) if args.control else check_absent(elf) if args.absent else check_present(elf)
+    # Looking for symbols by name needs no disassembly (the other boards' images, absent, are read by name only).
+    analysis = Analysis(elf, disassemble=not args.absent)
+    problems = control(analysis) if args.control else check_absent(analysis) if args.absent else check_present(analysis)
     for problem in problems:
         print(f"{label}: {problem}")
     if problems:
@@ -225,7 +281,8 @@ def main() -> int:
         print(f"{label}: every wrong pairing is reported missing, as it must be")
         return 0
     print(f"{label}: " + ("no render watchdog in the image, as it must be" if args.absent else
-                          "the render watchdog's hooks are called where they belong (renderTaskLoop, begin, loop, setup)"))
+                          "the render watchdog's hooks are called where they belong (renderTaskLoop, begin, loop, "
+                          "enterDeepSleep, setup, the long renders)"))
     return 0
 
 

@@ -151,8 +151,14 @@ fi
 # main.cpp, and a merge that loses one still builds every env: the watchdog is then silently off (or a restart-into-sleep
 # lands at the wrong point). Counts the hooks, and runs the source guard, which reads their order and the lock-free
 # expiry path (test_render_watchdog.py --source-only; check_render_watchdog_elf.py reads the linked image and needs a build).
-echo "render watchdog (AW-04: the unit, its four hooks in ActivityManager.cpp and main.cpp, the shared sleep, the guards)"
+echo "render watchdog (AW-04: the unit, its hooks in ActivityManager.cpp, main.cpp and the long renders, the shared sleep, the log hold, the guards)"
 rwdmiss=0
+# Every hook is gated by the SDK's FREEINK_CAP_POWER_POLICY (Silkscreen only): a merge that drops or renames that macro
+# turns all of them off at once and every env still builds.
+if ! grep -q 'define FREEINK_CAP_POWER_POLICY (FREEINK_DEVICE_SILKSCREEN)' "$SDK/libs/hardware/BoardConfig/include/BoardConfig.h" 2>/dev/null; then
+  flag "render watchdog: the SDK's BoardConfig.h no longer has 'define FREEINK_CAP_POWER_POLICY (FREEINK_DEVICE_SILKSCREEN)': every watchdog hook is gated by it"
+  rwdmiss=$((rwdmiss + 1))
+fi
 rwd_need() {  # dir file pattern min: the file holds at least min lines matching the pattern
   local n
   n=$(grep -c -- "$3" "$1/$2" 2>/dev/null)
@@ -167,22 +173,38 @@ rwd_file() {  # dir file
     rwdmiss=$((rwdmiss + 1))
   fi
 }
-rwd_app() {  # dir
+rwd_app() {  # dir epub-min home-min txt-min: the least number of watchdogProgress() calls in each long render's file
   local dir=$1 f
-  for f in src/util/RenderWatchdog.h src/util/RenderWatchdog.cpp scripts/silkscreen/test_render_watchdog.py            scripts/silkscreen/render_watchdog_host_test.cpp; do
+  for f in src/util/RenderWatchdog.h src/util/RenderWatchdog.cpp scripts/silkscreen/test_render_watchdog.py \
+           scripts/silkscreen/render_watchdog_host_test.cpp scripts/silkscreen/check_render_watchdog_elf.py; do
     rwd_file "$dir" "$f"
   done
   rwd_need "$dir" scripts/silkscreen/build_matrix.sh 'test_render_watchdog.py' 1
+  rwd_need "$dir" scripts/silkscreen/build_matrix.sh 'check_render_watchdog_elf.py' 1
   rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::beginRender(' 1
   rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::endRender()' 1
   rwd_need "$dir" src/activities/ActivityManager.cpp 'renderwatchdog::start()' 1
   rwd_need "$dir" src/main.cpp 'renderwatchdog::noteLoopPass()' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::beginSleepEntry()' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::resetLoopSlept()' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::holdsLogs()' 1
+  rwd_need "$dir" src/main.cpp 'holdLastLogs(true)' 1
+  rwd_need "$dir" src/main.cpp 'holdLastLogs(false)' 1
   rwd_need "$dir" src/main.cpp 'renderwatchdog::takeSleepRequest(' 1
   rwd_need "$dir" src/main.cpp 'renderwatchdog::takeReport(' 1
+  rwd_need "$dir" src/main.cpp 'renderwatchdog::describe(' 2
   rwd_need "$dir" src/main.cpp '^static void sleepWithoutDrivers()' 1
   rwd_need "$dir" src/main.cpp '^static void sleepIfRenderWatchdog()' 1
+  rwd_need "$dir" src/main.cpp '^static void logWatchdogReport(' 1
   rwd_need "$dir" src/main.cpp '^ *sleepIfRenderWatchdog();' 1
   rwd_need "$dir" src/main.cpp 'sleepWithoutDrivers();' 2
+  rwd_need "$dir" lib/Logging/Logging.cpp 'holdLastLogs' 1
+  rwd_need "$dir" lib/Logging/Logging.cpp 'logRingHeld' 3
+  rwd_need "$dir" lib/Logging/Logging.h 'holdLastLogs' 1
+  # The long renders that re-stamp (renderwatchdog::progress() through each file's watchdogProgress()).
+  rwd_need "$dir" src/activities/reader/EpubReaderActivity.cpp '^ *watchdogProgress();' "$2"
+  rwd_need "$dir" src/activities/home/HomeActivity.cpp '^ *watchdogProgress();' "$3"
+  [ "$4" -gt 0 ] && rwd_need "$dir" src/activities/reader/TxtReaderActivity.cpp '^ *watchdogProgress();' "$4"
   if command -v python > /dev/null 2>&1 && [ -f "$dir/scripts/silkscreen/test_render_watchdog.py" ]; then
     if ! (cd "$dir" && python -I -X utf8 scripts/silkscreen/test_render_watchdog.py --source-only > /dev/null 2>&1); then
       flag "render watchdog: test_render_watchdog.py --source-only fails in $(basename "$dir"): run it for the reason"
@@ -190,12 +212,11 @@ rwd_app() {  # dir
     fi
   fi
 }
-rwd_file "$CP" scripts/silkscreen/check_render_watchdog_elf.py
-rwd_app "$CP"
+rwd_app "$CP" 5 1 0
 if [ -e "$CI/.git" ]; then
-  rwd_app "$CI"
+  rwd_app "$CI" 6 2 1
 fi
-[ $rwdmiss = 0 ] && info "the unit, the hooks, the shared sleep and the source guard are present in both apps"
+[ $rwdmiss = 0 ] && info "the unit, the hooks, the shared sleep, the log hold, the re-stamps and the guards are present in both apps"
 
 # The 3.68" X3-panel variant (-DSILKSCREEN_PANEL_368=1, the silkscreen-368 envs; docs/silkscreen/MODULARITY.md). A merge
 # that drops the SDK's profile or driver selection, an env, a board tag or one of the panel predicate's sites still
