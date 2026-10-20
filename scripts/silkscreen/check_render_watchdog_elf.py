@@ -15,7 +15,8 @@ and its task must exist (EXPECTED below is the table):
   enterDeepSleep(...)                calls renderwatchdog::beginSleepEntry()
   setup() and the static helpers     call takeSleepRequest, takeReport, resetLoopSlept, holdsLogs, describe,
   it may inline                      holdLastLogs, clearLastLogs and sleepWithoutDrivers()
-  EpubReaderActivity::*, HomeActivity::*, TxtReaderActivity::*   call renderwatchdog::progress()
+  EpubReaderActivity::*, HomeActivity::*, TxtReaderActivity::*   call renderwatchdog::progress() (reader images;
+                                     not asked of CrossPoint's test firmware, which has no reader)
 With --absent (every other board's env): the image must hold no renderwatchdog:: symbol and no sleepWithoutDrivers(),
 and must be a whole image (it has setup() and loop()), so that an image with its symbols stripped cannot pass.
 
@@ -74,6 +75,9 @@ EXPECTED = {
 # Entries whose class does not exist in every app (CrossInk has a text reader that CrossPoint does not): an image
 # without any such function is not asked.
 OPTIONAL = {"TxtReaderActivity::"}
+# The long renders live in the reader image. CrossPoint's hardware test firmware (its symbols are in `testsuite::`) has
+# no reader and no Home screen, so they are not asked of it; every reader image is asked, and a missing class is a failure.
+READER_ENTRIES = {"EpubReaderActivity::", "HomeActivity::", "TxtReaderActivity::"}
 
 MACHINE = 94
 HEADER = re.compile(r"^([0-9a-f]+) <(.*)>:$")
@@ -141,6 +145,7 @@ class Analysis:
 
     def __init__(self, elf: Path, disassemble: bool = True):
         self.syms = symbols(elf)
+        self.test_firmware = any(name.startswith("testsuite::") for _, _, name in self.syms)
         self.calls: dict[int, set[str]] = {}
         if disassemble:
             self._disassemble(elf, Image(elf))
@@ -213,6 +218,8 @@ def check_present(analysis: Analysis, expected=None) -> list[str]:
     if not any(name.startswith("renderwatchdog::start()") for _, _, name in analysis.syms):
         problems.append("the image has no renderwatchdog::start(): RenderWatchdog.cpp is empty here")
     for prefix, wanted in expected.items():
+        if prefix in READER_ENTRIES and analysis.test_firmware:
+            continue
         if not analysis.has_home(prefix):
             if prefix not in OPTIONAL:
                 problems.append(f"no function `{prefix.split('|')[0]}` in the image")
@@ -230,7 +237,8 @@ def control(analysis: Analysis) -> list[str]:
     present = check_present(analysis)
     if present:
         return [f"--control needs an image that passes the check; it reports: {present[0]}"]
-    live = {function: calls for function, calls in EXPECTED.items() if analysis.has_home(function)}
+    live = {function: calls for function, calls in EXPECTED.items() if analysis.has_home(function)
+            and not (function in READER_ENTRIES and analysis.test_firmware)}
     wrong = sorted({(function, call) for function in live for owner in live if owner != function
                     for call in live[owner] if call not in live[function]})
     problems = []
