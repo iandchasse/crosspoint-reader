@@ -1,0 +1,1352 @@
+# silkscreen sync census; app a96c4561, sdk bee6382; RULE<TAB>path<TAB>count<TAB>text
+AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
+AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
+AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
+AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long profileMs = BoardConfig::powerPolicy().awakeCeilingMin * 60UL * 1000UL;
+AWAKE	lib/hal/HalPowerManager.cpp	1	return lowBatteryCutoffTripped() || awakeCeilingPassed(sleepTimeoutMs) || awakeInputCapPassed();
+AWAKE	lib/hal/HalPowerManager.cpp	1	return std::max(profileMs, sleepTimeoutMs);
+AWAKE	lib/hal/HalPowerManager.cpp	1	unsigned long HalPowerManager::awakeCeilingMs(const unsigned long sleepTimeoutMs) {
+AWAKE	lib/hal/HalPowerManager.h	1	bool awakeCeilingPassed(unsigned long sleepTimeoutMs) const;
+AWAKE	lib/hal/HalPowerManager.h	1	bool backgroundNetworkMustStop(unsigned long sleepTimeoutMs);
+AWAKE	lib/hal/HalPowerManager.h	1	static unsigned long awakeCeilingMs(unsigned long sleepTimeoutMs);
+AWAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	.awakeCeilingMin = 15,
+AWAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	uint8_t awakeCeilingMin = 0;
+AWAKE	src/CrossPointSettings.cpp	1	clamp(doc["sleepTimeout"] | (uint8_t)SLEEP_10_MIN, SLEEP_TIMEOUT_COUNT, (uint8_t)SLEEP_10_MIN);
+AWAKE	src/CrossPointSettings.cpp	1	if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
+AWAKE	src/CrossPointSettings.cpp	1	if (sleepTimeoutMinutes >= SLEEP_TIMEOUT_NEVER_MINUTES) return 0UL;
+AWAKE	src/CrossPointSettings.cpp	1	sleepTimeoutMinutes = sleepTimeoutEnumToMinutes(legacyValue);
+AWAKE	src/CrossPointSettings.cpp	1	std::clamp(sleepTimeoutMinutes, MIN_SLEEP_TIMEOUT_MINUTES, static_cast<uint8_t>(SLEEP_TIMEOUT_NEVER_MINUTES - 1));
+AWAKE	src/CrossPointSettings.cpp	1	uint8_t CrossPointSettings::sleepTimeoutEnumToMinutes(const uint8_t legacyValue) {
+AWAKE	src/CrossPointSettings.h	1	SLEEP_TIMEOUT_COUNT
+AWAKE	src/CrossPointSettings.h	1	enum SLEEP_TIMEOUT {
+AWAKE	src/CrossPointSettings.h	1	static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
+AWAKE	src/CrossPointSettings.h	1	static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
+AWAKE	src/CrossPointSettings.h	1	static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
+AWAKE	src/CrossPointSettings.h	1	static uint8_t sleepTimeoutEnumToMinutes(uint8_t legacyValue);
+AWAKE	src/CrossPointSettings.h	1	uint8_t sleepTimeoutMinutes = 10;
+AWAKE	src/SettingsList.cpp	1	"sleepTimeoutMinutes", StrId::STR_CAT_SYSTEM));
+AWAKE	src/SettingsList.cpp	1	StrId::STR_TIME_TO_SLEEP, &CrossPointSettings::sleepTimeoutMinutes,
+AWAKE	src/SettingsList.cpp	1	{CrossPointSettings::MIN_SLEEP_TIMEOUT_MINUTES, CrossPointSettings::MAX_SLEEP_TIMEOUT_MINUTES, 1},
+AWAKE	src/activities/settings/SettingsActivity.cpp	1	CrossPointSettings::MIN_SLEEP_TIMEOUT_MINUTES, CrossPointSettings::MAX_SLEEP_TIMEOUT_MINUTES, 1, 5,
+AWAKE	src/activities/settings/SettingsActivity.cpp	1	SETTINGS.sleepTimeoutMinutes = static_cast<uint8_t>(std::get<IntervalResult>(result.data).value);
+AWAKE	src/activities/settings/SettingsActivity.cpp	1	if (SETTINGS.sleepTimeoutMinutes >= CrossPointSettings::SLEEP_TIMEOUT_NEVER_MINUTES) {
+AWAKE	src/activities/settings/SettingsActivity.cpp	1	if (setting.valuePtr == &CrossPointSettings::sleepTimeoutMinutes) return SettingsSection::Display;
+AWAKE	src/activities/settings/SettingsActivity.cpp	1	renderer, mappedInput, "SleepTimeoutInterval", StrId::STR_TIME_TO_SLEEP, SETTINGS.sleepTimeoutMinutes,
+AWAKE	src/main.cpp	1	HalPowerManager::awakeCeilingMs(sleepTimeoutMs) / 60000UL);
+AWAKE	src/main.cpp	1	LOG_DBG("SLP", "Auto-sleep triggered after %lu ms of inactivity", sleepTimeoutMs);
+AWAKE	src/main.cpp	1	allowSleepAt = millis() + 2000;
+AWAKE	src/main.cpp	1	const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+AWAKE	src/main.cpp	1	if (!awaitingDoubleClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
+AWAKE	src/main.cpp	1	if (!governedByTimeout && powerManager.awakeCeilingPassed(sleepTimeoutMs)) {
+AWAKE	src/main.cpp	1	if (BoardConfig::powerPolicy().awakeCeilingMin > 0) delay(10);
+AWAKE	src/main.cpp	1	if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
+AWAKE	src/main.cpp	1	if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS && !pageturner::holdsCpu.load()) {
+AWAKE	src/main.cpp	1	if (sleepTimeoutMs > 0 && millis() - lastActivityTime >= sleepTimeoutMs) {
+AWAKE	src/main.cpp	1	lastActivityTime = millis(); // Reset inactivity timer
+AWAKE	src/main.cpp	1	millis() >= allowSleepAt && mappedInputManager.wasReleased(MappedInputManager::Button::Power)) {
+AWAKE	src/main.cpp	1	sleepTimeoutMs > 0 && !activityManager.preventAutoSleep() && !keyHeld && !timeoutLiftedByRemote;
+AWAKE	src/main.cpp	1	static unsigned long allowSleepAt = 0;
+AWAKE	src/main.cpp	1	static unsigned long lastActivityTime = millis();
+AWAKE	src/network/CrossPointWebServer.cpp	1	if (BoardConfig::powerPolicy().awakeCeilingMin > 0) {
+AWAKE	src/util/PluginEvents.cpp	1	const std::function<bool()> mustStop = [sleepTimeoutMs] {
+AWAKE	src/util/PluginEvents.cpp	1	const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+AWAKE	src/util/PluginEvents.cpp	1	return powerManager.backgroundNetworkMustStop(sleepTimeoutMs);
+CUTOFF	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::lowBatteryCutoffTripped() {
+CUTOFF	lib/hal/HalPowerManager.cpp	1	const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBatteryCutoffMv;
+CUTOFF	lib/hal/HalPowerManager.cpp	1	cutoffTripped = true;
+CUTOFF	lib/hal/HalPowerManager.cpp	1	if (cutoffTripped) return true;
+CUTOFF	lib/hal/HalPowerManager.cpp	1	return lowBatteryCutoffTripped() || awakeCeilingPassed(sleepTimeoutMs) || awakeInputCapPassed();
+CUTOFF	lib/hal/HalPowerManager.h	1	bool cutoffTripped = false; // lowBatteryCutoffTripped() latch
+CUTOFF	lib/hal/HalPowerManager.h	1	bool lowBatteryCutoffTripped();
+CUTOFF	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	2	const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBatteryCutoffMv;
+CUTOFF	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	.lowBatteryCutoffMv = 3400,
+CUTOFF	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	uint16_t lowBatteryCutoffMv = 0;
+CUTOFF	src/activities/CatalogActivity.cpp	1	if (powerManager.lowBatteryCutoffTripped()) cancelDownload = true;
+CUTOFF	src/activities/CatalogActivity.cpp	1	if (result == HttpDownloader::ABORTED && powerManager.lowBatteryCutoffTripped()) {
+CUTOFF	src/activities/network/CrossPointWebServerActivity.cpp	1	return leaveRequested || powerManager.lowBatteryCutoffTripped();
+CUTOFF	src/activities/plugins/PluginCatalogActivity.cpp	1	bool abortAtCutoff() { return powerManager.lowBatteryCutoffTripped(); }
+CUTOFF	src/activities/settings/FontDownloadActivity.cpp	1	if (powerManager.lowBatteryCutoffTripped()) cancelRequested_ = true;
+CUTOFF	src/clippings/ClippingSync.cpp	1	if (powerManager.lowBatteryCutoffTripped()) {
+CUTOFF	src/main.cpp	1	const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBatteryCutoffMv;
+CUTOFF	src/main.cpp	1	if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
+CUTOFF	src/network/CrossPointWebServer.cpp	1	#include "CutoffAbortPrint.h"
+CUTOFF	src/network/CrossPointWebServer.cpp	1	CutoffAbortPrint out(client);
+CUTOFF	src/network/CrossPointWebServer.cpp	2	return powerManager.lowBatteryCutoffTripped();
+CUTOFF	src/network/CutoffAbortPrint.h	1	class CutoffAbortPrint : public Print {
+CUTOFF	src/network/CutoffAbortPrint.h	1	explicit CutoffAbortPrint(Print& sink) : _sink(sink) {}
+CUTOFF	src/network/CutoffAbortPrint.h	1	if (powerManager.lowBatteryCutoffTripped()) return 0;
+CUTOFF	src/network/HttpDownloader.cpp	2	[cancelFlag] { return (cancelFlag && *cancelFlag) || powerManager.lowBatteryCutoffTripped(); });
+CUTOFF	src/network/HttpDownloader.cpp	1	bool cutoffTripped() { return powerManager.lowBatteryCutoffTripped(); }
+CUTOFF	src/network/HttpDownloader.cpp	2	cutoffTripped);
+CUTOFF	src/network/OpdsHttpTransport.cpp	1	bool OpdsHttpTransport::shouldAbort() { return powerManager.lowBatteryCutoffTripped(); }
+CUTOFF	src/network/WebDAVHandler.cpp	1	#include "CutoffAbortPrint.h"
+CUTOFF	src/network/WebDAVHandler.cpp	1	CutoffAbortPrint out(client);
+CUTOFF	src/network/WebDAVHandler.cpp	1	if (powerManager.lowBatteryCutoffTripped()) {
+LIGHT	lib/I18n/translations/english.yaml	1	STR_FRONTLIGHT: "Frontlight"
+LIGHT	lib/I18n/translations/english.yaml	1	STR_TOGGLE_FRONTLIGHT: "Toggle Frontlight"
+LIGHT	lib/hal/HalFrontlight.cpp	1	#include "HalFrontlight.h"
+LIGHT	lib/hal/HalFrontlight.cpp	1	HalFrontlight HalFrontlight::instance;
+LIGHT	lib/hal/HalFrontlight.cpp	1	LOG_INF("LIGHT", "Frontlight not restored: no light answered its last switch-on");
+LIGHT	lib/hal/HalFrontlight.cpp	1	LOG_INF("LIGHT", "Frontlight up: %u%% warm=%u%% %s", lastBrightness, manager.colorTemperature(), lit ? "on" : "off");
+LIGHT	lib/hal/HalFrontlight.cpp	1	bool HalFrontlight::hasColourSelect() const {
+LIGHT	lib/hal/HalFrontlight.cpp	1	bool HalFrontlight::warmthIsSelection() const { return hasColourSelect() && !manager.blendsColour(); }
+LIGHT	lib/hal/HalFrontlight.cpp	1	const auto& fl = BoardConfig::ACTIVE.frontlight;
+LIGHT	lib/hal/HalFrontlight.cpp	1	if (!lit || !manager.fault() || manager.load() != freeink::frontlight::Load::Absent) return;
+LIGHT	lib/hal/HalFrontlight.cpp	1	if (lit) manager.setBrightness(lastBrightness);
+LIGHT	lib/hal/HalFrontlight.cpp	1	manager.setBrightness(0); // dark and re-armed; the SDK's record keeps "no light"
+LIGHT	lib/hal/HalFrontlight.cpp	2	manager.setBrightness(lit ? lastBrightness : 0);
+LIGHT	lib/hal/HalFrontlight.cpp	1	return present() && BoardConfig::ACTIVE.frontlight.colorSelectGpio != BoardConfig::PIN_UNASSIGNED;
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const bool on) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::noteSwitchOn(const Pending who) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::setBrightness(const uint8_t percent) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::setOn(const bool on) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::setWarmth(const uint8_t warmPercent) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::settleSwitchOn(const bool userAsked) {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void HalFrontlight::update() {
+LIGHT	lib/hal/HalFrontlight.cpp	1	void darkBeforeRestart() { Frontlight.prepareForSleep(); }
+LIGHT	lib/hal/HalFrontlight.h	1	#define Frontlight HalFrontlight::getInstance()
+LIGHT	lib/hal/HalFrontlight.h	1	#include <FrontlightManager.h>
+LIGHT	lib/hal/HalFrontlight.h	1	FrontlightManager manager;
+LIGHT	lib/hal/HalFrontlight.h	1	HalFrontlight() = default;
+LIGHT	lib/hal/HalFrontlight.h	1	bool noLightFound() const { return manager.load() == freeink::frontlight::Load::Absent; }
+LIGHT	lib/hal/HalFrontlight.h	1	class HalFrontlight {
+LIGHT	lib/hal/HalFrontlight.h	1	static HalFrontlight instance;
+LIGHT	lib/hal/HalFrontlight.h	1	static HalFrontlight& getInstance() { return instance; }
+LIGHT	lib/hal/HalFrontlight.h	1	void setBrightness(uint8_t percent);
+LIGHT	lib/hal/HalPowerManager.cpp	1	#include "HalFrontlight.h"
+LIGHT	lib/hal/HalPowerManager.cpp	1	#include <HalFrontlight.h>
+LIGHT	lib/hal/HalPowerManager.cpp	1	Frontlight.prepareForSleep();
+LIGHT	lib/hal/HalPowerManager.cpp	1	Frontlight.setOn(false);
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	#define FREEINK_CAP_WARMLIGHT \
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	#ifndef FREEINK_CAP_WARMLIGHT
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	(ACTIVE.frontlight.gpioWarm != PIN_UNASSIGNED || ACTIVE.frontlight.colorSelectGpio != PIN_UNASSIGNED)) ||
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	.frontlight = {.gpio = 42,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	.i2cFrontlight = NO_I2C_FRONTLIGHT,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	40000000u / SILKSCREEN.frontlight.colorBlendHz >= (1u << SILKSCREEN.frontlight.pwmResolutionBits),
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	ACTIVE.i2cFrontlight.controller == I2cFrontlightController::Lm3630a ||
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	ACTIVE.i2cFrontlight.controller == I2cFrontlightController::PiccoDualLed;
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	FrontlightConfig frontlight;
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	I2cFrontlightConfig i2cFrontlight = NO_I2C_FRONTLIGHT;
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	I2cFrontlightController controller;
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	NO_FRONTLIGHT, // e-paper, no frontlight (charge LED is board-support)
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	NO_FRONTLIGHT, // e-paper, no frontlight (the GPIO0 status LED is board-support)
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	NO_FRONTLIGHT, // frontlight: none
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	NO_FRONTLIGHT, // no LEDC pins; the frontlight is the I2C driver in i2cFrontlight below
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	NO_FRONTLIGHT, // no frontlight — stock reports "Frontlight hardware is disabled on this board"
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	SILKSCREEN.frontlight.loadProbePeriodMs * 10u <= SILKSCREEN.frontlight.loadProbeWindowMs,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	SILKSCREEN.frontlight.loadProbePeriodMs * 5u <= SILKSCREEN.frontlight.blendConfirmWindowMs,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	XteinkX4Pro, // ESP32-S3 sibling of the C3 X4: SSD1677 + GT911 touch + warm/cold frontlight
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	constexpr FrontlightConfig NO_FRONTLIGHT = {PIN_UNASSIGNED, 0, 0, true};
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	constexpr FrontlightConfig PAPER_MONO_FRONTLIGHT = {PIN_UNASSIGNED, 5000, 12, true, PIN_UNASSIGNED, true};
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	constexpr I2cFrontlightConfig NO_I2C_FRONTLIGHT = {I2cFrontlightController::None, PIN_UNASSIGNED, PIN_UNASSIGNED, 0,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	enum class I2cFrontlightController : uint8_t { None, Lm3630a, PiccoDualLed };
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	inline bool hasColorTemperatureFrontlight() {
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	inline bool hasI2cFrontlight() { return ACTIVE.i2cFrontlight.controller != I2cFrontlightController::None; }
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	inline bool hasPwmFrontlight() { return ACTIVE.frontlight.gpio != PIN_UNASSIGNED || ACTIVE.frontlight.viaPm1Pwm; }
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	return (ACTIVE.frontlight.gpio != PIN_UNASSIGNED &&
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	static_assert(40000000u / SILKSCREEN.frontlight.pwmFrequency >= (1u << SILKSCREEN.frontlight.pwmResolutionBits),
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	static_assert(SILKSCREEN.frontlight.blendConfirmWindowMs == 0 ||
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	static_assert(SILKSCREEN.frontlight.colorBlendHz == 0 ||
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	static_assert(SILKSCREEN.frontlight.loadProbePeriodMs != 0 &&
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	static_assert(SILKSCREEN.frontlight.railSafeV * 1000u < SILKSCREEN.frontlight.monitorTripMv,
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	struct FrontlightConfig {
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	struct I2cFrontlightConfig {
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	{I2cFrontlightController::Lm3630a, 2, 1, 400000, 0x36, 12},
+LIGHT	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	{I2cFrontlightController::PiccoDualLed, 7, 8, 400000, 0x38, PIN_UNASSIGNED}};
+LIGHT	sdk:libs/hardware/BoardConfig/library.json	1	"description": "FreeInk board hardware profiles: compile-time-selected pinout and capability descriptors (display, SD, input, touch, frontlight, audio) consumed by every 
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightLoad.h	1	namespace frontlight {
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightLoad.h	1	} // namespace frontlight
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	#if FREEINK_CAP_WARMLIGHT
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	#include <FrontlightLoad.h>
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	(BoardConfig::ACTIVE.frontlight.gpioWarm != BoardConfig::PIN_UNASSIGNED ||
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	BoardConfig::ACTIVE.frontlight.colorSelectGpio != BoardConfig::PIN_UNASSIGNED);
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	BoardConfig::ACTIVE.frontlight.viaPm1Pwm;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	bool _lsParked = false; // park() has driven + held the frontlight pads LOW
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	bool confirmsWhileLit(const freeink::frontlight::ColourPlan& plan) const;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	class FrontlightManager {
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	freeink::frontlight::ColourPlan colourPlan() const;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	freeink::frontlight::Load load() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	freeink::frontlight::LoadRecord _loadRecord;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	freeink::frontlight::LoadRecord record;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	if (BoardConfig::ACTIVE.board == BoardConfig::Board::EegoA4 && BoardConfig::hasI2cFrontlight()) return _begun;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	if (BoardConfig::ACTIVE.board == BoardConfig::Board::Picco && BoardConfig::hasI2cFrontlight()) return _begun;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return BoardConfig::ACTIVE.frontlight.gpio != BoardConfig::PIN_UNASSIGNED &&
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return BoardConfig::ACTIVE.frontlight.gpio != BoardConfig::PIN_UNASSIGNED ||
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return _litSinceReset[warm ? 1 : 0] && _loadRecord.string(warm) == freeink::frontlight::StringState::Present;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return _loadRecord.string(warm) == freeink::frontlight::StringState::Missing;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return false; // frontlight code not compiled in (FREEINK_CAP_FRONTLIGHT=0)
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return false; // no warm-channel board in this build (FREEINK_CAP_WARMLIGHT=0)
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return freeink::frontlight::Load::Unknown;
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	return freeink::frontlight::restoreAllowed(_loadRecord);
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	2	return present() && BoardConfig::hasColorTemperatureFrontlight();
+LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	void setBrightness(uint8_t percent);
+LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"description": "FreeInk frontlight manager driven by BoardConfig::ACTIVE.frontlight. Inert on boards without a frontlight. Backends: LEDC PWM (single + warm/cool), M5PM1 
+LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"keywords": "frontlight, backlight, pwm, ledc, i2c",
+LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"name": "FrontlightManager",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include "FrontlightManager.h"
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::Lm3630a) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::PiccoDualLed) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	FrontlightManager::MonitorDiagnostics FrontlightManager::monitorDiagnostics() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	FrontlightManager::ProbeDiagnostics FrontlightManager::probeDiagnostics() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "gated: blend off, %s", warm ? "warm" : "cool");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "gated: blend on, warm %u%%", static_cast<unsigned>(_warmPercent));
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "gated: dark");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "gated: lit duty=%u warm=%d blend=%d pulse=%d", static_cast<unsigned>(duty), warm ? 1 : 0,
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "gated: lit switch to %s for the blend", warm ? "warm" : "cool");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "load probe: %s string lit, peak %u mV over %u readings", _probe.warm ? "warm" : "cool",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_DBG("FrontlightMgr", "prepareForSleep: dark, LEDC detached");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail %u mV > %u mV trip: light off until switched on again",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail did not fall after the %s trip: the %s string was not tried; light off",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail did not fall after the last trip: light off until switched on again");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail still above %u V %u ms after the trip: colour select left on warm",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail still above %u V after %u ms",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "No %s string: the %s one is used until a cold boot", warm ? "cool" : "warm",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "No front light answered the switch-on: dark until switched on again");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: LED monitor unavailable, light disabled");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: LEDC attach failed on gpio=%d, light disabled", fl.gpio);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: no blend carrier on gpio=%d, warmth picks one string",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "load probe: ADC busy for %u ms, the 100 ms monitor takes over",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "LED rail down to %u V after %u ms: colour select free",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "apply: brightness=%u level=%u totalDuty=%u coolDuty=%u warmDuty=%u lit=%d", _brightness,
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "begin: attached gpio=%d warm=%d ok=%d", fl.gpio, fl.gpioWarm, attachOk ? 1 : 0);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "begin: cleared any stale held pads");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "load probe: %s string %u mV > %u mV after %u us: no load", _probe.warm ? "warm" : "cool",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "load record %s: load=%u cool=%u warm=%u", kept ? "kept" : "new",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "park: begun, driving pads LOW + hold");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_INF("FrontlightMgr", "releaseOnWake: cleared pad holds (unconditional)");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	RTC_NOINIT_ATTR freeink::frontlight::PackedRecord rtcLoadRecord;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	args.callback = &FrontlightManager::monitorTick;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::blendsColour() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::configureLm3630a() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::configurePicco() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::confirmsWhileLit(const freeink::frontlight::ColourPlan& plan) const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::lm3630aRead(const uint8_t reg, uint8_t& value) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::lm3630aUpdate(const uint8_t reg, const uint8_t mask, const uint8_t value) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::lm3630aWrite(const uint8_t reg, const uint8_t value) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::piccoUpdate(const uint8_t reg, const uint8_t mask, const uint8_t value) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::piccoWrite(const uint8_t reg, const uint8_t value) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::railSafeNow() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool FrontlightManager::waitRailSafe() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool gatedPath(const BoardConfig::FrontlightConfig& fl) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool monitorConfigured(const BoardConfig::FrontlightConfig& fl) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	6	const auto& cfg = BoardConfig::ACTIVE.i2cFrontlight;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	19	const auto& fl = BoardConfig::ACTIVE.frontlight;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const auto& i2c = BoardConfig::ACTIVE.i2cFrontlight;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const bool colourSelect = BoardConfig::ACTIVE.frontlight.colorSelectGpio != BoardConfig::PIN_UNASSIGNED;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const freeink::frontlight::ColourPlan plan = colourPlan();
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	const int64_t dwellUs = static_cast<int64_t>(BoardConfig::ACTIVE.frontlight.offDwellMs) * 1000;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	const uint8_t periodMs = BoardConfig::ACTIVE.frontlight.loadProbePeriodMs;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::ColourPlan FrontlightManager::colourPlan() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::noteInUseTrip(_loadRecord, _warmSelected);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	freeink::frontlight::noteLit(_loadRecord, warm);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::noteOtherLit(_loadRecord, !warm);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	i2c.controller == BoardConfig::I2cFrontlightController::Lm3630a) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	i2c.controller == BoardConfig::I2cFrontlightController::PiccoDualLed) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (_blending) freeink::frontlight::noteInUseTrip(_loadRecord, !_warmSelected); // both were lit
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (_probe.blend) freeink::frontlight::noteLit(_loadRecord, !warm);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (freeink::frontlight::noteTripped(_loadRecord, colourSelect, warm, _probe.secondTry || _probe.blend)) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	namespace rec = freeink::frontlight;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pm1FrontlightAttach(fl.pwmFrequency);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pm1FrontlightWrite(_brightness);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	return freeink::frontlight::blendPossible(_loadRecord, colourSelect, _colourCarrier) && _warmPercent > 0 &&
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	return freeink::frontlight::blendPossible(_loadRecord, colourSelect, _colourCarrier);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	return freeink::frontlight::colourPlan(_loadRecord, colourSelect, _colourCarrier, _warmPercent,
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	setBrightness(0);
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	static_cast<unsigned>(BoardConfig::ACTIVE.frontlight.railSafeV), static_cast<unsigned>(waitedMs));
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	uint32_t darkLevel(const BoardConfig::FrontlightConfig& fl) { return fl.activeHigh ? 0u : 1u; }
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::abandonProbe() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::apply() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::applyGated(const uint32_t duty, const uint32_t full) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::applyLm3630a() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::applyPicco() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::begin() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::beginRailWait(const uint32_t duty, const bool warm, const bool secondTry) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::beginWindow(const uint32_t duty, const bool warm, const bool secondTry, const bool blend,
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::blendColour(const uint32_t full) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::checkMonitor() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::endProbe() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::goDark(const uint32_t full) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::lightUp(const uint32_t duty, const uint32_t full, const bool warm, const bool secondTry,
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::markRailCharged() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::monitorTick(void* self) { static_cast<FrontlightManager*>(self)->checkMonitor(); }
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::noteProbeEnd(const bool tripped, const int64_t tripAtUs) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::noteRailWait(const int64_t sinceUs, const bool safe) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::off() { setBrightness(0); }
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::on() { setBrightness(_lastBrightness); }
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::park() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::prepareForSleep() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::probePassed() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::probeTick() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::probeTripped(const int64_t tripAtUs) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::railWaitTick() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::releaseOnWake() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::restColourSelectAfterTrip() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::restoreRecord() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::saveRecord() const { rtcLoadRecord = freeink::frontlight::pack(_loadRecord); }
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::selectWarm(const bool warm) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::setBrightness(uint8_t percent) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::setBrightnessLevel(uint8_t level) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::setColorTemperature(uint8_t warmPercent) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::startMonitor(const uint64_t periodUs) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::stopMonitor() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::switchLitToConfirm(const uint32_t duty, const uint32_t full, const bool warm) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::updateLsKeepAlive(const bool lit) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::waitDarkDwell() const {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void pm1FrontlightAttach(uint32_t freqHz) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void pm1FrontlightWrite(uint32_t pct) {
+LIGHT	sdk:libs/hardware/LedManager/include/LedManager.h	1	void setBrightness(uint8_t brightness);
+LIGHT	sdk:libs/hardware/LedManager/src/LedManager.cpp	1	void LedManager::setBrightness(uint8_t brightness) {
+LIGHT	sdk:libs/hardware/LedManager/src/LedManager.cpp	1	void LedManager::setBrightness(uint8_t brightness) { (void)brightness; }
+LIGHT	src/CrossPointSettings.cpp	1	return BoardConfig::isX4Pro() || (BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight());
+LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightBrightness = 60;
+LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightOn = 0;
+LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightRestoreOnWake = 1;
+LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightWarmth = 50; // 0 = cool .. 100 = warm
+LIGHT	src/CrossPointSettings.h	1	uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
+LIGHT	src/MappedInputManager.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/MappedInputManager.cpp	1	return Frontlight.present() && wasTopEdgeDownSwipe();
+LIGHT	src/SettingsList.cpp	1	"frontlightBrightness"));
+LIGHT	src/SettingsList.cpp	1	"frontlightRestoreOnWake", StrId::STR_CAT_DISPLAY));
+LIGHT	src/SettingsList.cpp	1	#if FREEINK_CAP_WARMLIGHT
+LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Toggle(StrId::STR_FRONTLIGHT, &CrossPointSettings::frontlightOn, "frontlightOn"));
+LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Toggle(StrId::STR_RESTORE_LIGHT_ON_WAKE, &CrossPointSettings::frontlightRestoreOnWake,
+LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightBrightness, {0, 100, 5},
+LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightWarmth, {0, 100, 5}, "frontlightWarmth"));
+LIGHT	src/SettingsList.h	1	#include <HalFrontlight.h>
+LIGHT	src/SettingsList.h	1	if (!BoardConfig::hasHomeKey() && keyFrontlightAvailable()) {
+LIGHT	src/SettingsList.h	1	if (!Frontlight.present()) {
+LIGHT	src/SettingsList.h	1	if (keyFrontlightAvailable()) {
+LIGHT	src/SettingsList.h	1	if (value == CrossPointSettings::TOGGLE_FRONTLIGHT) return keyFrontlightAvailable();
+LIGHT	src/SettingsList.h	1	inline bool keyFrontlightAvailable() {
+LIGHT	src/SettingsList.h	1	inline int shortPowerButtonToggleFrontlightIndex() {
+LIGHT	src/SettingsList.h	1	return !BoardConfig::hasHomeKey() && keyFrontlightAvailable();
+LIGHT	src/SettingsList.h	1	return BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight();
+LIGHT	src/activities/Activity.h	1	virtual bool showsFrontlightNotice() const { return false; }
+LIGHT	src/activities/ActivityManager.cpp	1	#include "util/FrontlightPanelActivity.h"
+LIGHT	src/activities/ActivityManager.cpp	1	bool ActivityManager::showsFrontlightNotice() const {
+LIGHT	src/activities/ActivityManager.cpp	1	if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
+LIGHT	src/activities/ActivityManager.cpp	1	pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
+LIGHT	src/activities/ActivityManager.cpp	1	return currentActivity && currentActivity->showsFrontlightNotice();
+LIGHT	src/activities/ActivityManager.h	1	bool showsFrontlightNotice() const;
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	#include "activities/util/FrontlightPanelActivity.h"
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	Frontlight.setOn(lightOn);
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	LOG_ERR("ERS", "OOM: FrontlightPanelActivity");
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	SETTINGS.frontlightOn = lightOn ? 1 : 0;
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	const bool lightOn = !Frontlight.isOn();
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	if (action == MA::FRONTLIGHT) GUI.setCheckboxRow(item, Frontlight.isOn());
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	if (auto panel = makeUniqueNoThrow<FrontlightPanelActivity>(renderer, mappedInput)) {
+LIGHT	src/activities/reader/EpubReaderActivity.cpp	1	return Frontlight.present() ? ReaderUtils::BOOKMARK_HOLD_MS : 0;
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	Frontlight.setOn(lightOn);
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	GUI.setCheckboxRow(menuRowItems[i], Frontlight.isOn());
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	SETTINGS.frontlightOn = lightOn ? 1 : 0;
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	const bool lightOn = !Frontlight.isOn();
+LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	if (Frontlight.present() && !slideSwitchOwnsLight()) {
+LIGHT	src/activities/settings/AboutActivity.cpp	1	"Device", "Firmware", "Chip", "Flash", "Display Controller", "Resolution", "Touch", "Frontlight",
+LIGHT	src/activities/settings/AboutActivity.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/activities/settings/AboutActivity.cpp	1	rowValues_[ITEM_FRONTLIGHT] = Frontlight.present() ? "Yes" : "No";
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	#include "activities/util/FrontlightPanelActivity.h"
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	LOG_ERR("SETTINGS", "OOM: FrontlightPanelActivity");
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	addAction(SettingsSection::Display, StrId::STR_FRONTLIGHT, SettingAction::FrontlightPanel);
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	case SettingAction::FrontlightPanel:
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	if (Frontlight.present() && BoardConfig::hasFrontButtons()) {
+LIGHT	src/activities/settings/SettingsActivity.cpp	1	if (auto activity = makeUniqueNoThrow<FrontlightPanelActivity>(renderer, mappedInput)) {
+LIGHT	src/activities/settings/SettingsActivity.h	1	FrontlightPanel,
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	#include "FrontlightPanelActivity.h"
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	(lightOnChanged && SETTINGS.frontlightOn != (lightOn ? 1 : 0));
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	: Activity("FrontlightPanel", renderer, mappedInput), UiAppHost(renderer) {}
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	Frontlight.setBrightness(brightness);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	Frontlight.setBrightness(self->brightness);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	Frontlight.setOn(lightOn);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	Frontlight.setOn(true);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	Frontlight.setWarmth(self->warmth);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	Frontlight.setWarmth(warmth);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	FrontlightPanelActivity::FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	SETTINGS.frontlightBrightness = brightness;
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	SETTINGS.frontlightWarmth = warmth;
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_BRIGHTNESS, &FrontlightPanelActivity::onBrightnessEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_BRIGHTNESS_STEP, &FrontlightPanelActivity::onBrightnessStepEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_TILE, &FrontlightPanelActivity::onTileEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_TOGGLE, &FrontlightPanelActivity::onToggleEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_WARMTH, &FrontlightPanelActivity::onWarmthEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.on(ACTION_WARMTH_STEP, &FrontlightPanelActivity::onWarmthStepEvent, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	app.setScreen(&FrontlightPanelActivity::panelScreen, this);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	auto* self = static_cast<FrontlightPanelActivity*>(user);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	awaitingSwitchOnResult = Frontlight.switchOnPending();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::handleHomeGesture() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::warmthLocked() const {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	brightness = std::max(MIN_BRIGHTNESS, Frontlight.brightness());
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	const bool changed = SETTINGS.frontlightBrightness != brightness || SETTINGS.frontlightWarmth != warmth ||
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	const char* FrontlightPanelActivity::singleStringNote() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	fui::TextStyle FrontlightPanelActivity::noteStyle(const fui::ThemeTokens& tokens) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!Frontlight.switchOnPending()) noteSwitchOnResult();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!Frontlight.warmthIsSelection()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!awaitingSwitchOnResult && Frontlight.switchOnPending()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (Frontlight.hasColorTemperature() && gpio.hasFrontButtons()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	if (Frontlight.hasColorTemperature()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	if (Frontlight.present()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (Frontlight.stringMissing(false)) return tr(STR_FRONTLIGHT_WARM_ONLY);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (Frontlight.stringMissing(true)) return tr(STR_FRONTLIGHT_COOL_ONLY);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (Frontlight.takeNoLightNotice()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (lightOn != Frontlight.isOn()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (lightOnChanged) SETTINGS.frontlightOn = lightOn ? 1 : 0;
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	if (warmthLocked()) warmth = Frontlight.stringMissing(true) ? 0 : 100;
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	int FrontlightPanelActivity::computePanelBottom() const {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	int16_t FrontlightPanelActivity::noteHeight(const fui::DrawTarget& target, const fui::ThemeTokens& tokens,
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	lightOn = !Frontlight.isOn();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	3	lightOn = Frontlight.isOn();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	noLightNote = !lightOn && Frontlight.noLightFound();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	return Frontlight.stringMissing(true) || Frontlight.stringMissing(false);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	static_cast<FrontlightPanelActivity*>(user)->adjustBrightness(event.value);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	static_cast<FrontlightPanelActivity*>(user)->adjustWarmth(event.value);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	static_cast<FrontlightPanelActivity*>(user)->buildPanelScreen(screen);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	static_cast<FrontlightPanelActivity*>(user)->runTile(event.value);
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	static_cast<FrontlightPanelActivity*>(user)->toggleLight();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, const uint8_t value,
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::adjustBrightness(const int delta) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::adjustWarmth(const int delta) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::buildPanelScreen(UiScreen& screen) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::close() { finish(); }
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::drawNote(UiScreen& screen, const char* text) const {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::loop() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::noteSwitchOnResult() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onBrightnessStepEvent(const fui::ActionEvent& event, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onEnter() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onExit() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onTileEvent(const fui::ActionEvent& event, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onToggleEvent(const fui::ActionEvent&, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onWarmthEvent(const fui::ActionEvent& event, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::onWarmthStepEvent(const fui::ActionEvent& event, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::panelScreen(UiScreen& screen, void* user) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::persistLightSettings() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::render(RenderLock&&) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::runTile(const int idx) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::stepWarmthByKey(const bool warmer) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::syncLightState() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	void FrontlightPanelActivity::toggleLight() {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	warmth = Frontlight.warmth();
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	} else if (Frontlight.isOn()) {
+LIGHT	src/activities/util/FrontlightPanelActivity.h	1	bool showsFrontlightNotice() const override { return true; }
+LIGHT	src/activities/util/FrontlightPanelActivity.h	1	class FrontlightPanelActivity final : public Activity, private UiAppHost {
+LIGHT	src/activities/util/FrontlightPanelActivity.h	1	explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+LIGHT	src/main.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/main.cpp	1	Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, /*on=*/false);
+LIGHT	src/main.cpp	1	Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+LIGHT	src/main.cpp	1	Frontlight.prepareForSleep();
+LIGHT	src/main.cpp	2	Frontlight.setOn(false);
+LIGHT	src/main.cpp	1	Frontlight.setOn(lightOn);
+LIGHT	src/main.cpp	1	Frontlight.setOn(on);
+LIGHT	src/main.cpp	1	Frontlight.update();
+LIGHT	src/main.cpp	1	LOG_INF("LIGHT", "Frontlight toggled %s", lightOn ? "on" : "off");
+LIGHT	src/main.cpp	2	SETTINGS.frontlightOn = 0;
+LIGHT	src/main.cpp	1	SETTINGS.frontlightOn = lightOn ? 1 : 0;
+LIGHT	src/main.cpp	1	SETTINGS.frontlightOn = on ? 1 : 0;
+LIGHT	src/main.cpp	1	SETTINGS.frontlightWarmth = warmth;
+LIGHT	src/main.cpp	1	const bool lightOn = !Frontlight.isOn();
+LIGHT	src/main.cpp	1	handleFrontlightNotices();
+LIGHT	src/main.cpp	2	handleFrontlightTrip();
+LIGHT	src/main.cpp	1	if (!Frontlight.fault() || Frontlight.switchOnPending()) return false;
+LIGHT	src/main.cpp	1	if (!Frontlight.present() || Frontlight.isOn() == on) return;
+LIGHT	src/main.cpp	1	if (!Frontlight.present()) return false;
+LIGHT	src/main.cpp	1	if (!Frontlight.present()) return;
+LIGHT	src/main.cpp	1	if (!activityManager.showsFrontlightNotice() && Frontlight.takeNoLightNotice()) {
+LIGHT	src/main.cpp	1	if (Frontlight.present()) cfg |= 1U << 3;
+LIGHT	src/main.cpp	1	if (Frontlight.stringMissing(false) && warmth < 50) warmth = 100;
+LIGHT	src/main.cpp	1	if (Frontlight.stringMissing(true) && warmth >= 50) warmth = 0;
+LIGHT	src/main.cpp	1	if (Frontlight.takeRestoreNoLightNotice()) noticeDue = true;
+LIGHT	src/main.cpp	2	if (SETTINGS.frontlightOn != 0) {
+LIGHT	src/main.cpp	1	if (SETTINGS.frontlightRestoreOnWake != 0) cfg |= 1U << 0;
+LIGHT	src/main.cpp	1	if (handleFrontlightTrip()) noticeDue = true;
+LIGHT	src/main.cpp	1	if (mappedInputManager.homeButtonAction() == HomeButtonAction::ToggleFrontlight ||
+LIGHT	src/main.cpp	1	if (warmth == SETTINGS.frontlightWarmth) return;
+LIGHT	src/main.cpp	1	in.lit = Frontlight.isOn();
+LIGHT	src/main.cpp	1	in.litPct = Frontlight.brightness();
+LIGHT	src/main.cpp	1	intent.lightOn = Frontlight.isOn();
+LIGHT	src/main.cpp	1	isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
+LIGHT	src/main.cpp	1	showFrontlightNotFound();
+LIGHT	src/main.cpp	1	silentRebootPayload = Frontlight.isOn() ? SILENT_REBOOT_LIGHT_ON : 0;
+LIGHT	src/main.cpp	1	static bool handleFrontlightTrip() {
+LIGHT	src/main.cpp	1	static void handleFrontlightNotices() {
+LIGHT	src/main.cpp	1	static void showFrontlightNotFound() {
+LIGHT	src/main.cpp	2	toggleFrontlight();
+LIGHT	src/main.cpp	1	uint8_t warmth = SETTINGS.frontlightWarmth;
+LIGHT	src/main.cpp	1	void toggleFrontlight() {
+LIGHT	src/network/CrossPointWebServer.cpp	1	const int toggleIndex = shortPowerButtonToggleFrontlightIndex();
+LIGHT	src/network/CrossPointWebServer.cpp	1	if (toggleIndex >= 0) doc["toggleFrontlightIndex"] = toggleIndex;
+LIGHT	src/network/html/SettingsPage.html	1	const toggleIndex = shortPwrSetting ? shortPwrSetting.toggleFrontlightIndex : undefined;
+LIGHT	src/util/HomeButtonInput.h	1	ToggleFrontlight,
+LIGHT	src/util/RenderWatchdog.cpp	1	const BoardConfig::FrontlightConfig& fl = BoardConfig::ACTIVE.frontlight;
+NET	lib/Epub/ContentProtection.cpp	1	if (!manifest.setup() || !ZipFile(epubPath).readFileToStream("META-INF/encryption.xml", manifest, 512) ||
+NET	lib/Epub/Epub.cpp	1	const bool read = sharedZip ? sharedZip->readFileToStream(containerPath, containerParser, 512)
+NET	lib/Epub/Epub.cpp	1	const bool read = sharedZip ? sharedZip->readFileToStream(contentOpfFilePath.c_str(), opfParser, 1024, metadataOnly)
+NET	lib/Epub/Epub.cpp	1	const bool read = zip.readFileToStream(contentOpfFilePath.c_str(), parser, 1024, true);
+NET	lib/Epub/Epub.cpp	1	return ZipFile(filepath).readFileToStream(path.c_str(), out, chunkSize, allowEarlyStop);
+NET	lib/KOReaderSync/KOReaderSyncClient.cpp	1	const int httpCode = http.sendRequest("POST", body);
+NET	lib/KOReaderSync/KOReaderSyncClient.cpp	1	const int httpCode = http.sendRequest("PUT", body);
+NET	lib/KOReaderSync/KOReaderSyncClient.cpp	4	freeink::SecureHttpClient http;
+NET	lib/ZipFile/ZipFile.cpp	1	bool ZipFile::readFileToStream(const char* filename, Print& out, const size_t chunkSize, const bool allowEarlyStop) {
+NET	lib/ZipFile/ZipFile.h	1	bool readFileToStream(const char* filename, Print& out, size_t chunkSize, bool allowEarlyStop = false);
+NET	lib/hal/HalStorage.cpp	1	HAL_STORAGE_WRAPPED_CALL(readFileToStream, path, out, chunkSize);
+NET	lib/hal/HalStorage.cpp	1	bool HalStorage::readFileToStream(const char* path, Print& out, size_t chunkSize) {
+NET	lib/hal/HalStorage.h	1	bool readFileToStream(const char* path, Print& out, size_t chunkSize = 256);
+NET	sdk:libs/hardware/SDCardManager/include/SDCardManager.h	1	bool readFileToStream(const char* path, Print& out, size_t chunkSize = 256);
+NET	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	bool SDCardManager::readFileToStream(const char* path, Print& out, const size_t chunkSize) {
+NET	sdk:libs/network/Opds/include/OpdsTransport.h	1	virtual bool postForm(const std::string& url, const std::string& body, std::string& outResponse,
+NET	sdk:libs/network/Opds/src/OpdsClient.cpp	1	if (!http.postForm(tokenRefreshUrl, form, response, tokenStatus)) {
+NET	sdk:libs/network/Opds/src/OpdsClient.cpp	1	if (http.postForm(tokenUrl, form, response, tokenStatus)) {
+NET	sdk:libs/network/Opds/src/OpdsImplicitAuth.cpp	1	const int status = isPost ? http.sendRequest("POST", reinterpret_cast<const uint8_t*>(postBody.data()),
+NET	sdk:libs/network/Opds/src/OpdsImplicitAuth.cpp	1	freeink::SecureHttpClient http;
+NET	sdk:libs/network/SecureNet/include/ResumableFetch.h	1	SecureHttpClient http;
+NET	sdk:libs/network/SecureNet/include/ResumableFetch.h	1	inline FetchResult fetchResumable(const std::string& startUrl, const FetchOptions& options,
+NET	sdk:libs/network/SecureNet/include/SecureClient.h	1	#include <WiFiClient.h>
+NET	sdk:libs/network/SecureNet/include/SecureClient.h	1	WiFiClient _transport;
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	#include <WiFiClient.h>
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	WiFiClient _plain;
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	class SecureHttpClient {
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	int GET() { return sendRequest("GET", nullptr, 0); }
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	int sendRequest(const char* method, const std::string& payload) {
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	int sendRequest(const char* method, const uint8_t* payload, size_t payloadLen) {
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	int sendRequest(const char* method, const uint8_t* payload, size_t payloadLen, const DataCallback& onData,
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	return sendRequest("GET", nullptr, 0, onData, shouldAbort);
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	return sendRequest("POST", reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	return sendRequest(method, payload, payloadLen, [this](const uint8_t* data, size_t len) {
+NET	sdk:libs/network/SecureNet/include/SecureHttpClient.h	1	return sendRequest(method, reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+NET	sdk:libs/network/SecureNet/library.json	1	"description": "FreeInk TLS 1.3 networking: a wolfSSL-backed SecureClient and an HTTPClient-compatible SecureHttpClient shim that bypass the precompiled system mbedTLS (w
+NET	sdk:libs/network/SecureNet/src/SecureClient.cpp	2	auto* t = static_cast<WiFiClient*>(ctx);
+NET	src/activities/CatalogActivity.cpp	1	return HttpDownloader::downloadToFile(
+NET	src/activities/CatalogActivity.cpp	1	return HttpDownloader::postToFile(
+NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const auto result = HttpDownloader::downloadToFile(url, tmp, nullptr, nullptr, auth.username, auth.password, headers);
+NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const bool ok = HttpDownloader::fetchUrl(
+NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const bool ok = HttpDownloader::postForm(freeink::content::LCP_UNLOCK_URL, request, response, &status);
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_BROWSE_LIST_INDEX_RESPONSE,
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_ITEM_DETAILS_RESPONSE,
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	return pluginhttp::request(session.get(), req.url, req.method, req.body, req.headers, out, MAX_API_RESPONSE, nullptr,
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	return pluginhttp::requestToFile(session.get(), req.url, req.method, req.body, req.headers, BROWSE_TMP_PATH,
+NET	src/activities/settings/FontDownloadActivity.cpp	1	auto result = HttpDownloader::downloadToFile(
+NET	src/activities/settings/FontDownloadActivity.cpp	1	auto result = HttpDownloader::downloadToFile(FONT_MANIFEST_URL, MANIFEST_TMP, nullptr);
+NET	src/clippings/ClippingSync.cpp	1	const int status = http.sendRequest(upload ? "PUT" : "GET", reinterpret_cast<const uint8_t*>(buffer), payloadSize,
+NET	src/network/CrossPointWebServer.cpp	1	LOG_DBG("WEB", "[MEM] Free heap after WebServer allocation: %d bytes", ESP.getFreeHeap());
+NET	src/network/CrossPointWebServer.cpp	1	NetworkClient client = server->client();
+NET	src/network/CrossPointWebServer.cpp	1	class CrossPointHttpServer final : public WebServer {
+NET	src/network/CrossPointWebServer.cpp	1	const freeink::FetchResult result = freeink::fetchResumable(
+NET	src/network/CrossPointWebServer.cpp	1	pluginhttp::request(nullptr, url, method, body, headers, respBody, RELAY_BODY_LIMIT, &respHeaders, [] {
+NET	src/network/CrossPointWebServer.cpp	1	server->addHandler(new WebDAVHandler()); // Note: WebDAVHandler will be deleted by WebServer when server is stopped
+NET	src/network/CrossPointWebServer.h	1	class CrossPointWebServer {
+NET	src/network/HttpDownloader.cpp	1	HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
+NET	src/network/HttpDownloader.cpp	1	HttpDownloader::DownloadError HttpDownloader::postToFile(const std::string& url, const std::string& body,
+NET	src/network/HttpDownloader.cpp	1	bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const std::string& username,
+NET	src/network/HttpDownloader.cpp	1	bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData, const FetchOptions& options) {
+NET	src/network/HttpDownloader.cpp	1	bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username,
+NET	src/network/HttpDownloader.cpp	1	bool HttpDownloader::postForm(const std::string& url, const std::string& formBody, std::string& outResponse,
+NET	src/network/HttpDownloader.cpp	1	const freeink::FetchResult result = freeink::fetchResumable(
+NET	src/network/HttpDownloader.cpp	2	const int status = http.sendRequest(
+NET	src/network/HttpDownloader.cpp	3	freeink::SecureHttpClient http;
+NET	src/network/HttpDownloader.cpp	1	return fetchUrl(
+NET	src/network/HttpDownloader.h	1	static DownloadError postToFile(const std::string& url, const std::string& body, const std::string& contentType,
+NET	src/network/HttpDownloader.h	1	static bool fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
+NET	src/network/HttpDownloader.h	1	static bool fetchUrl(const std::string& url, const DataCallback& onData, const FetchOptions& options);
+NET	src/network/HttpDownloader.h	1	static bool fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username = "",
+NET	src/network/HttpDownloader.h	1	static bool postForm(const std::string& url, const std::string& formBody, std::string& outResponse,
+NET	src/network/LcpDevice.cpp	1	if (!HttpDownloader::postForm(LCP_ENROLL_URL, request, response, &status) ||
+NET	src/network/OpdsHttpTransport.cpp	1	bool OpdsHttpTransport::postForm(const std::string& url, const std::string& body, std::string& outResponse,
+NET	src/network/OpdsHttpTransport.cpp	1	const bool ok = HttpDownloader::fetchUrl(url, onChunk, options);
+NET	src/network/OpdsHttpTransport.cpp	1	return HttpDownloader::postForm(url, body, outResponse, &outStatus);
+NET	src/network/OpdsHttpTransport.h	1	bool postForm(const std::string& url, const std::string& body, std::string& outResponse, int& outStatus) override;
+NET	src/network/OtaUpdater.cpp	1	const bool fetchOk = HttpDownloader::fetchUrl(otaUrl, [&](const uint8_t* data, size_t len) {
+NET	src/network/OtaUpdater.cpp	1	const bool ok = HttpDownloader::fetchUrl(latestReleaseUrl, [&](const uint8_t* data, size_t len) {
+NET	src/network/WebDAVHandler.cpp	1	NetworkClient client = s.client();
+NET	src/network/WebDAVHandler.cpp	1	if (!Storage.readFileToStream(path.c_str(), out)) {
+NET	src/util/PluginEvents.cpp	1	const int st = pluginhttp::requestToFile(
+NET	src/util/PluginEvents.cpp	1	return pluginhttp::request(nullptr, drainSubstituted(handler->req.url, tok, config, meta, vars, ts, id),
+NET	src/util/PluginHttp.cpp	1	const int status = http.sendRequest(
+NET	src/util/PluginHttp.cpp	2	freeink::SecureHttpClient tmp;
+NET	src/util/PluginHttp.cpp	1	status = http.sendRequest(
+PINS	lib/hal/HalGPIO.cpp	1	pinMode(BAT_GPIO0, INPUT);
+PINS	lib/hal/HalGPIO.cpp	1	pinMode(UART0_RXD, INPUT);
+PINS	lib/hal/HalPowerManager.cpp	1	gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
+PINS	lib/hal/HalPowerManager.cpp	1	gpio_set_level(XTEINK_C3_GPIO13, 0);
+PINS	lib/hal/HalPowerManager.cpp	1	pinMode(BoardConfig::ACTIVE.batteryAdc, INPUT);
+PINS	lib/hal/HalPowerManager.cpp	1	pinMode(pin, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	gpio_set_level(rst, 1);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	gpio_set_level(static_cast<gpio_num_t>(pins.cs), 1);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(_coCs, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.busy, INPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.busy, INPUT_PULLDOWN); // no external pull: a missing panel reads not-busy
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.busy, INPUT_PULLUP);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.busy, INPUT_PULLUP); // the same for BUSY_N (the X3 UC8279d's wait is bounded)
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.busy, INPUT_PULLUP); // the same for BUSY_N, whose wait has no timeout
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	2	pinMode(pins.cs, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.dc, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.powerEnable, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	pinMode(pins.rst, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	if (_busy >= 0) pinMode(_busy, INPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	pinMode(_cs, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	pinMode(_pwrEn, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	pinMode(_sdCs, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.busy, INPUT_PULLUP);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.cs, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.dc, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.mosi, INPUT_PULLUP);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	2	pinMode(d.mosi, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.rst, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.sclk, OUTPUT);
+PINS	sdk:libs/hardware/AudioManager/src/AudioManager.cpp	1	pinMode(cfg.ampEnable, OUTPUT);
+PINS	sdk:libs/hardware/AudioManager/src/AudioManager.cpp	1	pinMode(cfg.enable, OUTPUT);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	for (uint8_t i = 0; i < n; ++i) sum += analogReadMilliVolts(ladder.pin);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	for (uint8_t i = 0; i < samples; ++i) sum += analogReadMilliVolts(_adcPin);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(_chargeStatusPin, BoardConfig::ACTIVE.batteryChargeStatusActiveHigh ? INPUT : INPUT_PULLUP);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(ce, OUTPUT);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(ladder.pin, INPUT); // no internal pulls: they would swamp a 1 M-class ladder
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(pin, activeHigh ? INPUT_PULLDOWN : INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	9, // batteryAdc: stock firmware samples analogRead(9) for battery voltage
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	gpio_pulldown_dis(g);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	gpio_pullup_dis(g);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_set_direction(g, GPIO_MODE_INPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_set_direction(g, GPIO_MODE_OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_set_level(g, 0);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_set_level(g, level);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	pinMode(ACTIVE.sd.cs, OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	pinMode(ACTIVE.sd.powerEnable, OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	pinMode(ce, OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	pinMode(p.pin, INPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	pinMode(pin, OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	uint8_t oversample = 8; // analogReadMilliVolts samples averaged per poll
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(2, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(VIBRATION_GPIO, OUTPUT);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedAdc.h	1	return analogRead(pin);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedAdc.h	1	return analogReadMilliVolts(pin);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	2	gpio_config(&cfg);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	2	gpio_set_level(sclPin, 0);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	3	gpio_set_level(sclPin, 1);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	1	gpio_set_level(sdaPin, 0);
+PINS	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	2	gpio_set_level(sdaPin, 1);
+PINS	sdk:libs/hardware/BoardPaperS3/src/BoardPaperS3.cpp	1	pinMode(PAPERS3_PWROFF_PULSE, OUTPUT);
+PINS	sdk:libs/hardware/BoardPaperS3/src/M5PaperS3LgfxConfig.cpp	1	pinMode(PAPERS3_PWROFF_PULSE, OUTPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_BOOT_BTN, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_GPS_RXD, INPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_GPS_TXD, INPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_LORA_BUSY, INPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	2	pinMode(T5S3_LORA_CS, OUTPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_LORA_IRQ, INPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_LORA_RST, OUTPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_PCA9535_INT, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardT5S3/src/BoardT5S3.cpp	1	pinMode(T5S3_SD_CS, OUTPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/LilyGoT5S3LgfxConfig.cpp	1	pinMode(EP_STV, OUTPUT);
+PINS	sdk:libs/hardware/BoardT5S3/src/LilyGoT5S3LgfxConfig.cpp	1	pinMode(T5S3_LORA_CS, OUTPUT);
+PINS	sdk:libs/hardware/Buzzer/src/Buzzer.cpp	1	if (!ledcAttach(buzzerPin(), LEDC_BASE_FREQ, LEDC_RESOLUTION_BITS)) return false;
+PINS	sdk:libs/hardware/Buzzer/src/Buzzer.cpp	1	ledcWrite(buzzerPin(), 0);
+PINS	sdk:libs/hardware/Buzzer/src/Buzzer.cpp	1	ledcWrite(buzzerPin(), 0); // start silent
+PINS	sdk:libs/hardware/Buzzer/src/Buzzer.cpp	1	ledcWriteTone(buzzerPin(), 0);
+PINS	sdk:libs/hardware/Buzzer/src/Buzzer.cpp	1	ledcWriteTone(buzzerPin(), freqHz);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool attachChannel(int8_t gpio, uint8_t /*ch*/, uint32_t freq, uint8_t bits) { return ledcAttach(gpio, freq, bits); }
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_set_direction(g, GPIO_MODE_OUTPUT);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_set_level(g, level);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_set_level(static_cast<gpio_num_t>(fl.colorSelectGpio), level);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_set_level(static_cast<gpio_num_t>(fl.gpio), darkLevel(fl) ^ 1u);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	gpio_set_level(static_cast<gpio_num_t>(gpio), 0);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (!ledcOutputInvert(gpio, false)) gpio_set_level(static_cast<gpio_num_t>(gpio), 0);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	ledcAttachPin(gpio, ch);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(fl.monitorAdc, INPUT);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(i2c.enable, OUTPUT);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(pin, OUTPUT);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	3	pinMv = analogReadMilliVolts(fl.monitorAdc);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void writeChannel(int8_t /*gpio*/, uint8_t ch, uint32_t duty) { ledcWrite(ch, duty); }
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void writeChannel(int8_t gpio, uint8_t /*ch*/, uint32_t duty) { ledcWrite(gpio, duty); }
+PINS	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	!ledcWrite(s.config.gpio, duty(s, s.stepIntensity))) {
+PINS	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	if (!ledcAttach(s.config.gpio, s.config.pwmFrequency, 8)) return false;
+PINS	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	if (!ledcWrite(s.config.gpio, s.config.activeHigh ? 0 : 255)) {
+PINS	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	3	pinMode(s.config.gpio, OUTPUT);
+PINS	sdk:libs/hardware/InputManager/include/InputManager.h	1	int raw; // raw analogRead() value, or -1 if this board has no ADC ladder
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	analogReadMilliVolts(pin);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	const int mv = static_cast<int>(analogReadMilliVolts(ladder.pin));
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	const int raw = analogRead(ladder.pin);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	for (uint8_t i = 0; i < LADDER_PROBE_OVERSAMPLE; ++i) sum += analogReadMilliVolts(pin);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pulldown_dis(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pulldown_dis(static_cast<gpio_num_t>(pin));
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pulldown_en(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pullup_dis(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pullup_dis(static_cast<gpio_num_t>(pin));
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_pullup_en(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	gpio_set_level(irq, 0);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (BoardConfig::ACTIVE.input.down >= 0) pinMode(BoardConfig::ACTIVE.input.down, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (BoardConfig::ACTIVE.input.power >= 0) pinMode(BoardConfig::ACTIVE.input.power, powerPinMode());
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (BoardConfig::ACTIVE.input.up >= 0) pinMode(BoardConfig::ACTIVE.input.up, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (ladder.pin >= 0) pinMode(ladder.pin, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (t.irq >= 0) pinMode(t.irq, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (t.irq >= 0) pinMode(t.irq, INPUT_PULLUP); // active-low data-ready
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (t.scl >= 0) pinMode(t.scl, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (t.sda >= 0) pinMode(t.sda, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	mvSum += static_cast<int32_t>(analogReadMilliVolts(pin));
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BUTTON_ADC_PIN_1, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BUTTON_ADC_PIN_2, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BoardConfig::ACTIVE.input.adcLadderPin, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	3	pinMode(BoardConfig::ACTIVE.input.power, powerPinMode());
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BoardConfig::ACTIVE.input.toggleSwitch, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BoardConfig::ACTIVE.touch.irq, OUTPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(pin, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, INPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, OUTPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.powerEnable, OUTPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	6	pinMode(t.reset, OUTPUT);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	raw = analogRead(pin);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_pulldown_en(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_pullup_dis(g);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_set_direction(g, RTC_GPIO_MODE_INPUT_ONLY);
+PINS	sdk:libs/hardware/LedManager/src/LedManager.cpp	1	pinMode(BoardConfig::ACTIVE.leds.data, OUTPUT);
+PINS	sdk:libs/hardware/Microphone/src/Microphone.cpp	1	pinMode(mic.enable, OUTPUT);
+PINS	sdk:libs/hardware/PowerManager/src/BatteryLog.cpp	1	for (uint8_t i = 0; i < core::BURST_COUNT; ++i) core::addConversion(b, analogReadMilliVolts(adcPin));
+PINS	sdk:libs/hardware/PowerManager/src/BatteryLog.cpp	1	for (uint8_t i = 0; i < core::BURST_RAW; ++i) raw += static_cast<uint32_t>(analogRead(adcPin));
+PINS	sdk:libs/hardware/PowerManager/src/BatteryLog.cpp	1	for (uint8_t i = 0; i < core::BURST_WARMUP; ++i) analogReadMilliVolts(adcPin);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	for (uint8_t i = 0; i < OVERSAMPLE; ++i) sum += analogReadMilliVolts(pin);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_pulldown_dis(busy);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_pullup_dis(busy);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_direction(busy, GPIO_MODE_INPUT);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(cs, 0);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(cs, 1);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	2	gpio_set_level(dc, 0);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(dc, 1);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(g, level);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(g, offLevel);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(mosi, (value & mask) != 0 ? 1 : 0);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(mosi, 0);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(sclk, 0);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_set_level(sclk, 1);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	pinMode(d.busy, BoardConfig::displayBusyPullUp() ? INPUT_PULLUP : INPUT);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	pinMode(d.busy, d.busyPullDown ? INPUT_PULLDOWN : INPUT);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	pinMode(p.pin, INPUT);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	2	pinMode(pin, OUTPUT);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	3	pinMode(pin, powerPinMode());
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_dis(g);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_dis(static_cast<gpio_num_t>(pin));
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_en(g);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_dis(g);
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_dis(static_cast<gpio_num_t>(pin));
+PINS	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_en(g);
+PINS	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	gpio_pulldown_dis(g);
+PINS	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	gpio_pullup_dis(g);
+PINS	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	gpio_set_direction(g, GPIO_MODE_INPUT);
+PINS	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	pinMode(BoardConfig::ACTIVE.display.cs, OUTPUT);
+PINS	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	pinMode(BoardConfig::ACTIVE.sd.powerEnable, OUTPUT);
+PINS	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	const esp_err_t err = gpio_config(&dat3);
+PINS	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	pinMode(sdPwr, OUTPUT);
+PINS	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	if (pin >= 0) gpio_pullup_dis(static_cast<gpio_num_t>(pin));
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	if (p.busy >= 0) pinMode(p.busy, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	if (p.rst >= 0) pinMode(p.rst, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(X3_I2C_SCL, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(X3_I2C_SDA, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.cs, INPUT_PULLUP); // don't leave the panel selected
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	pinMode(p.cs, OUTPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.dc, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	pinMode(p.dc, OUTPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.mosi, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.mosi, INPUT); // stock releases SDA without enabling a pull-up
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.mosi, INPUT_PULLUP);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	5	pinMode(p.mosi, OUTPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	pinMode(p.rst, OUTPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	1	pinMode(p.sclk, INPUT);
+PINS	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	pinMode(p.sclk, OUTPUT);
+PINS	src/platform/UsbSerialJtagHandoff.cpp	1	pinMode(USB_INT_PHY0_DM_GPIO_NUM, OUTPUT_OPEN_DRAIN);
+PINS	src/platform/UsbSerialJtagHandoff.cpp	1	pinMode(USB_INT_PHY0_DP_GPIO_NUM, OUTPUT_OPEN_DRAIN);
+PINS	src/util/RenderWatchdog.cpp	1	for (uint8_t i = 0; i < samples; ++i) sum += analogReadMilliVolts(ladder.pin);
+PINS	src/util/RenderWatchdog.cpp	1	gpio_set_direction(driver, GPIO_MODE_OUTPUT);
+PINS	src/util/RenderWatchdog.cpp	1	gpio_set_direction(select, GPIO_MODE_OUTPUT);
+PINS	src/util/RenderWatchdog.cpp	1	gpio_set_level(driver, fl.activeHigh ? 0 : 1);
+PINS	src/util/RenderWatchdog.cpp	1	gpio_set_level(select, fl.colorSelectWarmHigh ? 0 : 1);
+RADIO	lib/BlePageTurner/include/BleKeyBinding.h	1	#include <BleRemoteProfiles.h>
+RADIO	lib/hal/HalPowerManager.cpp	1	WiFi.disconnect(true);
+RADIO	lib/hal/HalPowerManager.cpp	1	WiFi.mode(WIFI_OFF);
+RADIO	sdk:libs/network/BleKeyboardHost/library.json	1	"description": "FreeInk BLE HID host: pairs/connects to Bluetooth Low Energy HID peripherals such as keyboards and page turners (central role) and emits translated key ev
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	#include <NimBLEDevice.h>
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEAddress addr(std::string(addrStr), type);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEAttValue v = ref->readValue();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEAttValue v = rmap->readValue();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEClient* g_client = nullptr;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	3	NimBLEDevice::deinit(true);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::deleteBond(NimBLEAddress(std::string(bonds_[i].addr), bonds_[i].addrType));
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::deleteClient(g_client);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	2	NimBLEDevice::getScan()->stop();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::injectConfirmPasskey(connInfo, true);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setMTU(23);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setSecurityAuth(/*bonding=*/true, /*mitm=*/FREEINK_BLE_HID_REQUIRE_MITM, /*sc=*/false);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setSecurityInitKey(BLE_SM_PAIR_KEY_DIST_ENC);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setSecurityPasskey(123456);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLEDevice::setSecurityRespKey(BLE_SM_PAIR_KEY_DIST_ENC);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteCharacteristic* boot = hid->getCharacteristic(NimBLEUUID(kCharBootKbdInput));
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteCharacteristic* proto = hid->getCharacteristic(NimBLEUUID(kCharProtocolMode));
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteDescriptor* ref = c->getDescriptor(NimBLEUUID(kDescReportReference));
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteService* hid = client->getService(NimBLEUUID(kHidService));
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	3	NimBLEScan* scan = NimBLEDevice::getScan();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.printf("[BleHid] scan stop: wasScanning=%d devices=%u\n", NimBLEDevice::getScan()->isScanning() ? 1 : 0,
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.println("[BleHid] begin: NimBLE was already initialized; forcing deinit");
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.println("[BleHid] begin: NimBLEDevice::init() failed");
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	addr = NimBLEAddress(std::string(addrStr), type);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	bool hasHidService(NimBLEClient* client) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	bool onConnParamsUpdateRequest(NimBLEClient*, const ble_gap_upd_params*) override { return false; }
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	bool setupHid(NimBLEClient* client) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	class ClientCB : public NimBLEClientCallbacks {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	class ScanCB : public NimBLEScanCallbacks {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const NimBLERemoteCharacteristic* chr;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const bool hid = dev->isAdvertisingService(NimBLEUUID(kHidService)) || keyboardAppearance;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const std::vector<NimBLERemoteCharacteristic*>& chars = hid->getCharacteristics(true);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const uint32_t passkey = NimBLEDevice::getSecurityPasskey();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	for (NimBLERemoteCharacteristic* c : chars) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	g_client = NimBLEDevice::createClient();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (!NimBLEDevice::init(hostName ? hostName : "FreeInk")) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLEDevice::isInitialized()) return false;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLEDevice::isInitialized()) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLERemoteCharacteristic* rmap = hid->getCharacteristic(NimBLEUUID(kCharReportMap))) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (begun_) NimBLEDevice::getScan()->clearResults();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (c->getUUID() != NimBLEUUID(kCharReport) || !c->canNotify()) continue;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	return client && client->getService(NimBLEUUID(kHidService)) != nullptr;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	return g_disconnectObserved.load() && NimBLEDevice::getDisconnectedClient() == g_client;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	scan->setPhy(NimBLEScan::SCAN_ALL);
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	scanning_ = NimBLEDevice::getScan()->isScanning();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	uint32_t onPassKeyDisplay(NimBLEConnInfo&) override {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void onConfirmPasskey(NimBLEConnInfo& connInfo, uint32_t) override {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void onDisconnect(NimBLEClient*, int) override {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void onHidNotify(NimBLERemoteCharacteristic* chr, uint8_t* data, size_t len, bool) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void onPassKeyEntry(NimBLEConnInfo& connInfo) override { NimBLEDevice::injectPassKey(connInfo, 123456); }
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void onResult(const NimBLEAdvertisedDevice* dev) override {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	void printPayloadHex(const NimBLEAdvertisedDevice* dev) {
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	#include <esp_now.h>
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	2	WiFi.disconnect(false);
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	WiFi.mode(WIFI_OFF);
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	WiFi.mode(WIFI_STA);
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	WiFi.setSleep(false);
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	const esp_err_t addResult = esp_now_add_peer(&peer);
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	esp_now_deinit();
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	esp_now_init() != ESP_OK) {
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	esp_now_peer_info_t peer{};
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	esp_now_unregister_recv_cb();
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	if (!esp_now_is_peer_exist(destinationMac)) {
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	if (esp_now_register_recv_cb(onReceive) != ESP_OK) {
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	if (esp_wifi_set_channel(channel_, WIFI_SECOND_CHAN_NONE) != ESP_OK || esp_wifi_set_ps(WIFI_PS_NONE) != ESP_OK ||
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	return esp_now_send(destinationMac, data, length) == ESP_OK;
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	return esp_wifi_get_mac(WIFI_IF_STA, output) == ESP_OK;
+RADIO	sdk:libs/network/NearbyTransfer/src/NearbyTransfer.cpp	1	void onReceive(const esp_now_recv_info_t* info, const uint8_t* data, int length) {
+RADIO	src/activities/CatalogActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/network/CalibreConnectActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	WiFi.mode(WIFI_AP);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	WiFi.mode(WIFI_STA);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	WiFi.softAPdisconnect(true);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	apStarted = WiFi.softAP(AP_SSID, AP_PASSWORD, AP_CHANNEL, false, AP_MAX_CONNECTIONS);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	apStarted = WiFi.softAP(AP_SSID, nullptr, AP_CHANNEL, false, AP_MAX_CONNECTIONS);
+RADIO	src/activities/network/CrossPointWebServerActivity.cpp	1	const IPAddress apIP = WiFi.softAPIP();
+RADIO	src/activities/network/WifiSelectionActivity.cpp	1	WiFi.begin(selectedSSID.c_str());
+RADIO	src/activities/network/WifiSelectionActivity.cpp	1	WiFi.begin(selectedSSID.c_str(), enteredPassword.c_str());
+RADIO	src/activities/network/WifiSelectionActivity.cpp	5	WiFi.disconnect();
+RADIO	src/activities/network/WifiSelectionActivity.cpp	1	WiFi.disconnect(true, true); // Abort any in-progress SDK auto-connect and clear NVS-saved SSID
+RADIO	src/activities/network/WifiSelectionActivity.cpp	2	WiFi.mode(WIFI_STA);
+RADIO	src/activities/network/WifiSelectionActivity.cpp	1	WiFi.scanNetworks(true); // true = async scan
+RADIO	src/activities/reader/EpubReaderActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/reader/KOReaderSyncActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/reader/KOReaderSyncActivity.cpp	1	WiFi.setSleep(false);
+RADIO	src/activities/reader/KOReaderSyncActivity.cpp	1	WiFi.setSleep(false); // modem sleep can stall the transfer into a timeout
+RADIO	src/activities/reader/KOReaderSyncActivity.cpp	1	WiFi.setSleep(true);
+RADIO	src/activities/reader/KOReaderSyncActivity.cpp	1	esp_wifi_stop();
+RADIO	src/activities/settings/ClockSyncActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/settings/FontDownloadActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/settings/FontDownloadActivity.cpp	1	WiFi.mode(WIFI_STA);
+RADIO	src/activities/settings/KOReaderAuthActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/settings/OtaUpdateActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/activities/settings/OtaUpdateActivity.cpp	1	WiFi.mode(WIFI_STA);
+RADIO	src/activities/settings/PluginHubInstallActivity.cpp	1	WiFi.disconnect(true);
+RADIO	src/activities/settings/PluginHubInstallActivity.cpp	1	WiFi.mode(WIFI_OFF);
+RADIO	src/activities/settings/SettingsActivity.cpp	1	WiFi.disconnect(false);
+RADIO	src/main.cpp	1	WiFi.begin(cred->ssid.c_str(), cred->password.c_str());
+RADIO	src/main.cpp	1	WiFi.disconnect(true);
+RADIO	src/main.cpp	1	WiFi.mode(WIFI_OFF);
+RADIO	src/main.cpp	1	WiFi.mode(WIFI_STA);
+RADIO	src/main.cpp	1	const esp_err_t err = esp_wifi_set_max_tx_power(static_cast<int8_t>(BoardConfig::ACTIVE.wifiMaxTxPower));
+RADIO	src/network/CrossPointWebServer.cpp	1	WiFi.setSleep(false);
+RADIO	src/network/CrossPointWebServer.cpp	2	const String ipAddr = apMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
+RADIO	src/network/CrossPointWebServer.cpp	1	const bool isInApMode = (wifiMode & WIFI_MODE_AP) && (WiFi.softAPgetStationNum() >= 0); // AP is running
+RADIO	src/network/WifiPowerSaveGuard.h	1	esp_err_t err = esp_wifi_set_ps(WIFI_PS_NONE);
+RADIO	src/network/WifiPowerSaveGuard.h	1	esp_err_t err = esp_wifi_set_ps(previous);
+RADIO	src/network/WifiPowerSaveGuard.h	1	if (esp_wifi_get_ps(&previous) != ESP_OK) previous = WIFI_PS_MIN_MODEM;
+SD	lib/hal/HalStorage.cpp	1	if (!usbMassStorage.begin(blockDevice)) {
+SD	lib/hal/HalStorage.cpp	1	usbMassStorage.end();
+SD	sdk:libs/hardware/RecoveryBoot/src/RecoveryBoot.cpp	1	if (!SdMan.begin()) return false;
+SD	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	#include "sdmmc_cmd.h"
+SD	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	_dev->end(); // frees the card and runs sdmmc_host_deinit()
+SD	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	const auto* card = static_cast<const sdmmc_card_t*>(_dev->card());
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	#include "driver/sdmmc_host.h"
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	#include "sdmmc_cmd.h"
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	auto* card = static_cast<sdmmc_card_t*>(malloc(sizeof(sdmmc_card_t)));
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	e = sdmmc_read_sectors(card, _dmaBuffer, 0, 1);
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	esp_err_t e = sdmmc_card_init(&host, card);
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	if (sdmmc_host_init() != ESP_OK) return false;
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	if (sdmmc_host_init_slot(host.slot, &slot) != ESP_OK) {
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	if (sdmmc_read_sectors(static_cast<sdmmc_card_t*>(_card), _dmaBuffer, sector, count) != ESP_OK) return false;
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	if (sdmmc_write_sectors(static_cast<sdmmc_card_t*>(_card), _dmaBuffer, sector, count) != ESP_OK) return false;
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	return _card ? static_cast<Sector_t>(static_cast<sdmmc_card_t*>(_card)->csd.capacity) : 0;
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	5	sdmmc_host_deinit();
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	#include "driver/sdmmc_host.h"
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	#include "sdmmc_cmd.h"
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	auto* card = static_cast<sdmmc_card_t*>(calloc(1, sizeof(sdmmc_card_t)));
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	if (mountErr == ESP_OK) mountErr = sdmmc_host_init_slot(host.slot, &slot);
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	if (mountErr == ESP_OK) mountErr = sdmmc_read_sectors(card, _dmaBuffer, 0, 1);
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	mountErr = sdmmc_card_init(&host, card);
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	mountErr = sdmmc_host_init();
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	sdmmc_host_deinit(); // no-op if the host never came up
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+SD	sdk:libs/hardware/SDCardManager/src/SdmmcParkedMount.cpp	1	sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+SD	src/activities/network/UsbDriveActivity.cpp	1	Storage.endUsbDrive();
+SD	src/activities/network/UsbDriveActivity.cpp	1	if (!Storage.beginUsbDrive()) {
+SD	src/activities/network/UsbDriveActivity.cpp	1	if (!restartRequested) Storage.endUsbDrive();
+SD	src/main.cpp	1	if (!Storage.begin()) {
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::hasFrontButtons() const { return !hasTouch() || BoardConfig::ACTIVE.touch.buttonsAlongsideTouch; }
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const {
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::wasHomeKeyLongPressed() const { return inputMgr.wasHomeKeyLongPressed(); }
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const {
+TOUCH	lib/hal/HalGPIO.cpp	1	bool HalGPIO::wasTouchLongPress(float& nx, float& ny) const { return inputMgr.wasTouchLongPress(nx, ny); }
+TOUCH	lib/hal/HalGPIO.cpp	1	if (hasTouch()) {
+TOUCH	lib/hal/HalGPIO.cpp	1	return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
+TOUCH	lib/hal/HalGPIO.cpp	1	return inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
+TOUCH	lib/hal/HalGPIO.h	1	bool hasTouch() const;
+TOUCH	lib/hal/HalGPIO.h	1	bool isTouchHeldAt(float& nx, float& ny) const;
+TOUCH	lib/hal/HalGPIO.h	1	bool isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const;
+TOUCH	lib/hal/HalGPIO.h	1	bool wasHomeKeyLongPressed() const;
+TOUCH	lib/hal/HalGPIO.h	1	bool wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const;
+TOUCH	lib/hal/HalGPIO.h	1	bool wasTouchLongPress(float& nx, float& ny) const;
+TOUCH	lib/hal/HalHaptics.h	1	static void longPress(bool enabled, uint8_t intensity) {
+TOUCH	src/MappedInputManager.cpp	1	HalHaptics::longPress(SETTINGS.vibration != CrossPointSettings::VIBRATION_OFF, SETTINGS.hapticIntensity);
+TOUCH	src/MappedInputManager.cpp	1	HalHaptics::longPress(SETTINGS.vibration == CrossPointSettings::VIBRATION_TOUCH_PAGE, SETTINGS.hapticIntensity);
+TOUCH	src/MappedInputManager.cpp	1	MappedInputManager::SwipeDir MappedInputManager::wasSwipe(int* startX, int* startY) const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::decodeSwipe(int& sx, int& sy, int& ex, int& ey) const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::hasTouch() const { return gpio.hasTouch(); }
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasBackGesture() const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasBottomEdgeUpSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Bottom); }
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasEdgeSwipe(const freeink::ui::ScreenEdge edge) const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasHomeGesture() const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasLightPanelGesture() const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasLongPressed(const Button button, const unsigned long thresholdMs) const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasMenuGesture() const { return wasTopEdgeDownSwipe(); }
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasReaderMenuSwipeUp() const { return gpio.hasHomeKey() && wasBottomEdgeUpSwipe(); }
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasScreenLongPress(int& x, int& y) const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasTopEdgeDownSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Top); }
+TOUCH	src/MappedInputManager.cpp	1	case fui::SwipeDir::Down:
+TOUCH	src/MappedInputManager.cpp	1	case fui::SwipeDir::Left:
+TOUCH	src/MappedInputManager.cpp	1	case fui::SwipeDir::Right:
+TOUCH	src/MappedInputManager.cpp	1	case fui::SwipeDir::Up:
+TOUCH	src/MappedInputManager.cpp	1	const bool hit = fui::edgeSwipe(edge, sx, sy, ex, ey, renderer.getScreenWidth(), renderer.getScreenHeight());
+TOUCH	src/MappedInputManager.cpp	1	homeAction = homeButtonInput.update(millis(), gpio.wasHomeKeyTapped(), gpio.wasHomeKeyLongPressed(),
+TOUCH	src/MappedInputManager.cpp	1	if (!decodeSwipe(sx, sy, ex, ey)) return SwipeDir::None;
+TOUCH	src/MappedInputManager.cpp	1	if (!decodeSwipe(sx, sy, ex, ey)) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!gpio.hasTouch() || SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!gpio.isTouchHeldAt(nx, ny)) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!gpio.isTouchTapCandidate(nx, ny, heldMs)) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!gpio.wasSwipe(nxs, nys, nxe, nye)) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!gpio.wasTouchLongPress(nx, ny)) return false;
+TOUCH	src/MappedInputManager.cpp	1	if (!isPressed(static_cast<Button>(value))) longPressFiredButtons &= ~(1u << value);
+TOUCH	src/MappedInputManager.cpp	1	if ((longPressFiredButtons & bit) != 0 || getHeldTime() < thresholdMs) return false;
+TOUCH	src/MappedInputManager.cpp	2	if (button == Button::Back && wasBackGesture()) return true;
+TOUCH	src/MappedInputManager.cpp	1	if (gpio.wasHomeKeyLongPressed() && homeAction != HomeButtonAction::Ignore) {
+TOUCH	src/MappedInputManager.cpp	1	longPressFiredButtons |= bit;
+TOUCH	src/MappedInputManager.cpp	1	return Frontlight.present() && wasTopEdgeDownSwipe();
+TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Down;
+TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Left;
+TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::None;
+TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Right;
+TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Up;
+TOUCH	src/MappedInputManager.cpp	1	return gpio.hasHomeKey() ? homeAction == HomeButtonAction::Home : wasBottomEdgeUpSwipe();
+TOUCH	src/MappedInputManager.cpp	1	return wasEdgeSwipe(fui::ScreenEdge::Left);
+TOUCH	src/MappedInputManager.cpp	1	static_cast<HomeButtonAction>(SETTINGS.homeButtonLongPressAction));
+TOUCH	src/MappedInputManager.cpp	1	switch (fui::swipeDirection(sx, sy, ex, ey)) {
+TOUCH	src/MappedInputManager.cpp	1	wasSwipe() != SwipeDir::None, gpio.wasHomeKeyPressed(),
+TOUCH	src/MappedInputManager.h	1	SwipeDir wasSwipe(int* startX = nullptr, int* startY = nullptr) const;
+TOUCH	src/MappedInputManager.h	1	bool decodeSwipe(int& sx, int& sy, int& ex, int& ey) const;
+TOUCH	src/MappedInputManager.h	1	bool hasTouch() const;
+TOUCH	src/MappedInputManager.h	1	bool wasBackGesture() const;
+TOUCH	src/MappedInputManager.h	1	bool wasBottomEdgeUpSwipe() const;
+TOUCH	src/MappedInputManager.h	1	bool wasEdgeSwipe(freeink::ui::ScreenEdge edge) const;
+TOUCH	src/MappedInputManager.h	1	bool wasHomeGesture() const;
+TOUCH	src/MappedInputManager.h	1	bool wasLightPanelGesture() const;
+TOUCH	src/MappedInputManager.h	1	bool wasLongPressed(Button button, unsigned long thresholdMs) const;
+TOUCH	src/MappedInputManager.h	1	bool wasMenuGesture() const;
+TOUCH	src/MappedInputManager.h	1	bool wasReaderMenuSwipeUp() const;
+TOUCH	src/MappedInputManager.h	1	bool wasScreenLongPress(int& x, int& y) const;
+TOUCH	src/MappedInputManager.h	1	bool wasTopEdgeDownSwipe() const;
+TOUCH	src/MappedInputManager.h	1	enum class SwipeDir { None, Left, Right, Up, Down };
+TOUCH	src/MappedInputManager.h	1	mutable uint16_t longPressFiredButtons = 0;
+TOUCH	src/activities/Activity.h	1	virtual bool handleHomeGesture() { return false; }
+TOUCH	src/activities/ActivityManager.cpp	1	if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
+TOUCH	src/activities/ActivityManager.cpp	1	if (currentActivity->handleHomeGesture()) {
+TOUCH	src/activities/ActivityManager.cpp	1	if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
+TOUCH	src/activities/ActivityManager.cpp	1	if (mappedInput.hasTouch() && (currentActivity->name == "Home" || currentActivity->name == "FileBrowser" ||
+TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.hasTouch()) {
+TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.wasHomeGesture()) cancelDownload = goHomeAfterCancel = true;
+TOUCH	src/activities/UiListActivity.cpp	1	: Activity(name, renderer, mappedInput), UiAppHost(renderer), wantsTouchLongPress(wantsTouchLongPress) {}
+TOUCH	src/activities/UiListActivity.cpp	1	LOG_DBG("LIST", "%s swipe delta=%d count=%d", name.c_str(), delta, listCount());
+TOUCH	src/activities/UiListActivity.cpp	2	UiAppHost::routeTouch(mappedInput, wantsTouchLongPress);
+TOUCH	src/activities/UiListActivity.cpp	1	app.on(ACTION_SWIPE_DELETE, &UiListActivity::swipeDeleteTrampoline, this);
+TOUCH	src/activities/UiListActivity.cpp	1	bool UiListActivity::handleSwipeDeleteInput() {
+TOUCH	src/activities/UiListActivity.cpp	5	closeSwipeDelete();
+TOUCH	src/activities/UiListActivity.cpp	1	const auto route = UiAppHost::routeTouch(mappedInput, wantsTouchLongPress);
+TOUCH	src/activities/UiListActivity.cpp	1	const auto swipe = mappedInput.wasSwipe(&x, &y);
+TOUCH	src/activities/UiListActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/UiListActivity.cpp	1	const bool wantsTouchLongPress)
+TOUCH	src/activities/UiListActivity.cpp	1	const int delta = swipe == MappedInputManager::SwipeDir::Up ? n.inputPageRows() : -n.inputPageRows();
+TOUCH	src/activities/UiListActivity.cpp	1	if (!mappedInput.hasTouch()) return false;
+TOUCH	src/activities/UiListActivity.cpp	1	if (!routingReady() || !app.hitPublished(x, y, ACTION_ROW, hit) || !canSwipeDelete(hit.value)) return false;
+TOUCH	src/activities/UiListActivity.cpp	1	if (event.longPress) {
+TOUCH	src/activities/UiListActivity.cpp	1	if (event.value != self->revealedIndex.load() || !self->canSwipeDelete(event.value)) return;
+TOUCH	src/activities/UiListActivity.cpp	1	if (handleSwipeDeleteInput()) return;
+TOUCH	src/activities/UiListActivity.cpp	1	if (row < 0 || row >= listCount() || !canSwipeDelete(row)) return;
+TOUCH	src/activities/UiListActivity.cpp	1	if (swipe != MappedInputManager::SwipeDir::Left) return false;
+TOUCH	src/activities/UiListActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right && openRow >= 0) {
+TOUCH	src/activities/UiListActivity.cpp	2	if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+TOUCH	src/activities/UiListActivity.cpp	1	onRowLongPress(event.value);
+TOUCH	src/activities/UiListActivity.cpp	1	props.reveal = &swipeReveal;
+TOUCH	src/activities/UiListActivity.cpp	2	self->closeSwipeDelete();
+TOUCH	src/activities/UiListActivity.cpp	1	self->swipeDelete(event.value);
+TOUCH	src/activities/UiListActivity.cpp	1	swipeReveal.action = ACTION_SWIPE_DELETE;
+TOUCH	src/activities/UiListActivity.cpp	1	swipeReveal.icon = fui::bitmapFromIcon(icon_trash_2_24);
+TOUCH	src/activities/UiListActivity.cpp	1	swipeReveal.index = static_cast<int16_t>(row);
+TOUCH	src/activities/UiListActivity.cpp	1	swipeReveal.width = static_cast<int16_t>(screen.theme().rowHeight + screen.theme().spaceSm * 2);
+TOUCH	src/activities/UiListActivity.cpp	1	void UiListActivity::closeSwipeDelete() {
+TOUCH	src/activities/UiListActivity.cpp	1	void UiListActivity::configureSwipeDelete(UiScreen& screen, fui::ListProps& props) {
+TOUCH	src/activities/UiListActivity.cpp	1	void UiListActivity::swipeDeleteTrampoline(const fui::ActionEvent& event, void* user) {
+TOUCH	src/activities/UiListActivity.h	1	bool handleSwipeDeleteInput();
+TOUCH	src/activities/UiListActivity.h	1	bool wantsTouchLongPress = false);
+TOUCH	src/activities/UiListActivity.h	1	const bool wantsTouchLongPress;
+TOUCH	src/activities/UiListActivity.h	1	freeink::ui::ListRevealAction swipeReveal{};
+TOUCH	src/activities/UiListActivity.h	1	static void swipeDeleteTrampoline(const freeink::ui::ActionEvent& event, void* user);
+TOUCH	src/activities/UiListActivity.h	1	virtual bool canSwipeDelete(int index) const { return false; }
+TOUCH	src/activities/UiListActivity.h	1	virtual void onRowLongPress(int index) {}
+TOUCH	src/activities/UiListActivity.h	1	virtual void swipeDelete(int index) {}
+TOUCH	src/activities/UiListActivity.h	1	void closeSwipeDelete();
+TOUCH	src/activities/UiListActivity.h	1	void configureSwipeDelete(UiScreen& screen, freeink::ui::ListProps& props);
+TOUCH	src/activities/UiTabListActivity.cpp	1	: UiListActivity(name, renderer, mappedInput, wantsTouchLongPress) {}
+TOUCH	src/activities/UiTabListActivity.cpp	1	closeSwipeDelete();
+TOUCH	src/activities/UiTabListActivity.cpp	1	const bool wantsTouchLongPress)
+TOUCH	src/activities/UiTabListActivity.cpp	1	if (event.longPress) {
+TOUCH	src/activities/UiTabListActivity.cpp	1	mappedInput.hasTouch() ? TOUCH_TAB_BAR_HEIGHT : static_cast<int16_t>(metrics.tabBarHeight);
+TOUCH	src/activities/UiTabListActivity.cpp	1	onRowLongPress(event.value);
+TOUCH	src/activities/UiTabListActivity.h	1	bool wantsTouchLongPress = false);
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	: UiListActivity("FileBrowser", renderer, mappedInput, /*wantsTouchLongPress=*/true),
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	if (mode == Mode::Books && mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, GO_HOME_MS)) {
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	if (mode == Mode::Books) configureSwipeDelete(screen, props);
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	void FileBrowserActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/home/FileBrowserActivity.cpp	1	void FileBrowserActivity::swipeDelete(const int index) {
+TOUCH	src/activities/home/FileBrowserActivity.h	1	bool canSwipeDelete(int index) const override { return mode == Mode::Books && index >= 0 && index < listCount(); }
+TOUCH	src/activities/home/FileBrowserActivity.h	1	void onRowLongPress(int index) override;
+TOUCH	src/activities/home/FileBrowserActivity.h	1	void swipeDelete(int index) override;
+TOUCH	src/activities/home/HomeActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/home/HomeActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Down) {
+TOUCH	src/activities/home/HomeActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Up) {
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	closeSwipeDelete();
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	configureSwipeDelete(screen, props);
+TOUCH	src/activities/library/LibraryListActivity.cpp	2	if (mappedInput.hasTouch()) {
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, LONG_PRESS_MS)) {
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	void LibraryListActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/library/LibraryListActivity.cpp	1	void LibraryListActivity::swipeDelete(const int entry) {
+TOUCH	src/activities/library/LibraryListActivity.h	1	bool canSwipeDelete(int index) const override { return !groupsCollapsed && index >= 0 && index < listCount(); }
+TOUCH	src/activities/library/LibraryListActivity.h	1	void onRowLongPress(int index) override;
+TOUCH	src/activities/library/LibraryListActivity.h	1	void swipeDelete(int index) override;
+TOUCH	src/activities/network/CrossPointWebServerActivity.cpp	2	if (mappedInput.wasReleased(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture()) {
+TOUCH	src/activities/network/CrossPointWebServerActivity.cpp	1	mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasHomeGesture();
+TOUCH	src/activities/network/UsbDriveActivity.cpp	1	mappedInput.wasPressed(MappedInputManager::Button::Power) || mappedInput.wasHomeGesture())) {
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	const auto route = routeTouch(mappedInput, /*withLongPress=*/true);
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	const int delta = swipe == MappedInputManager::SwipeDir::Up ? listNav.visibleRows : -listNav.visibleRows;
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (event.longPress) {
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (mappedInput.hasTouch()) {
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::handleHomeGesture() {
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::keysChooseAction() const { return mappedInput.hasTouch() && mappedInput.hasFrontButtons(); }
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::touchInProgress() const {
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (!mappedInput.hasTouch() || (mappedInput.hasFrontButtons() && !touchInProgress())) {
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (actionPopup.isActive() || mappedInput.hasTouch()) return false;
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (rangeStart >= 0 && mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Up) {
+TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right || swipe == MappedInputManager::SwipeDir::Down) {
+TOUCH	src/activities/reader/ClipSelectionActivity.h	1	bool handleHomeGesture() override;
+TOUCH	src/activities/reader/ClipSelectionActivity.h	1	bool touchInProgress() const;
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	const bool headerLongPress = longPress && HeaderBackTapTarget::contains(sx, sy);
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	const bool longPress = lookup && mappedInput.wasScreenLongPress(sx, sy);
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	if (headerLongPress || mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	if (longPress && SETTINGS.touchReaderControls) {
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	if (lookup && (headerLongPress || mappedInput.getHeldTime() >= ReaderUtils::GO_BACK_OR_HOME_MS)) {
+TOUCH	src/activities/reader/EndOfBookOptions.cpp	1	const bool usePress = SETTINGS.longPressButtonBehavior == CrossPointSettings::OFF;
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const bool confirmLongPressed = !endOfBookMenuOpen && confirmHoldMs != 0 &&
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const bool longPress = !fromTilt && heldMs >= ReaderUtils::SKIP_HOLD_MS;
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const bool touchMenu = ReaderUtils::isTouchMenuGesture(renderer, mappedInput);
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const bool touchStopsAutoTurn = ReaderUtils::isTouchMenuGesture(renderer, mappedInput);
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const unsigned long confirmHoldMs = confirmLongPressThreshold();
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && !currentPageLinks.empty() && SETTINGS.touchReaderControls && mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && SETTINGS.touchReaderControls && mappedInput.wasScreenLongPress(selectionX, selectionY)) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (confirmLongPressed) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.ORIENTATION_CHANGE) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, confirmHoldMs);
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	pageList(swipe == MappedInputManager::SwipeDir::Up ? 1 : -1);
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	2	switch (SETTINGS.longPressMenuFunction) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
+TOUCH	src/activities/reader/EpubReaderActivity.h	1	unsigned long confirmLongPressThreshold() const;
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	: UiListActivity("EpubReaderBookmarks", renderer, mappedInput, /*wantsTouchLongPress=*/true),
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	configureSwipeDelete(screen, props);
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_ACTIONS_MODE_MS)) {
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	void EpubReaderBookmarksActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.cpp	1	void EpubReaderBookmarksActivity::swipeDelete(const int index) {
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	bool canSwipeDelete(int index) const override { return index >= 0 && index < listCount(); }
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	void onRowLongPress(int index) override;
+TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	void swipeDelete(int index) override;
+TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	: UiListActivity("EpubReaderClippings", renderer, mappedInput, /*wantsTouchLongPress=*/true) {}
+TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	void EpubReaderClippingListActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/reader/EpubReaderClippingListActivity.h	1	void onRowLongPress(int index) override;
+TOUCH	src/activities/reader/EpubReaderFootnoteSelectActivity.cpp	1	(pwr == CrossPointSettings::SHORT_PWRBTN::PWR_CONFIRM && mappedInput.hasTouch()));
+TOUCH	src/activities/reader/EpubReaderMenuActivity.cpp	1	bool EpubReaderMenuActivity::handleHomeGesture() {
+TOUCH	src/activities/reader/EpubReaderMenuActivity.h	1	bool handleHomeGesture() override;
+TOUCH	src/activities/reader/EpubReaderPercentSelectionActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/reader/EpubReaderPercentSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Left) {
+TOUCH	src/activities/reader/EpubReaderPercentSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right) {
+TOUCH	src/activities/reader/KOReaderSyncActivity.cpp	2	if (!mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/ReaderActivity.cpp	1	!fromTilt && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP && heldMs >= ReaderUtils::SKIP_HOLD_MS;
+TOUCH	src/activities/reader/ReaderUtils.h	1	SETTINGS.previousPageGesture == CrossPointSettings::INVERTED_TAP) != rtlBook;
+TOUCH	src/activities/reader/ReaderUtils.h	1	const auto dir = input.wasSwipe();
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool backTriggered = mappedInput.wasLongPressed(MappedInputManager::Button::Back, GO_BACK_OR_HOME_MS) ||
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool inverted = (SETTINGS.pageTurnGesture == CrossPointSettings::INVERTED_TAP ||
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool longPress = mappedInput.getHeldTime() >= GO_BACK_OR_HOME_MS;
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool nextTaps = gestureAllowsTap(SETTINGS.pageTurnGesture);
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool prevTaps = gestureAllowsTap(SETTINGS.previousPageGesture);
+TOUCH	src/activities/reader/ReaderUtils.h	1	const bool usePress = SETTINGS.longPressButtonBehavior == SETTINGS.OFF;
+TOUCH	src/activities/reader/ReaderUtils.h	1	gesture == CrossPointSettings::INVERTED_TAP;
+TOUCH	src/activities/reader/ReaderUtils.h	1	gestureAllowsSwipe(SETTINGS.pageTurnGesture);
+TOUCH	src/activities/reader/ReaderUtils.h	1	gestureAllowsSwipe(SETTINGS.previousPageGesture);
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (!SETTINGS.touchReaderControls || !input.hasTouch()) {
+TOUCH	src/activities/reader/ReaderUtils.h	2	if (!input.hasTouch()) return false;
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (SETTINGS.showReaderMenu == CrossPointSettings::READER_MENU_SWIPE_UP && input.wasReaderMenuSwipeUp()) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (dir != MappedInputManager::SwipeDir::None) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (input.wasMenuGesture()) return true;
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (longPress != SETTINGS.backShortToFileBrowser) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	if (mappedInput.wasBackGesture()) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	inline bool gestureAllowsSwipe(const uint8_t gesture) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	inline bool gestureAllowsTap(const uint8_t gesture) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	inline bool isTouchMenuGesture(const GfxRenderer& renderer, const MappedInputManager& input) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	inline bool isTouchMenuTap(const GfxRenderer& renderer, const MappedInputManager& input) {
+TOUCH	src/activities/reader/ReaderUtils.h	1	result.next = dir == (rtlBook ? MappedInputManager::SwipeDir::Right : MappedInputManager::SwipeDir::Left) &&
+TOUCH	src/activities/reader/ReaderUtils.h	1	result.prev = dir == (rtlBook ? MappedInputManager::SwipeDir::Left : MappedInputManager::SwipeDir::Right) &&
+TOUCH	src/activities/reader/ReaderUtils.h	1	return gesture == CrossPointSettings::TAP_AND_SWIPE || gesture == CrossPointSettings::SWIPE_ONLY;
+TOUCH	src/activities/reader/ReaderUtils.h	1	return gesture == CrossPointSettings::TAP_AND_SWIPE || gesture == CrossPointSettings::TAP_ONLY ||
+TOUCH	src/activities/reader/ReaderUtils.h	1	return input.wasLongPressed(button, SKIP_HOLD_MS) || input.wasReleased(button);
+TOUCH	src/activities/reader/ReaderUtils.h	1	return isTouchMenuTap(renderer, input);
+TOUCH	src/activities/reader/XtcReaderActivity.cpp	1	const bool touchMenu = ReaderUtils::isTouchMenuGesture(renderer, mappedInput);
+TOUCH	src/activities/settings/BleSettingsActivity.cpp	1	if (view == View::Mapping && mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, CLEAR_HOLD_MS)) {
+TOUCH	src/activities/settings/BleSettingsActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress; // physical buttons stay in loop()
+TOUCH	src/activities/settings/BleSettingsActivity.cpp	1	void BleSettingsActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/settings/BleSettingsActivity.h	1	void onRowLongPress(int index) override;
+TOUCH	src/activities/settings/FontDownloadActivity.cpp	1	if (mappedInput.wasHomeGesture()) {
+TOUCH	src/activities/settings/SettingsActivity.cpp	1	if (!BoardConfig::hasFrontButtons() && setting.valuePtr == &CrossPointSettings::longPressMenuFunction) return false;
+TOUCH	src/activities/settings/SettingsActivity.cpp	1	props.labelText = mappedInput.hasTouch() ? screen.theme().bodyText : screen.theme().smallText;
+TOUCH	src/activities/settings/SettingsListActivity.cpp	1	const int16_t paddingY = mappedInput.hasTouch() ? theme.listTouchRowPaddingY : theme.listRowPaddingY;
+TOUCH	src/activities/util/BmpViewerActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Left) {
+TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right) {
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::handleHomeGesture() {
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	const int tileCount = mappedInput.hasTouch() ? kTileCount : 0;
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (!draggingSlider && mappedInput.wasSwipe() == MappedInputManager::SwipeDir::Up) {
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) {
+TOUCH	src/activities/util/FrontlightPanelActivity.h	1	bool handleHomeGesture() override;
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPress) {
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	const bool hasTouch = mappedInput.hasTouch();
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	const char* out = longPress ? fui::keyboardAltOutputFor(layer, value) : nullptr;
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	const int keysHeight = keyboardKeysHeight(metrics, currentLayout().rowCount, mappedInput.hasTouch());
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	haptic_feedback::touchAction(result.event.longPress);
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	if (!mappedInput.hasTouch()) props.background = fui::Paint::none();
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	if (activateValue(result.event.value, result.event.longPress)) {
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	if (longPress) {
+TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	props.inputMask = static_cast<uint16_t>(fui::InputTouch | fui::InputLongPress);
+TOUCH	src/activities/util/KeyboardEntryActivity.h	1	bool activateValue(int16_t value, bool longPress);
+TOUCH	src/components/CatalogScreens.cpp	1	if (gpio.hasTouch()) {
+TOUCH	src/components/UIThemeTokens.h	1	if (!BoardConfig::hasTouch()) tokens.listMinRowHeight = static_cast<int16_t>(metrics.listRowHeight);
+TOUCH	src/components/UiAppHelpers.h	1	const bool withLongPress = false) {
+TOUCH	src/components/UiAppHelpers.h	1	freeink::ui::GfxRendererTarget target(renderer, BoardConfig::hasTouch());
+TOUCH	src/components/UiAppHelpers.h	1	if (withLongPress && mappedInput.wasScreenLongPress(tx, ty)) {
+TOUCH	src/components/UiAppHelpers.h	1	snap.longPress = true;
+TOUCH	src/components/UiAppHost.cpp	1	UiAppHost::TouchRoute UiAppHost::routeTouch(const MappedInputManager& input, const bool withLongPress,
+TOUCH	src/components/UiAppHost.cpp	1	haptic_feedback::touchAction(event.longPress);
+TOUCH	src/components/UiAppHost.cpp	1	if (event && (snap.touchReleased || snap.swipeLeft || snap.swipeRight)) {
+TOUCH	src/components/UiAppHost.cpp	1	result.snap = touchSnapshotFrom(input, withLongPress);
+TOUCH	src/components/UiAppHost.h	1	TouchRoute routeTouch(const MappedInputManager& input, bool withLongPress = false, bool routeHeld = false);
+TOUCH	src/components/UiSliderDialog.h	1	const bool touch = mappedInput.hasTouch();
+TOUCH	src/components/themes/BaseTheme.cpp	1	const bool showBackButton = backButton && title != nullptr && gpio.hasTouch();
+WAKE	lib/hal/HalDisplay.cpp	1	void HalDisplay::deepSleep() { einkDisplay.deepSleep(); }
+WAKE	lib/hal/HalDisplay.h	1	void deepSleep();
+WAKE	lib/hal/HalGPIO.cpp	1	const auto wakeupCause = esp_sleep_get_wakeup_cause();
+WAKE	lib/hal/HalPowerManager.cpp	1	esp_light_sleep_start();
+WAKE	lib/hal/HalPowerManager.cpp	1	esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+WAKE	lib/hal/HalPowerManager.cpp	1	esp_sleep_enable_gpio_wakeup();
+WAKE	lib/hal/HalPowerManager.cpp	1	esp_sleep_enable_timer_wakeup(USB_HOLD_POLL_US);
+WAKE	lib/hal/HalPowerManager.cpp	1	freeink::PowerManager::deepSleep();
+WAKE	lib/hal/HalPowerManager.cpp	1	freeink::PowerManager::deepSleepUntilPowerButton();
+WAKE	lib/hal/HalPowerManager.cpp	1	gpio_hold_dis(XTEINK_C3_GPIO13);
+WAKE	lib/hal/HalPowerManager.cpp	1	gpio_hold_dis(g);
+WAKE	lib/hal/HalPowerManager.cpp	1	gpio_hold_en(XTEINK_C3_GPIO13);
+WAKE	lib/hal/HalPowerManager.cpp	1	gpio_hold_en(g);
+WAKE	lib/hal/HalPowerManager.cpp	1	gpio_wakeup_enable(powerPin, GPIO_INTR_LOW_LEVEL);
+WAKE	lib/hal/HalPowerManager.cpp	1	if (!setCpuFrequencyMhz(LOW_POWER_FREQ)) {
+WAKE	lib/hal/HalPowerManager.cpp	1	if (!setCpuFrequencyMhz(normalFreq)) {
+WAKE	lib/hal/HalPowerManager.cpp	1	if (BoardConfig::powerPolicy().releaseWaitMaxMs != 0) setCpuFrequencyMhz(LOW_POWER_FREQ);
+WAKE	lib/hal/HalPowerManager.cpp	1	void HalPowerManager::startDeepSleep(HalGPIO& gpio, const bool wakeOnHeldButton) const {
+WAKE	lib/hal/HalPowerManager.cpp	1	void HalPowerManager::startDeepSleepMinimal(HalGPIO& gpio) const {
+WAKE	lib/hal/HalPowerManager.h	1	void startDeepSleep(HalGPIO& gpio, bool wakeOnHeldButton = false) const;
+WAKE	lib/hal/HalPowerManager.h	1	void startDeepSleepMinimal(HalGPIO& gpio) const;
+WAKE	lib/hal/HalTiltSensor.cpp	1	_isAwake = !deepSleep();
+WAKE	lib/hal/HalTiltSensor.cpp	1	bool HalTiltSensor::deepSleep() {
+WAKE	lib/hal/HalTiltSensor.h	1	bool deepSleep();
+WAKE	sdk:libs/display/FreeInkDisplay/include/FreeInkDisplay.h	1	void deepSleep();
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	_acquired = _lock != nullptr && esp_pm_lock_acquire(_lock) == ESP_OK;
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	esp_pm_lock_handle_t _lock = nullptr;
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	esp_pm_lock_handle_t displayNoLightSleepLock() {
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	if (_acquired) esp_pm_lock_release(_lock);
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	if (_driver) _driver->deepSleep(_bus);
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "freeink-display", &lock) != ESP_OK) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	static esp_pm_lock_handle_t lock = nullptr;
+WAKE	sdk:libs/display/FreeInkDisplay/src/FreeInkDisplay.cpp	1	void FreeInkDisplay::deepSleep() {
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	esp_pm_lock_delete(_noLightSleepLock);
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	esp_pm_lock_delete(_spiApbLock);
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	gpio_hold_dis(rst);
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(pins.cs));
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(pins.powerEnable));
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	if (esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "freeink-epd-spi", &_spiApbLock) != ESP_OK) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.cpp	1	if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "freeink-epd-bus", &_noLightSleepLock) != ESP_OK) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	1	_acquired = lock != nullptr && esp_pm_lock_acquire(lock) == ESP_OK;
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	2	const esp_pm_lock_handle_t lock = _bus->*Lock;
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	1	esp_pm_lock_handle_t _noLightSleepLock = nullptr;
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	1	esp_pm_lock_handle_t _spiApbLock = nullptr;
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	1	esp_pm_lock_release(lock);
+WAKE	sdk:libs/display/FreeInkDisplay/src/bus/EpdBus.h	1	template <esp_pm_lock_handle_t EpdBus::*Lock>
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ed2208M5Driver.cpp	3	if (turnOff) deepSleep(bus);
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ed2208M5Driver.cpp	1	void Ed2208M5Driver::deepSleep(EpdBus& bus) { powerOff(bus); }
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ed2208M5Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(_pwrEn));
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.cpp	1	void It8951Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/It8951Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/LgfxEpdDriver.cpp	1	void LgfxEpdDriver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/LgfxEpdDriver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/M5OfficialDriver.cpp	1	void M5OfficialDriver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/M5OfficialDriver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PanelDriver.h	1	virtual void deepSleep(EpdBus& bus) = 0;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PaperMonoDriver.cpp	1	void PaperMonoDriver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PaperMonoDriver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	#include <driver/gpio.h> // gpio_hold_dis (Picco panel probe)
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	if (pin >= 0) gpio_hold_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	void Ssd1677Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd2677Driver.cpp	1	void Ssd2677Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd2677Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8179Driver.cpp	1	void Uc8179Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8179Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8253MurphyDriver.cpp	1	void Uc8253MurphyDriver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8253MurphyDriver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8253X3Driver.cpp	1	void Uc8253X3Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8253X3Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279Driver.cpp	1	void Uc8279Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279X4Driver.cpp	1	void Uc8279X4Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279X4Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279cA4Driver.cpp	1	void Uc8279cA4Driver::deepSleep(EpdBus& bus) {
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Uc8279cA4Driver.h	1	void deepSleep(EpdBus& bus) override;
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	#include <driver/gpio.h> // gpio_hold_dis in releaseSdRail()
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	3	gpio_hold_dis(g);
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_dis(static_cast<gpio_num_t>(ACTIVE.sd.powerEnable));
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_dis(static_cast<gpio_num_t>(p.pin)); // the previous sleep's hold, after the boot level is set
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_en(g);
+WAKE	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	1	gpio_hold_dis(static_cast<gpio_num_t>(s.i2cScl));
+WAKE	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	1	gpio_hold_dis(static_cast<gpio_num_t>(s.i2cSda));
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include <esp_private/esp_sleep_internal.h>
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_sleep_sub_mode_config(ESP_SLEEP_DIG_USE_RC_FAST_MODE, false);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_sleep_sub_mode_config(ESP_SLEEP_DIG_USE_RC_FAST_MODE, lit);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_timer_create_args_t args = {};
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_timer_start_periodic(_monitorTimer, periodUs);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_dis(g);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_en(g);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (esp_timer_create(&args, &_monitorTimer) != ESP_OK) _monitorTimer = nullptr;
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (pin >= 0) gpio_hold_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	esp_timer_create_args_t args{};
+WAKE	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	if (esp_timer_create(&args, &s.timer) != ESP_OK) return false;
+WAKE	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	if (esp_timer_start_once(s.timer, boundary - position) != ESP_OK ||
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	gpio_hold_dis(irq);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_hold_dis(reset);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	gpio_hold_dis(static_cast<gpio_num_t>(t.powerEnable));
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	gpio_hold_dis(static_cast<gpio_num_t>(t.reset));
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_hold_en(irq);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	gpio_hold_en(reset);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (hold) gpio_hold_en(irq);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	if (t.hibernateInSleep && t.irq >= 0) gpio_hold_dis(static_cast<gpio_num_t>(t.irq));
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_init(g);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_pulldown_en(g);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_pullup_dis(g);
+WAKE	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	rtc_gpio_set_direction(g, RTC_GPIO_MODE_INPUT_ONLY);
+WAKE	sdk:libs/hardware/PowerManager/include/PowerManager.h	1	[[noreturn]] static void deepSleep();
+WAKE	sdk:libs/hardware/PowerManager/include/PowerManager.h	1	[[noreturn]] static void deepSleepUntilPowerButton();
+WAKE	sdk:libs/hardware/PowerManager/include/PowerManager.h	1	static void armWakeOnPins(uint64_t gpioMask, bool wakeLow = true);
+WAKE	sdk:libs/hardware/PowerManager/src/BatteryLog.cpp	1	in.extWake = deep && esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	abortedSleepRecord.wakeupCause = static_cast<int>(esp_sleep_get_wakeup_cause());
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	armWakeOnPins(1ULL << pin, /*wakeLow=*/!powerActiveHigh());
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	armWakeOnPins(1ULL << pin, /*wakeLow=*/powerActiveHigh());
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	const esp_sleep_ext1_wakeup_mode_t lowMode = ESP_EXT1_WAKEUP_ALL_LOW;
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	const esp_sleep_ext1_wakeup_mode_t lowMode = ESP_EXT1_WAKEUP_ANY_LOW;
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	2	deepSleep();
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	esp_deep_sleep_enable_gpio_wakeup(gpioMask, wakeLow ? ESP_GPIO_WAKEUP_GPIO_LOW : ESP_GPIO_WAKEUP_GPIO_HIGH);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	esp_deep_sleep_start();
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	esp_sleep_config_gpio_isolate();
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	esp_sleep_enable_ext1_wakeup(gpioMask, wakeLow ? lowMode : ESP_EXT1_WAKEUP_ANY_HIGH);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_dis(busy);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	2	gpio_hold_dis(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_dis(g); // a previous fault's sleep hold, if a software reset kept it
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(p.pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_en(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_en(static_cast<gpio_num_t>(p.pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	gpio_hold_en(static_cast<gpio_num_t>(powerPinCheckResult.pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	if (BoardConfig::ACTIVE.input.powerExternalPull && rtc_gpio_is_valid_gpio(static_cast<gpio_num_t>(pin))) {
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	if (pin >= 0) gpio_hold_en(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_dis(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pulldown_en(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_dis(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	rtc_gpio_pullup_en(g);
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	void PowerManager::armWakeOnPins(uint64_t gpioMask, bool wakeLow) {
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	void PowerManager::deepSleep() {
+WAKE	sdk:libs/hardware/PowerManager/src/PowerManager.cpp	1	void PowerManager::deepSleepUntilPowerButton() {
+WAKE	sdk:libs/hardware/SDCardManager/src/SDCardManager.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(BoardConfig::ACTIVE.sd.powerEnable));
+WAKE	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(metalio::SD_DAT3_GPIO));
+WAKE	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(sdPwr));
+WAKE	sdk:libs/hardware/SDCardManager/src/SdmmcBlockDevice.cpp	1	if (pin >= 0) gpio_hold_dis(static_cast<gpio_num_t>(pin));
+WAKE	sdk:libs/hardware/XteinkDetect/src/XteinkDetect.cpp	2	gpio_hold_dis(static_cast<gpio_num_t>(p.rst));
+WAKE	src/main.cpp	2	deepSleepInProgress = true;
+WAKE	src/main.cpp	3	display.deepSleep();
+WAKE	src/main.cpp	1	halTiltSensor.deepSleep();
+WAKE	src/main.cpp	1	if (!deepSleepInProgress && sawRenderBusy) BatteryLogWriter::flushIfDue();
+WAKE	src/main.cpp	1	if (deepSleepInProgress) return;
+WAKE	src/main.cpp	1	if (deepSleepInProgress) return; // sleeping supersedes the heap-defrag reboot
+WAKE	src/main.cpp	1	if (deepSleepInProgress) return; // sleeping supersedes the storage handoff reboot
+WAKE	src/main.cpp	6	powerManager.startDeepSleep(gpio);
+WAKE	src/main.cpp	1	powerManager.startDeepSleep(gpio, wakeOnHeldButton);
+WAKE	src/main.cpp	3	powerManager.startDeepSleepMinimal(gpio);
+WAKE	src/main.cpp	1	static bool deepSleepInProgress = false;

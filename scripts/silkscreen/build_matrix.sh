@@ -2,9 +2,12 @@
 # Silkscreen build matrix for crosspoint-reader (docs/silkscreen/UPSTREAM-SYNC.md).
 #
 # Usage: scripts/silkscreen/build_matrix.sh [--full] [--label NAME] [env ...]
-#   no envs : silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog
-#             silkscreen-368-test x4pro c3check
-#   --full  : adds silkscreen-gh_release, silkscreen-368-gh_release, x4c, papermono and stickycheck
+#   The routine sync does NOT run the matrix: scripts/silkscreen/sync.sh calls this script once per env it builds (the
+#   guards, the build and the image checks of that env). The matrix is the pre-release gate, run on request.
+#   env ... : exactly those envs
+#   no envs : silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog silkscreen-368-test x4pro
+#   --full  : adds silkscreen-gh_release, silkscreen-368-gh_release, x4c, papermono, and the proxy envs c3check and
+#             stickycheck, which build LAST and wipe all of .pio/build (every later build then starts from scratch)
 # Prints one line per env (exit code, flash and RAM bytes, log path) and exits non-zero if any
 # env or check failed. Logs go to .cache/silkscreen-builds/ (gitignored).
 #
@@ -58,7 +61,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ ${#envs[@]} -eq 0 ]; then
-  envs=(silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog silkscreen-368-test x4pro c3check)
+  envs=(silkscreen silkscreen-batlog silkscreen-test silkscreen-368 silkscreen-368-batlog silkscreen-368-test x4pro)
   [ $full = 1 ] && envs=(silkscreen silkscreen-gh_release silkscreen-batlog silkscreen-test silkscreen-368 \
     silkscreen-368-gh_release silkscreen-368-batlog silkscreen-368-test x4pro x4c papermono c3check stickycheck)
 fi
