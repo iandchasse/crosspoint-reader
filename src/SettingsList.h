@@ -408,6 +408,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_TILT_PAGE_TURN; }),
         v.end());
   }
+  // Touch boards without front keys use Home or short-power actions for these
+  // shortcuts. A board with keys beside touch keeps its long-press menu.
+  if (BoardConfig::hasTouch() && !BoardConfig::hasFrontButtons()) {
+    v.erase(
+        std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_LONG_PRESS_MENU; }),
+        v.end());
+  }
   if (registry && registry->getFamilyCount() > 0) {
     auto it = std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_FONT_FAMILY; });
     if (it != v.end()) {

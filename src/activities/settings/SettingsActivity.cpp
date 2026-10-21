@@ -59,11 +59,6 @@ bool showOnDevice(const SettingInfo& setting) {
   }
   // Merged into the Text Settings screen.
   if (setting.category == StrId::STR_CAT_READER && setting.inTextSettings) return false;
-  // Touch boards act on the text directly; the X4 Pro home key and the
-  // short power click on other touch boards carry the remaining shortcuts. A board that
-  // keeps its keys with touch (Silkscreen) keeps the key route, so this asks for the
-  // keys, not the panel: the same answer on every other board.
-  if (!BoardConfig::hasFrontButtons() && setting.valuePtr == &CrossPointSettings::longPressMenuFunction) return false;
   if (setting.valuePtr == &CrossPointSettings::pwrBtnFootnoteBack &&
       SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::FOOTNOTES) {
     return false;
