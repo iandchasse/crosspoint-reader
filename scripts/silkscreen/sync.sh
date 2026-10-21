@@ -121,8 +121,12 @@ if [ $do_merge = 1 ] || [ $dry = 0 ]; then
   [ -z "$(git -C "$CP" status --porcelain --ignore-submodules=all)" ] || { [ $dry = 1 ] || die "crosspoint-reader is not clean: commit or stash first"; echo "  (dry run: the tree is not clean)"; }
   [ -z "$(git -C "$SDK" status --porcelain)" ] || { [ $dry = 1 ] || die "freeink-sdk is not clean: commit or stash first"; echo "  (dry run: the SDK tree is not clean)"; }
 fi
-git -C "$CP" fetch -q upstream || die "git fetch upstream failed"
-git -C "$SDK" fetch -q fk-upstream || die "git fetch fk-upstream failed"
+# A validation pass keeps the fetched snapshot this sync already analyzed; it
+# must not turn into another upstream round while images are being verified.
+if [ $do_merge = 1 ] || [ $dry = 1 ]; then
+  git -C "$CP" fetch -q upstream || die "git fetch upstream failed"
+  git -C "$SDK" fetch -q fk-upstream || die "git fetch fk-upstream failed"
+fi
 
 cp_behind=$(git -C "$CP" rev-list --count silkscreen..upstream/develop)
 pin=$(git -C "$CP" ls-tree upstream/develop freeink-sdk | awk '{print $3}')
