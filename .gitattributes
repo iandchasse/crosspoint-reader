@@ -14,3 +14,4 @@ scripts/check_test_firmware.sh text eol=lf
 # The sync scripts are bash and run under Git Bash.
 scripts/silkscreen/sync.sh text eol=lf
 scripts/silkscreen/pio_locked.sh text eol=lf
+scripts/silkscreen/publish.sh text eol=lf
