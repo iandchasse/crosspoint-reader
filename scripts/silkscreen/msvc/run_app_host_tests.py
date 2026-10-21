@@ -4,11 +4,10 @@
 (Google Test is fetched from GitHub at configure time). See README.md in this directory.
 
 usage, from crosspoint-reader:   python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py [test/test_x.py ...]
-With no argument it runs every test/test_*.py and then test/clipping_sync. Exit code: the number of failures.
+With no argument it runs supported test/test_*.py suites and then test/clipping_sync. Exit code: the number of failures.
 
 A python test that names `cc` or `c++` is run with those names replaced by this directory's cc_hostcc.bat and
-cxx_hostcc.bat (hostcc.py), in a child process; the others run as they are. On this host two fail for reasons of the
-host, not of the tree: test_trusted_time.py (the stub includes POSIX <sys/time.h>) and test_patch_animatedgif.py (it
+cxx_hostcc.bat (hostcc.py), in a child process; the others run as they are. Default Windows runs report two documented host limitations as skips (explicit test arguments still run them): test_trusted_time.py (the stub includes POSIX <sys/time.h>) and test_patch_animatedgif.py (it
 compares text with LF line ends against the CRLF files of a Windows work tree's patched .pio/libdeps).
 """
 import os
@@ -19,6 +18,10 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+WINDOWS_UNSUPPORTED = {
+    "test_trusted_time.py": "MSVC has no POSIX sys/time.h required by its stub",
+    "test_patch_animatedgif.py": "fixture compares LF text with CRLF dependency sources",
+}
 
 
 def run_one(path):
@@ -57,7 +60,13 @@ def main(args):
         return run_one(args[1])
     tests = args or sorted(str(p.relative_to(ROOT)) for p in (ROOT / "test").glob("test_*.py"))
     failed = 0
+    skipped = 0
     for t in tests:
+        reason = WINDOWS_UNSUPPORTED.get(pathlib.Path(t).name) if os.name == "nt" and not args else None
+        if reason:
+            print("skip %s (%s)" % (t, reason))
+            skipped += 1
+            continue
         r = subprocess.run([sys.executable, "-B", str(pathlib.Path(__file__).resolve()), "--one", str(ROOT / t)],
                            cwd=ROOT, capture_output=True, text=True, env=dict(os.environ, PYTHONUTF8="1"))
         print("%-4s %s" % ("ok" if r.returncode == 0 else "FAIL", t))
@@ -68,10 +77,11 @@ def main(args):
         r = clipping_sync()
         if r is None:
             print("skip test/clipping_sync (no sh or no run.sh)")
+            skipped += 1
         else:
             print("%-4s %s" % ("ok" if r == 0 else "FAIL", "test/clipping_sync"))
             failed += r != 0
-    print("%d failed" % failed)
+    print("%d failed, %d skipped" % (failed, skipped))
     return failed
 
 

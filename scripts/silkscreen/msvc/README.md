@@ -37,12 +37,12 @@ start a script, and they slice production source into a harness, so `run_app_hos
 names replaced by `cc_hostcc.bat` and `cxx_hostcc.bat`. From `crosspoint-reader`:
 
 ```sh
-python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py            # every test/test_*.py, then test/clipping_sync
+python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py            # supported test/test_*.py, then test/clipping_sync
 python -I -X utf8 scripts/silkscreen/msvc/run_app_host_tests.py test/test_selection_buttons.py
 ```
 
 `test/clipping_sync/run.sh` is CRLF in a Windows work tree, so the runner feeds it to `sh -s` with the CRs removed, from
-its own directory. On this host two python tests fail for the host's reasons, not the tree's:
+its own directory. Default Windows runs report two documented host limitations as skips; naming either test explicitly still runs it:
 `test_trusted_time.py` (its stub includes POSIX `<sys/time.h>`) and `test_patch_animatedgif.py` (it compares LF text
 with the CRLF files of the patched `.pio/libdeps`). The Google Test suites in `test/CMakeLists.txt` are not run: the
 configure step fetches Google Test from GitHub.
