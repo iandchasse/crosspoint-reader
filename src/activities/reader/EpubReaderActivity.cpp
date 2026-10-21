@@ -1293,8 +1293,8 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
 }
 
 unsigned long EpubReaderActivity::confirmLongPressThreshold() const {
-  // The setting is hidden on these boards, so a stale stored value must not act.
-  if (BoardConfig::hasTouch()) return 0;
+  // Ignore hidden settings; boards with keys beside touch keep these actions.
+  if (BoardConfig::hasTouch() && !BoardConfig::hasFrontButtons()) return 0;
   switch (SETTINGS.longPressMenuFunction) {
     case CrossPointSettings::LP_MENU_BOOKMARK:
     case CrossPointSettings::LP_MENU_DICTIONARY:
