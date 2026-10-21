@@ -7,8 +7,9 @@ usage, from crosspoint-reader:   python -I -X utf8 scripts/silkscreen/msvc/run_a
 With no argument it runs supported test/test_*.py suites and then test/clipping_sync. Exit code: the number of failures.
 
 A python test that names `cc` or `c++` is run with those names replaced by this directory's cc_hostcc.bat and
-cxx_hostcc.bat (hostcc.py), in a child process; the others run as they are. Default Windows runs report two documented host limitations as skips (explicit test arguments still run them): test_trusted_time.py (the stub includes POSIX <sys/time.h>) and test_patch_animatedgif.py (it
-compares text with LF line ends against the CRLF files of a Windows work tree's patched .pio/libdeps).
+cxx_hostcc.bat (hostcc.py), in a child process; the others run as they are. Default Windows runs report two
+host limitations as skips (explicit test arguments still run them): test_trusted_time.py (the stub includes POSIX
+<sys/time.h>) and test_patch_animatedgif.py (it compares LF text with CRLF files in patched .pio/libdeps).
 """
 import os
 import pathlib

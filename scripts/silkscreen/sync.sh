@@ -65,11 +65,34 @@ CENSUS_N=0      # census lines to read
 CONFLICT=0
 MERGED=""       # what moved, for the log
 
+# Reconstruct the whole sync after conflict resumes or --no-merge checks. The
+# incoming parent of each first-parent merge is the upstream snapshot we took.
+sync_merge_summary() {
+  local pre_cp="$1" pre_sdk="$2" parent n moved=""
+  parent=$(git -C "$SDK" log --first-parent --merges --format=%p "$pre_sdk..HEAD" | head -1 | awk '{print $2}')
+  if [ -n "$parent" ]; then
+    n=$(git -C "$SDK" rev-list --count "$pre_sdk..$parent")
+    moved="SDK +$n ($(short "$SDK" "$parent"))"
+  fi
+  parent=$(git -C "$CP" log --first-parent --merges --format=%p "$pre_cp..HEAD" | head -1 | awk '{print $2}')
+  if [ -n "$parent" ]; then
+    n=$(git -C "$CP" rev-list --count "$pre_cp..$parent")
+    moved="${moved:+$moved, }CrossPoint +$n (upstream/develop $(short "$CP" "$parent"))"
+  fi
+  printf '%s' "${moved:-no merge (tree as it was)}"
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 if [ $accept = 1 ]; then
   [ -f "$RESULTS" ] || die "no last run recorded ($RESULTS): run the sync first"
   # shellcheck disable=SC1090
   . "$RESULTS"
+  if [ -f "$LOGS/sync-state.txt" ]; then
+    . "$LOGS/sync-state.txt"
+    moved=$(sync_merge_summary "$PRE_CP" "$PRE_SDK")
+    LAST_DETAIL="${LAST_DETAIL/"- Merged: $LAST_MOVED."/"- Merged: $moved."}"
+    LAST_MOVED="$moved"
+  fi
   [ "$(git -C "$CP" rev-parse HEAD)" = "$LAST_HEAD" ] || die "HEAD moved since the last run ($LAST_HEAD): run --no-merge again so the log describes this tree"
   [ "$LAST_OK" = 1 ] || die "the last run was not green: fix it, run --no-merge, then --accept"
   [ -z "$(git -C "$CP" status --porcelain --ignore-submodules=all)" ] || die "crosspoint-reader is not clean: commit the fixes first"
@@ -178,7 +201,7 @@ if [ $do_merge = 1 ]; then
     git -C "$CP" add freeink-sdk && git -C "$CP" commit -q -m "chore(silkscreen): move the SDK pointer to $(short "$SDK" silkscreen)" && echo "  gitlink moved to the shared head $(short "$SDK" silkscreen)"
   fi
 fi
-[ -n "$MERGED" ] || MERGED="no merge (tree as it was)"
+MERGED=$(sync_merge_summary "$PRE_CP" "$PRE_SDK")
 
 # ---------------------------------------------------------------------------------------------------------------------
 phase "guards"
