@@ -27,27 +27,32 @@ What upstream's own files say (crosspoint-reader `AGENTS.md`, `SCOPE.md`, `.gith
   1 to 8 days. SDK-side: Waveshare 397 +456/-15, Murphy M4 +673/-435, EEGO A4 frontlight +168/-62, Picco +1,718/-49, Metalio +2,711/-59 (the largest, by a
   maintainer, 0 reviews). A newcomer's 9,000-line first PR would be unreviewable; PRs of 100 to 2,500 lines are what has been merged.
 
-## 2. Remotes (state 2026-10-20, after the first publication)
+## 2. Remotes (state 2026-10-20, after the first publication and the clean-up)
 
 | Repo | Remote | URL | Use |
 |---|---|---|---|
 | crosspoint-reader | `upstream` | crosspoint-reader/crosspoint-reader (push disabled) | base of every topic branch: `upstream/develop` |
-| crosspoint-reader | `fork` | iandchasse/crosspoint-reader-de-link (public fork) | `silkscreen`, tag `silkscreen-port-1`, later the topic branches |
-| crossink | `fork` | the same repository: CrossInk is in CrossPoint's fork network | branch `crossink/silkscreen` |
+| crosspoint-reader | `fork` | iandchasse/crosspoint-reader (public fork; the owner renamed it from `crosspoint-reader-de-link`) | `silkscreen` (its only branch, the default) and tag `silkscreen-port-1`; later the topic branches |
 | freeink-sdk | `fk-upstream` | Free-Ink/freeink-sdk (push disabled) | base: `fk-upstream/main` |
-| freeink-sdk | `origin` | iandchasse/freeink-sdk (public fork) | `silkscreen`, tag `silkscreen-port-1`, later the topic branches |
+| freeink-sdk | `origin` | iandchasse/freeink-sdk (public fork) | `silkscreen`, tag `silkscreen-port-1`; later the topic branches |
+| crossink | `crossink` | uxjulia/CrossInk (push disabled) | upstream |
+| crossink | `fork` | iandchasse/CrossInk (public, a separate repository and NOT a GitHub fork) | `silkscreen` (the default), plus `main` and `development` copied from upstream |
 
-On 2026-10-20 the owner had the three `silkscreen` branches pushed to these forks (`scripts/silkscreen/publish.sh` repeats it: SDK first, fast-forward only,
-nothing forced). A fresh clone of `crosspoint-reader-de-link` at `silkscreen` or `crossink/silkscreen` resolves its `freeink-sdk` gitlink from
-`iandchasse/freeink-sdk` (checked with shallow clones). GitHub allows one fork per account of a fork network, and CrossInk and CrossPoint share one: asking for a
-second fork returns the existing one. The old fork cannot be detached either, because someone else has forked it (`AndieSandie/crosspoint-reader-de-link-devkitc`),
-and deleting it would drop its 12 stars; so the owner's earlier idea of archiving it and forking fresh reduces to renaming it, moving its old branches under
-`archive/` and switching its default branch. The old fork's branches (`s3-port`, `master`, the font branches, `seamless-rtc`, `upstream-og`) are untouched;
-the two older local clones of it hold newer unpushed work (`s3-port` +45 commits, `de-link-v2` +18, `seamless-rtc` +1, a stash each).
+`scripts/silkscreen/publish.sh` pushes the three `silkscreen` branches (SDK first, fast-forward only, nothing forced; `--dry-run`). A plain clone of either app at
+`silkscreen` resolves its `freeink-sdk` gitlink from `iandchasse/freeink-sdk` (checked with shallow clones). CrossInk is its own repository because GitHub allows one
+fork per account per fork network and CrossInk shares CrossPoint's: asking for a second fork returns the first. The cost is the missing "forked from" badge and Sync
+fork button on `iandchasse/CrossInk`; a pull request to `uxjulia/CrossInk` would have to come from a branch of `iandchasse/crosspoint-reader`, which is in the same network.
+
+The CrossPoint repository is the old de-link fork (created 2026-02-20, 12 stars, two merged upstream PRs from it). It cannot be detached from its network, because
+someone else has forked it (`AndieSandie/crosspoint-reader-de-link-devkitc`), and deleting it would drop the stars, so it was renamed and cleaned instead: on the owner's order
+every branch except `silkscreen` was deleted on 2026-10-20 (`master`, `s3-port`, `s3-port-generic-epd`, `seamless-rtc`, `upstream-og`, `C3-custom-font-ttf`, `S3-custom-font-ttf`,
+`feature/custom-fonts`, `gdey_075`, and `crossink/silkscreen` after the move). A verified git bundle of every ref as it was is in
+`EPD_Hub_ESP32/github-archive/crosspoint-reader-fork-before-cleanup-2026-10-20.bundle` (233 MB, refs listed beside it). Two older local clones of that fork
+(`crosspoint-reader-de-link`, `cp-de-link-2`) hold newer unpushed work (`s3-port` +45 commits, `de-link-v2` +18, `seamless-rtc` +1, a stash each); they were not touched.
 
 A topic branch keeps upstream's `.gitmodules` and changes only the `freeink-sdk` gitlink, to an SDK commit that exists in Free-Ink's repo, which is why the SDK PR
-merges before the CrossPoint PRs that need it. Upstream's default and PR base branch is `develop`; the fork's own default branch (`s3-port`) is old and irrelevant
-to a PR. The fork's CI workflow runs only on pushes to `master` and on pull requests, so pushing `silkscreen` starts nothing.
+merges before the CrossPoint PRs that need it. Upstream's default and PR base branch is `develop`. The fork's CI workflow runs only on pushes to `master` and on pull
+requests, so pushing `silkscreen` starts nothing.
 
 ## 3. What the fork adds to the 4.26" device
 

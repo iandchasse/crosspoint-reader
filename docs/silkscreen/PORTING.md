@@ -197,8 +197,8 @@ default_envs = silkscreen
 
 ## Repository layout and remotes
 
-- The parent repo has one remote, `upstream` (crosspoint-reader). Commits stay local for now.
-- The SDK submodule has `fk-upstream` (Free-Ink) and `origin` (`iandchasse/freeink-sdk`). `.gitmodules` points at the fork's `silkscreen` branch, so pushing that branch is all a fresh clone needs. Until it is pushed, `git clone --recursive` of this repo cannot fetch the SDK commits.
+- The parent repo has `upstream` (crosspoint-reader, push disabled) and `fork` (`iandchasse/crosspoint-reader`, branch `silkscreen`). Commits stay local until the owner runs `scripts/silkscreen/publish.sh`.
+- The SDK submodule has `fk-upstream` (Free-Ink) and `origin` (`iandchasse/freeink-sdk`). `.gitmodules` points at the fork's `silkscreen` branch, which is pushed (2026-10-20): `git clone --recursive --branch silkscreen https://github.com/iandchasse/crosspoint-reader.git` fetches the SDK commits from `iandchasse/freeink-sdk`. `publish.sh` pushes the SDK before the apps for that reason.
 - On Windows, both repos need `git config core.longpaths true`.
 
 ## Upstream merges

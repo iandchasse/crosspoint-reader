@@ -3,8 +3,8 @@
 #
 # Usage: scripts/silkscreen/publish.sh [--dry-run]
 #   freeink-sdk       silkscreen -> origin (iandchasse/freeink-sdk), branch silkscreen
-#   crosspoint-reader silkscreen -> fork   (iandchasse/crosspoint-reader-de-link), branch silkscreen
-#   crossink          silkscreen -> fork   (the same repository: CrossInk is in CrossPoint's fork network), branch crossink/silkscreen
+#   crosspoint-reader silkscreen -> fork   (iandchasse/crosspoint-reader), branch silkscreen
+#   crossink          silkscreen -> fork   (iandchasse/CrossInk, its own repository), branch silkscreen
 # Order matters: the SDK goes first, because a fresh clone resolves both apps' freeink-sdk gitlink in the SDK fork.
 # Fast-forward only: nothing is forced, and a rejected push stops the script. A dirty tree, a branch that is not
 # `silkscreen`, or a gitlink the SDK branch does not contain stops it before anything is pushed.
@@ -46,5 +46,5 @@ push() {  # repo remote src:dst label
 }
 push "$SDK" origin silkscreen:silkscreen "freeink-sdk"
 push "$CP" fork silkscreen:silkscreen "crosspoint-reader"
-push "$CI" fork silkscreen:crossink/silkscreen "crossink"
-echo "published${dry:+ (dry run)}: https://github.com/iandchasse/freeink-sdk/tree/silkscreen  https://github.com/iandchasse/crosspoint-reader-de-link/tree/silkscreen  https://github.com/iandchasse/crosspoint-reader-de-link/tree/crossink/silkscreen"
+push "$CI" fork silkscreen:silkscreen "crossink"
+echo "published${dry:+ (dry run)}: https://github.com/iandchasse/freeink-sdk/tree/silkscreen  https://github.com/iandchasse/crosspoint-reader/tree/silkscreen  https://github.com/iandchasse/CrossInk/tree/silkscreen"
