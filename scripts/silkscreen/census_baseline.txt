@@ -1,4 +1,4 @@
-# silkscreen sync census; app a96c4561, sdk bee6382; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 806ab8e5, sdk eda3e3f; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -792,10 +792,12 @@ RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	bool setupHid(N
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	class ClientCB : public NimBLEClientCallbacks {
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	class ScanCB : public NimBLEScanCallbacks {
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const NimBLERemoteCharacteristic* chr;
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const NimBLEUUID hid(kHidService);
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const bool hid = dev->isAdvertisingService(NimBLEUUID(kHidService)) || keyboardAppearance;
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const std::vector<NimBLERemoteCharacteristic*>& chars = hid->getCharacteristics(true);
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	const uint32_t passkey = NimBLEDevice::getSecurityPasskey();
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	for (NimBLERemoteCharacteristic* c : chars) {
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	for (const NimBLERemoteService* svc : client->getServices(true)) {
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	g_client = NimBLEDevice::createClient();
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (!NimBLEDevice::init(hostName ? hostName : "FreeInk")) {
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLEDevice::isInitialized()) return false;
@@ -803,7 +805,6 @@ RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLEDevic
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (NimBLERemoteCharacteristic* rmap = hid->getCharacteristic(NimBLEUUID(kCharReportMap))) {
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (begun_) NimBLEDevice::getScan()->clearResults();
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	if (c->getUUID() != NimBLEUUID(kCharReport) || !c->canNotify()) continue;
-RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	return client && client->getService(NimBLEUUID(kHidService)) != nullptr;
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	return g_disconnectObserved.load() && NimBLEDevice::getDisconnectedClient() == g_client;
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	scan->setPhy(NimBLEScan::SCAN_ALL);
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	scanning_ = NimBLEDevice::getScan()->isScanning();
@@ -1093,6 +1094,7 @@ TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const unsigned long confirm
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && !currentPageLinks.empty() && SETTINGS.touchReaderControls && mappedInput.hasTouch()) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && SETTINGS.touchReaderControls && mappedInput.wasScreenLongPress(selectionX, selectionY)) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (BoardConfig::hasTouch() && !BoardConfig::hasFrontButtons()) return 0;
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (confirmLongPressed) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.ORIENTATION_CHANGE) {
@@ -1112,6 +1114,7 @@ TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	bool canSwipeDelete(
 TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	void onRowLongPress(int index) override;
 TOUCH	src/activities/reader/EpubReaderBookmarksActivity.h	1	void swipeDelete(int index) override;
 TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	: UiListActivity("EpubReaderClippings", renderer, mappedInput, /*wantsTouchLongPress=*/true) {}
+TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	if (mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, ENTER_DELETE_MODE_MS)) {
 TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
 TOUCH	src/activities/reader/EpubReaderClippingListActivity.cpp	1	void EpubReaderClippingListActivity::onRowLongPress(const int index) {
 TOUCH	src/activities/reader/EpubReaderClippingListActivity.h	1	void onRowLongPress(int index) override;
@@ -1157,7 +1160,6 @@ TOUCH	src/activities/settings/BleSettingsActivity.cpp	1	props.inputMask = fui::I
 TOUCH	src/activities/settings/BleSettingsActivity.cpp	1	void BleSettingsActivity::onRowLongPress(const int index) {
 TOUCH	src/activities/settings/BleSettingsActivity.h	1	void onRowLongPress(int index) override;
 TOUCH	src/activities/settings/FontDownloadActivity.cpp	1	if (mappedInput.wasHomeGesture()) {
-TOUCH	src/activities/settings/SettingsActivity.cpp	1	if (!BoardConfig::hasFrontButtons() && setting.valuePtr == &CrossPointSettings::longPressMenuFunction) return false;
 TOUCH	src/activities/settings/SettingsActivity.cpp	1	props.labelText = mappedInput.hasTouch() ? screen.theme().bodyText : screen.theme().smallText;
 TOUCH	src/activities/settings/SettingsListActivity.cpp	1	const int16_t paddingY = mappedInput.hasTouch() ? theme.listTouchRowPaddingY : theme.listRowPaddingY;
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
