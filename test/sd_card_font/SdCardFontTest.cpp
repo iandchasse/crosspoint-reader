@@ -484,6 +484,24 @@ TEST(SdCardFontTest, AFullAdvanceTableSkipsTheScanWithoutAllocating) {
   EXPECT_EQ(0, font.getAdvance(FIRST + 768, 0));
 }
 
+TEST(SdCardFontTest, SparseStylesBuildAdvanceTablesByStyleId) {
+  for (uint8_t style = 0; style < 4; ++style) {
+    makeFont();
+    sdFontTestFile[32] = style;
+    SdCardFont font;
+    ASSERT_TRUE(font.load("fixture"));
+    ASSERT_TRUE(font.hasStyle(style));
+    const auto text = page(FIRST, 4);
+    ASSERT_EQ(0, font.buildAdvanceTable(text.c_str(), 1 << style));
+    for (uint32_t cp = FIRST; cp < FIRST + 4; ++cp) {
+      EXPECT_EQ(32U << 4, font.getAdvance(cp, style));
+    }
+    sdFontTestReads = 0;
+    EXPECT_EQ(0, font.buildAdvanceTable(text.c_str(), 1 << style));
+    EXPECT_EQ(0U, sdFontTestReads);
+  }
+}
+
 TEST(SdCardFontTest, OnePageWithMoreCodepointsThanTheTableKeepsTheLowestInAnyOrder) {
   constexpr uint32_t CACHE_LIMIT = 768;  // SdCardFont::ADVANCE_CACHE_LIMIT
   makeFont(1001);
