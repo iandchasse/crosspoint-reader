@@ -1,4 +1,4 @@
-# silkscreen sync census; app 806ab8e5, sdk eda3e3f; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app b789b12d, sdk a3ef286; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
