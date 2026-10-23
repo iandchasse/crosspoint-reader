@@ -24,7 +24,7 @@ class KOReaderSyncActivity final : public Activity, private UiAppHost {
  public:
   explicit KOReaderSyncActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& epubPath,
                                 CrossPointPosition localPosition, SavedProgressPosition localKoPos,
-                                std::string localChapterName);
+                                std::string localChapterName, const bool pluginEventsOnly = false);
 
   void onEnter() override;
   void onExit() override;
@@ -77,6 +77,10 @@ class KOReaderSyncActivity final : public Activity, private UiAppHost {
   bool wifiActivated = false;
   // A result screen put the station in modem sleep (PowerConfig::radioOffWhenIdle).
   bool modemSleepOn = false;
+
+  // Reuses the KOReader WiFi connect/drain/return flow without a server: flush
+  // plugged-outbox events instead of syncing progress.
+  bool pluginEventsOnly = false;
 
   void onWifiSelectionComplete(bool success);
   void performSync();
