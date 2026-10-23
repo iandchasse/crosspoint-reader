@@ -1,4 +1,4 @@
-# silkscreen sync census; app b789b12d, sdk a3ef286; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 4dec54e4, sdk 7326126; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -183,6 +183,11 @@ LIGHT	sdk:libs/hardware/FrontlightManager/include/FrontlightManager.h	1	void set
 LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"description": "FreeInk frontlight manager driven by BoardConfig::ACTIVE.frontlight. Inert on boards without a frontlight. Backends: LEDC PWM (single + warm/cool), M5PM1 
 LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"keywords": "frontlight, backlight, pwm, ledc, i2c",
 LIGHT	sdk:libs/hardware/FrontlightManager/library.json	1	"name": "FrontlightManager",
+LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	!eegoA4UidHasNoFrontlight(0xBB0407) && !eegoA4UidHasNoFrontlight(0xBB0419),
+LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	constexpr bool eegoA4UidHasNoFrontlight(const uint32_t uid) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	eegoA4UidHasNoFrontlight(0xBB0418),
+LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	static_assert(!eegoA4UidHasNoFrontlight(0xBB0409) && !eegoA4UidHasNoFrontlight(0xBB0417) &&
+LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	static_assert(eegoA4UidHasNoFrontlight(0xBB0408) && eegoA4UidHasNoFrontlight(0xBB040C) &&
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include "FrontlightManager.h"
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::Lm3630a) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::PiccoDualLed) {
@@ -236,6 +241,7 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const bool
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const freeink::frontlight::ColourPlan plan = colourPlan();
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	const int64_t dwellUs = static_cast<int64_t>(BoardConfig::ACTIVE.frontlight.offDwellMs) * 1000;
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	const uint8_t periodMs = BoardConfig::ACTIVE.frontlight.loadProbePeriodMs;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::eegoA4UidHasNoFrontlight(static_cast<uint32_t>(mac[3]) << 16 | mac[4] << 8 | mac[5])) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::ColourPlan FrontlightManager::colourPlan() const {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::noteInUseTrip(_loadRecord, _warmSelected);
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	freeink::frontlight::noteLit(_loadRecord, warm);
@@ -323,8 +329,9 @@ LIGHT	src/SettingsList.h	1	return !BoardConfig::hasHomeKey() && keyFrontlightAva
 LIGHT	src/SettingsList.h	1	return BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight();
 LIGHT	src/activities/Activity.h	1	virtual bool showsFrontlightNotice() const { return false; }
 LIGHT	src/activities/ActivityManager.cpp	1	#include "util/FrontlightPanelActivity.h"
+LIGHT	src/activities/ActivityManager.cpp	1	#include <HalFrontlight.h>
 LIGHT	src/activities/ActivityManager.cpp	1	bool ActivityManager::showsFrontlightNotice() const {
-LIGHT	src/activities/ActivityManager.cpp	1	if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
+LIGHT	src/activities/ActivityManager.cpp	1	if (Frontlight.present() && currentActivity->name != "FrontlightPanel" &&
 LIGHT	src/activities/ActivityManager.cpp	1	pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
 LIGHT	src/activities/ActivityManager.cpp	1	return currentActivity && currentActivity->showsFrontlightNotice();
 LIGHT	src/activities/ActivityManager.h	1	bool showsFrontlightNotice() const;
@@ -592,6 +599,7 @@ PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.cs
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.dc, OUTPUT);
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.mosi, INPUT_PULLUP);
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	2	pinMode(d.mosi, OUTPUT);
+PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.powerEnable, OUTPUT);
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.rst, OUTPUT);
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.sclk, OUTPUT);
 PINS	sdk:libs/hardware/AudioManager/src/AudioManager.cpp	1	pinMode(cfg.ampEnable, OUTPUT);
@@ -982,9 +990,9 @@ TOUCH	src/MappedInputManager.h	1	bool wasTopEdgeDownSwipe() const;
 TOUCH	src/MappedInputManager.h	1	enum class SwipeDir { None, Left, Right, Up, Down };
 TOUCH	src/MappedInputManager.h	1	mutable uint16_t longPressFiredButtons = 0;
 TOUCH	src/activities/Activity.h	1	virtual bool handleHomeGesture() { return false; }
+TOUCH	src/activities/ActivityManager.cpp	1	(statusBarTap || mappedInput.wasLightPanelGesture())) {
 TOUCH	src/activities/ActivityManager.cpp	1	if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
 TOUCH	src/activities/ActivityManager.cpp	1	if (currentActivity->handleHomeGesture()) {
-TOUCH	src/activities/ActivityManager.cpp	1	if (currentActivity->name != "FrontlightPanel" && (statusBarTap || mappedInput.wasLightPanelGesture())) {
 TOUCH	src/activities/ActivityManager.cpp	1	if (mappedInput.hasTouch() && (currentActivity->name == "Home" || currentActivity->name == "FileBrowser" ||
 TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.hasTouch()) {
 TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.wasHomeGesture()) cancelDownload = goHomeAfterCancel = true;
@@ -1252,7 +1260,7 @@ WAKE	sdk:libs/display/FreeInkDisplay/src/driver/M5OfficialDriver.h	1	void deepSl
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PanelDriver.h	1	virtual void deepSleep(EpdBus& bus) = 0;
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PaperMonoDriver.cpp	1	void PaperMonoDriver::deepSleep(EpdBus& bus) {
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/PaperMonoDriver.h	1	void deepSleep(EpdBus& bus) override;
-WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	#include <driver/gpio.h> // gpio_hold_dis (Picco panel probe)
+WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	#include <driver/gpio.h> // gpio_hold_dis (Picco/Sticky panel probe)
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	if (pin >= 0) gpio_hold_dis(static_cast<gpio_num_t>(pin));
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	void Ssd1677Driver::deepSleep(EpdBus& bus) {
 WAKE	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.h	1	void deepSleep(EpdBus& bus) override;
