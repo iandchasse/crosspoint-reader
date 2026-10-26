@@ -1,4 +1,4 @@
-# silkscreen sync census; app a380095f, sdk 4020a66; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app a3365f72, sdk 2d7f674; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -309,8 +309,6 @@ LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightOn = 0;
 LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightRestoreOnWake = 1;
 LIGHT	src/CrossPointSettings.h	1	uint8_t frontlightWarmth = 50; // 0 = cool .. 100 = warm
 LIGHT	src/CrossPointSettings.h	1	uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
-LIGHT	src/MappedInputManager.cpp	1	#include <HalFrontlight.h>
-LIGHT	src/MappedInputManager.cpp	1	return Frontlight.present() && wasTopEdgeDownSwipe();
 LIGHT	src/SettingsList.cpp	1	"frontlightBrightness"));
 LIGHT	src/SettingsList.cpp	1	"frontlightRestoreOnWake", StrId::STR_CAT_DISPLAY));
 LIGHT	src/SettingsList.cpp	1	#if FREEINK_CAP_WARMLIGHT
@@ -329,9 +327,8 @@ LIGHT	src/SettingsList.h	1	return !BoardConfig::hasHomeKey() && keyFrontlightAva
 LIGHT	src/SettingsList.h	1	return BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight();
 LIGHT	src/activities/Activity.h	1	virtual bool showsFrontlightNotice() const { return false; }
 LIGHT	src/activities/ActivityManager.cpp	1	#include "util/FrontlightPanelActivity.h"
-LIGHT	src/activities/ActivityManager.cpp	1	#include <HalFrontlight.h>
 LIGHT	src/activities/ActivityManager.cpp	1	bool ActivityManager::showsFrontlightNotice() const {
-LIGHT	src/activities/ActivityManager.cpp	1	if (Frontlight.present() && currentActivity->name != "FrontlightPanel" &&
+LIGHT	src/activities/ActivityManager.cpp	1	if (mappedInput.hasTouch() && currentActivity->name != "FrontlightPanel" &&
 LIGHT	src/activities/ActivityManager.cpp	1	pushActivity(std::make_unique<FrontlightPanelActivity>(renderer, mappedInput));
 LIGHT	src/activities/ActivityManager.cpp	1	return currentActivity && currentActivity->showsFrontlightNotice();
 LIGHT	src/activities/ActivityManager.h	1	bool showsFrontlightNotice() const;
@@ -389,6 +386,7 @@ LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	brightness = std::max(MI
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	const bool changed = SETTINGS.frontlightBrightness != brightness || SETTINGS.frontlightWarmth != warmth ||
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	const char* FrontlightPanelActivity::singleStringNote() {
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	fui::TextStyle FrontlightPanelActivity::noteStyle(const fui::ThemeTokens& tokens) {
+LIGHT	src/activities/util/FrontlightPanelActivity.cpp	2	if (!Frontlight.present()) return;
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!Frontlight.switchOnPending()) noteSwitchOnResult();
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!Frontlight.warmthIsSelection()) {
 LIGHT	src/activities/util/FrontlightPanelActivity.cpp	1	if (!awaitingSwitchOnResult && Frontlight.switchOnPending()) {
@@ -939,7 +937,7 @@ TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasBackGesture() con
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasBottomEdgeUpSwipe() const { return wasEdgeSwipe(fui::ScreenEdge::Bottom); }
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasEdgeSwipe(const freeink::ui::ScreenEdge edge) const {
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasHomeGesture() const {
-TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasLightPanelGesture() const {
+TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasLightPanelGesture() const { return wasTopEdgeDownSwipe(); }
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasLongPressed(const Button button, const unsigned long thresholdMs) const {
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasMenuGesture() const { return wasTopEdgeDownSwipe(); }
 TOUCH	src/MappedInputManager.cpp	1	bool MappedInputManager::wasReaderMenuSwipeUp() const { return gpio.hasHomeKey() && wasBottomEdgeUpSwipe(); }
@@ -963,7 +961,6 @@ TOUCH	src/MappedInputManager.cpp	1	if ((longPressFiredButtons & bit) != 0 || get
 TOUCH	src/MappedInputManager.cpp	2	if (button == Button::Back && wasBackGesture()) return true;
 TOUCH	src/MappedInputManager.cpp	1	if (gpio.wasHomeKeyLongPressed() && homeAction != HomeButtonAction::Ignore) {
 TOUCH	src/MappedInputManager.cpp	1	longPressFiredButtons |= bit;
-TOUCH	src/MappedInputManager.cpp	1	return Frontlight.present() && wasTopEdgeDownSwipe();
 TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Down;
 TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::Left;
 TOUCH	src/MappedInputManager.cpp	1	return SwipeDir::None;
@@ -994,6 +991,7 @@ TOUCH	src/activities/ActivityManager.cpp	1	(statusBarTap || mappedInput.wasLight
 TOUCH	src/activities/ActivityManager.cpp	1	if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
 TOUCH	src/activities/ActivityManager.cpp	1	if (currentActivity->handleHomeGesture()) {
 TOUCH	src/activities/ActivityManager.cpp	1	if (mappedInput.hasTouch() && (currentActivity->name == "Home" || currentActivity->name == "FileBrowser" ||
+TOUCH	src/activities/ActivityManager.cpp	1	if (mappedInput.hasTouch() && currentActivity->name != "FrontlightPanel" &&
 TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.hasTouch()) {
 TOUCH	src/activities/CatalogActivity.cpp	1	if (mappedInput.wasHomeGesture()) cancelDownload = goHomeAfterCancel = true;
 TOUCH	src/activities/UiListActivity.cpp	1	: Activity(name, renderer, mappedInput), UiAppHost(renderer), wantsTouchLongPress(wantsTouchLongPress) {}
@@ -1180,7 +1178,7 @@ TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManage
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right) {
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::handleHomeGesture() {
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (!draggingSlider && mappedInput.wasSwipe() == MappedInputManager::SwipeDir::Up) {
-TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) y += kQuickControlSize + tokens.spaceSm + lineHeight;
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) y += kQuickControlSize;
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) {
 TOUCH	src/activities/util/FrontlightPanelActivity.h	1	bool handleHomeGesture() override;
 TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPress) {
