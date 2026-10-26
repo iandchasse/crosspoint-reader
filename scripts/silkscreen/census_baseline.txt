@@ -1,4 +1,4 @@
-# silkscreen sync census; app 4dec54e4, sdk 7326126; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app a380095f, sdk 4020a66; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -1076,6 +1076,11 @@ TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (event.longPress) {
 TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (mappedInput.hasTouch()) {
 TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
 TOUCH	src/activities/network/WifiSelectionActivity.cpp	1	props.inputMask = fui::InputTouch | fui::InputLongPress;
+TOUCH	src/activities/plugins/PluginCatalogActivity.cpp	1	: CatalogActivity("PluginCatalog", renderer, mappedInput, /*wantsTouchLongPress=*/true),
+TOUCH	src/activities/plugins/PluginCatalogActivity.cpp	1	mappedInput.wasLongPressed(MappedInputManager::Button::Confirm, PLUGIN_UNINSTALL_HOLD_MS)) {
+TOUCH	src/activities/plugins/PluginCatalogActivity.cpp	1	props.inputMask = state == State::PLUGIN_PICKER ? static_cast<uint16_t>(fui::InputTouch | fui::InputLongPress)
+TOUCH	src/activities/plugins/PluginCatalogActivity.cpp	1	void PluginCatalogActivity::onRowLongPress(const int index) {
+TOUCH	src/activities/plugins/PluginCatalogActivity.h	1	void onRowLongPress(int index) override;
 TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::handleHomeGesture() {
 TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::keysChooseAction() const { return mappedInput.hasTouch() && mappedInput.hasFrontButtons(); }
 TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	bool ClipSelectionActivity::touchInProgress() const {
@@ -1174,8 +1179,8 @@ TOUCH	src/activities/util/BmpViewerActivity.cpp	1	const auto swipe = mappedInput
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Left) {
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right) {
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::handleHomeGesture() {
-TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	const int tileCount = mappedInput.hasTouch() ? kTileCount : 0;
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (!draggingSlider && mappedInput.wasSwipe() == MappedInputManager::SwipeDir::Up) {
+TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) y += kQuickControlSize + tokens.spaceSm + lineHeight;
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	if (mappedInput.hasTouch()) {
 TOUCH	src/activities/util/FrontlightPanelActivity.h	1	bool handleHomeGesture() override;
 TOUCH	src/activities/util/KeyboardEntryActivity.cpp	1	bool KeyboardEntryActivity::activateValue(const int16_t value, const bool longPress) {
