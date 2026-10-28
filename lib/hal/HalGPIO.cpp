@@ -10,6 +10,9 @@
 #if SILKSCREEN_BATLOG
 #include <BatteryLog.h>
 #endif
+#if FREEINK_DEVICE_LILYGO
+#include <BoardT5S3.h>
+#endif
 
 // Global HalGPIO instance
 HalGPIO gpio;
@@ -144,6 +147,14 @@ void HalGPIO::begin(const bool deferTouch) {
   _deviceType = DeviceType::X4;
 #endif
   inputMgr.begin(/*startTouch=*/!deferTouch);
+#if FREEINK_DEVICE_LILYGO
+  // inputMgr.begin() has started Wire. BoardT5S3::begin() would reset the buses.
+  if (BoardConfig::ACTIVE.board == BoardConfig::Board::LilyGoT5S3) {
+    BoardT5S3::setPca9535PinMode(PCA9535_IO12_BUTTON, INPUT);
+    InputManager::setButtonHook(
+        []() -> uint8_t { return BoardT5S3::readButton() ? static_cast<uint8_t>(1U << InputManager::BTN_DOWN) : 0; });
+  }
+#endif
 #if FREEINK_CAP_ADC_LADDERS
   logLadderPresence();
 #endif
@@ -190,8 +201,10 @@ bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased(); }
 
 bool HalGPIO::rawInputActive() {
   if (inputMgr.isPowerButtonPhysicallyPressed()) return true;
-  // The ladder decoder's own released rule, from one sample per ladder; the
-  // oversampled decode stays with the debounced poll.
+#if FREEINK_DEVICE_LILYGO
+  if (BoardConfig::ACTIVE.board == BoardConfig::Board::LilyGoT5S3 && BoardT5S3::readButton()) return true;
+#endif
+  // One sample per ladder using the decoder's released rule.
   if (BoardConfig::hasAdcLadders()) return inputMgr.adcLadderContact();
   InputManager::ButtonAdcSample g1{}, g2{};
   inputMgr.readButtonAdc(g1, g2);

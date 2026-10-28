@@ -88,9 +88,9 @@ class HalGPIO {
   unsigned long getHeldTime() const;
   unsigned long getPowerButtonHeldTime() const;
   // True when any button contact is closed right now, read straight from the
-  // hardware (ADC ladder off its idle rail, or the power GPIO asserted), without
-  // going through the debounced state. Cheap enough to call every few ms: one
-  // conversion per idle ladder on InputStyle::AdcLadders boards.
+  // hardware (ADC ladder off its idle rail, the power GPIO asserted, or the T5S3
+  // expander key), without going through the debounced state. Each poll uses
+  // one conversion per idle ADC ladder, or one I2C read for the expander.
   bool rawInputActive();
   bool hasTouch() const;
   // Physical navigation keys are fitted: every board without touch, and touch
