@@ -1,4 +1,4 @@
-# silkscreen sync census; app a3365f72, sdk 2d7f674; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 57c51ee6, sdk f8a3343; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -71,6 +71,7 @@ CUTOFF	src/main.cpp	1	const uint16_t cutoffMv = BoardConfig::powerPolicy().lowBa
 CUTOFF	src/main.cpp	1	if (BoardConfig::powerPolicy().lowBatteryCutoffMv > 0 && powerManager.lowBatteryCutoffTripped()) {
 CUTOFF	src/network/CrossPointWebServer.cpp	1	#include "CutoffAbortPrint.h"
 CUTOFF	src/network/CrossPointWebServer.cpp	1	CutoffAbortPrint out(client);
+CUTOFF	src/network/CrossPointWebServer.cpp	1	if (powerManager.lowBatteryCutoffTripped()) {
 CUTOFF	src/network/CrossPointWebServer.cpp	2	return powerManager.lowBatteryCutoffTripped();
 CUTOFF	src/network/CutoffAbortPrint.h	1	class CutoffAbortPrint : public Print {
 CUTOFF	src/network/CutoffAbortPrint.h	1	explicit CutoffAbortPrint(Print& sink) : _sink(sink) {}
