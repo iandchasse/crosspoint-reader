@@ -32,3 +32,12 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 
 - Merged: SDK +5 (252e9bb), CrossPoint +11 (upstream/develop a790b144). Total 40m07s; census items: 1.
 - Reviewed: Integrated the landed FreeInk main pin required by CrossInk. Preserved deferred touch and ladder detection alongside LilyGO input, upstream spacing migration and Silkscreen strings; added the cutoff poll to plugin ETag hashing. Builds are run after restoring the uncommitted local feature changes.
+
+## 2026-10-28  CrossPoint +5 (upstream/develop 60d3c8bb)
+
+- Merged: CrossPoint +5 (upstream/develop 60d3c8bb). Validation checks 1m56s; census items: 3.
+- PIO build total: 1915.81s.
+- silkscreen-batlog: PIO 688.30s, exit=0 flash=5385230 ram=114316
+- silkscreen: PIO 646.93s, exit=0 flash=5419802 ram=112756
+- silkscreen-368: PIO 580.58s, exit=0 flash=5403502 ram=112596
+- Reviewed: Retained the shared SDK (both required pins already contained), wake/light safeguards and keys beside touch; BMP long-press retains Confirm. Affected native tests (18) and local feature tests (5) passed; battery work remains uncommitted and unchanged CrossInk binaries were verified by source fingerprints.

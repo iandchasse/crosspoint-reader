@@ -1,4 +1,4 @@
-# silkscreen sync census; app 57c51ee6, sdk f8a3343; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app e8b4647d, sdk f8a3343; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -440,6 +440,7 @@ LIGHT	src/activities/util/FrontlightPanelActivity.h	1	bool showsFrontlightNotice
 LIGHT	src/activities/util/FrontlightPanelActivity.h	1	class FrontlightPanelActivity final : public Activity, private UiAppHost {
 LIGHT	src/activities/util/FrontlightPanelActivity.h	1	explicit FrontlightPanelActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
 LIGHT	src/main.cpp	1	#include <HalFrontlight.h>
+LIGHT	src/main.cpp	1	: (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
 LIGHT	src/main.cpp	1	Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, /*on=*/false);
 LIGHT	src/main.cpp	1	Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
 LIGHT	src/main.cpp	1	Frontlight.prepareForSleep();
@@ -456,7 +457,7 @@ LIGHT	src/main.cpp	1	const bool lightOn = !Frontlight.isOn();
 LIGHT	src/main.cpp	1	handleFrontlightNotices();
 LIGHT	src/main.cpp	2	handleFrontlightTrip();
 LIGHT	src/main.cpp	1	if (!Frontlight.fault() || Frontlight.switchOnPending()) return false;
-LIGHT	src/main.cpp	1	if (!Frontlight.present() || Frontlight.isOn() == on) return;
+LIGHT	src/main.cpp	1	if (!Frontlight.present() || (Frontlight.isOn() == on && (SETTINGS.frontlightOn != 0) == on)) return;
 LIGHT	src/main.cpp	1	if (!Frontlight.present()) return false;
 LIGHT	src/main.cpp	1	if (!Frontlight.present()) return;
 LIGHT	src/main.cpp	1	if (!activityManager.showsFrontlightNotice() && Frontlight.takeNoLightNotice()) {
@@ -472,7 +473,6 @@ LIGHT	src/main.cpp	1	if (warmth == SETTINGS.frontlightWarmth) return;
 LIGHT	src/main.cpp	1	in.lit = Frontlight.isOn();
 LIGHT	src/main.cpp	1	in.litPct = Frontlight.brightness();
 LIGHT	src/main.cpp	1	intent.lightOn = Frontlight.isOn();
-LIGHT	src/main.cpp	1	isSilentReboot ? silentRebootLightOn : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
 LIGHT	src/main.cpp	1	showFrontlightNotFound();
 LIGHT	src/main.cpp	1	silentRebootPayload = Frontlight.isOn() ? SILENT_REBOOT_LIGHT_ON : 0;
 LIGHT	src/main.cpp	1	static bool handleFrontlightTrip() {
@@ -1175,6 +1175,7 @@ TOUCH	src/activities/settings/FontDownloadActivity.cpp	1	if (mappedInput.wasHome
 TOUCH	src/activities/settings/SettingsActivity.cpp	1	props.labelText = mappedInput.hasTouch() ? screen.theme().bodyText : screen.theme().smallText;
 TOUCH	src/activities/settings/SettingsListActivity.cpp	1	const int16_t paddingY = mappedInput.hasTouch() ? theme.listTouchRowPaddingY : theme.listRowPaddingY;
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	const auto swipe = mappedInput.wasSwipe();
+TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenLongPress(touchX, touchY)) {
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Left) {
 TOUCH	src/activities/util/BmpViewerActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right) {
 TOUCH	src/activities/util/FrontlightPanelActivity.cpp	1	bool FrontlightPanelActivity::handleHomeGesture() {
