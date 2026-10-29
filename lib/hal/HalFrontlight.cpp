@@ -37,7 +37,6 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
   }
 
   lastBrightness = brightness > 100 ? 100 : brightness;
-  manager.setColorTemperature(warmth > 100 ? 100 : warmth);
   lit = on;
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   if (lit && !manager.restoreAllowed()) {
@@ -45,7 +44,9 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
     lit = false;
   }
 #endif
+  // Brightness first avoids putting the Picco LED driver in standby before on.
   manager.setBrightness(lit ? lastBrightness : 0);
+  manager.setColorTemperature(warmth > 100 ? 100 : warmth);
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   noteSwitchOn(Pending::Restore);
 #endif
