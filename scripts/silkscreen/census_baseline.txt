@@ -1,4 +1,4 @@
-# silkscreen sync census; app fade2774, sdk 4ae83f5; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 05f65e0a, sdk 4ae83f5; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -542,8 +542,10 @@ NET	src/clippings/ClippingSync.cpp	1	const int status = http.sendRequest(upload 
 NET	src/network/CrossPointWebServer.cpp	1	LOG_DBG("WEB", "[MEM] Free heap after WebServer allocation: %d bytes", ESP.getFreeHeap());
 NET	src/network/CrossPointWebServer.cpp	1	NetworkClient client = server->client();
 NET	src/network/CrossPointWebServer.cpp	1	class CrossPointHttpServer final : public WebServer {
-NET	src/network/CrossPointWebServer.cpp	1	const freeink::FetchResult result = freeink::fetchResumable(
+NET	src/network/CrossPointWebServer.cpp	1	freeink::SecureHttpClient http; // redirects are not followed (SDK default)
 NET	src/network/CrossPointWebServer.cpp	1	pluginhttp::request(nullptr, url, method, body, headers, respBody, RELAY_BODY_LIMIT, &respHeaders, [] {
+NET	src/network/CrossPointWebServer.cpp	1	result = freeink::fetchResumable(
+NET	src/network/CrossPointWebServer.cpp	1	result.status = http.sendRequest(
 NET	src/network/CrossPointWebServer.cpp	1	server->addHandler(new WebDAVHandler()); // Note: WebDAVHandler will be deleted by WebServer when server is stopped
 NET	src/network/CrossPointWebServer.h	1	class CrossPointWebServer {
 NET	src/network/HttpDownloader.cpp	1	HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,

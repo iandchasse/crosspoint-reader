@@ -54,3 +54,16 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 - crossink/silkscreen-368: PIO 1019.51s, exit=0 flash=5522889 ram=124912
 - PIO build total: 4212.51s; all six matching flash folders frozen.
 - Reviewed: Census read: captive redirect does not renew the awake lease; upstream generic sleep/light and Metalio touch changes preserve Silkscreen gates. Kept TXT key access, battery estimator, capped light/restore safeguards and SSD1677 refresh toggle. Both apps share the SDK containing their required pins; USB waits now poll the Silkscreen cutoff. Affected host checks passed (one optional supplied-font fixture skipped), and all six builds passed; battery work remains uncommitted.
+
+## 2026-10-30  CrossPoint +3 (upstream/develop e93f8d1f)
+
+- Merged: CrossPoint +3 (upstream/develop e93f8d1f). Validation checks 2m07s; census items: 3.
+- CrossInk already current at upstream/development 88f311be; shared SDK contains both app pins.
+- crosspoint-reader/silkscreen-batlog: PIO 221.38s, exit=0 flash=5390914 ram=114308
+- crosspoint-reader/silkscreen: PIO 216.42s, exit=0 flash=5425526 ram=112756
+- crosspoint-reader/silkscreen-368: PIO 235.03s, exit=0 flash=5408998 ram=112588
+- crossink/silkscreen-batlog: PIO 317.43s, exit=0 flash=5659065 ram=130224
+- crossink/silkscreen: PIO 253.49s, exit=0 flash=5649385 ram=128672
+- crossink/silkscreen-368: PIO 275.27s, exit=0 flash=5522885 ram=124912
+- PIO build total: 1519.02s; all six matching flash folders frozen.
+- Reviewed: Census read: plugin fetch and catalog changes preserve cutoff polling and radio release. CrossPoint +3 through e93f8d1f; CrossInk already current. Both apps retain shared SDK 4ae83f5, battery estimator, local cleanups, light limits/restore and SSD1677 refresh toggle. Battery-only Silkscreen redraw fix and all earlier battery WIP remain uncommitted. Redraw regression and catalog paging host tests passed; six firmware builds and image checks passed. Incoming plugin method/body requests inherit the SDK transport retry behavior; the code-level non-idempotent retry caveat is recorded in the run audit.
