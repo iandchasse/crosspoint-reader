@@ -68,6 +68,8 @@ class ClipSelectionActivity final : public Activity {
   size_t pageCount() const { return borrowedPages.empty() ? pages.size() : borrowedPages.size(); }
   const Page& pageAt(size_t index) const { return *(borrowedPages.empty() ? pages[index] : borrowedPages[index]); }
   bool isLookup() const { return mode != Mode::Clip; }
+  int firstAction() const { return lookupAvailable ? 0 : 1; }
+  int actionCount() const { return mode == Mode::DefinitionLookup ? 1 : 3 - firstAction(); }
   int actionAt(int x, int y) const;
   int closestInRow(uint16_t row, int centerX) const;
   int wordAt(int x, int y) const;
@@ -109,6 +111,7 @@ class ClipSelectionActivity final : public Activity {
   const int initialX;
   const int initialY;
   const Mode mode;
+  bool lookupAvailable = false;
   OptionPopup actionPopup;
   // What the action list chose, applied once the popup has returned (see applyChosenAction()).
   int chosenAction = -1;

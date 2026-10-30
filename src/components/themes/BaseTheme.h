@@ -287,7 +287,7 @@ class BaseTheme {
                               const std::function<std::string(int index)>& buttonLabel,
                               const std::function<UIIcon(int index)>& rowIcon) const;
   static void drawSelectionHandle(const GfxRenderer& renderer, Rect rect, bool left);
-  static void drawSelectionActions(const GfxRenderer& renderer, Rect rect, int count = 3);
+  static void drawSelectionActions(const GfxRenderer& renderer, Rect rect, int count = 3, int firstAction = 0);
   virtual Rect drawPopup(const GfxRenderer& renderer, const char* message) const;
   // drawPopup() for a message that may not fit on one line: the text wraps to at
   // most maxLines inside a box no wider than the screen less two popup margins.
