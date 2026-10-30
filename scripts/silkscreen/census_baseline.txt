@@ -1,4 +1,4 @@
-# silkscreen sync census; app e8b4647d, sdk f8a3343; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app fade2774, sdk 4ae83f5; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -208,6 +208,7 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("F
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "LED rail still above %u V after %u ms",
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "No %s string: the %s one is used until a cold boot", warm ? "cool" : "warm",
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "No front light answered the switch-on: dark until switched on again");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "Picco frontlight wake failed");
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: LED monitor unavailable, light disabled");
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: LEDC attach failed on gpio=%d, light disabled", fl.gpio);
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	LOG_ERR("FrontlightMgr", "begin: no blend carrier on gpio=%d, warmth picks one string",
@@ -236,7 +237,7 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool Front
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool gatedPath(const BoardConfig::FrontlightConfig& fl) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	bool monitorConfigured(const BoardConfig::FrontlightConfig& fl) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	6	const auto& cfg = BoardConfig::ACTIVE.i2cFrontlight;
-LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	19	const auto& fl = BoardConfig::ACTIVE.frontlight;
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	20	const auto& fl = BoardConfig::ACTIVE.frontlight;
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const auto& i2c = BoardConfig::ACTIVE.i2cFrontlight;
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const bool colourSelect = BoardConfig::ACTIVE.frontlight.colorSelectGpio != BoardConfig::PIN_UNASSIGNED;
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	const freeink::frontlight::ColourPlan plan = colourPlan();
@@ -249,6 +250,8 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	freeink::f
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	freeink::frontlight::noteOtherLit(_loadRecord, !warm);
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	i2c.controller == BoardConfig::I2cFrontlightController::Lm3630a) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	i2c.controller == BoardConfig::I2cFrontlightController::PiccoDualLed) {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (!ok) LOG_ERR("FrontlightMgr", "Picco frontlight configuration failed");
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (_begun) pm1FrontlightWrite(0);
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (_blending) freeink::frontlight::noteInUseTrip(_loadRecord, !_warmSelected); // both were lit
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (_probe.blend) freeink::frontlight::noteLit(_loadRecord, !warm);
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (freeink::frontlight::noteTripped(_loadRecord, colourSelect, warm, _probe.secondTry || _probe.blend)) {
@@ -281,6 +284,7 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void Front
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::off() { setBrightness(0); }
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::on() { setBrightness(_lastBrightness); }
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::park() {
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::prepareForDeepSleep() {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::prepareForSleep() {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::probePassed() {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	void FrontlightManager::probeTick() {
@@ -623,6 +627,10 @@ PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	pinMode(p.pin, INPUT)
 PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	pinMode(pin, OUTPUT);
 PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	uint8_t oversample = 8; // analogReadMilliVolts samples averaged per poll
 PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(2, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(SCL_PIN, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(SCL_PIN, OUTPUT_OPEN_DRAIN);
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	2	pinMode(SDA_PIN, INPUT_PULLUP);
+PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(SDA_PIN, OUTPUT_OPEN_DRAIN); // STOP: SDA rises while SCL is high
 PINS	sdk:libs/hardware/BoardConfig/include/MetalioEInk4Board.h	1	pinMode(VIBRATION_GPIO, OUTPUT);
 PINS	sdk:libs/hardware/BoardConfig/include/SharedAdc.h	1	return analogRead(pin);
 PINS	sdk:libs/hardware/BoardConfig/include/SharedAdc.h	1	return analogReadMilliVolts(pin);
@@ -658,6 +666,7 @@ PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	gpio_set_le
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (!ledcOutputInvert(gpio, false)) gpio_set_level(static_cast<gpio_num_t>(gpio), 0);
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	ledcAttachPin(gpio, ch);
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(fl.monitorAdc, INPUT);
+PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(gpio, OUTPUT);
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(i2c.enable, OUTPUT);
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	pinMode(pin, OUTPUT);
 PINS	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	3	pinMv = analogReadMilliVolts(fl.monitorAdc);
@@ -696,7 +705,7 @@ PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BoardConfig::
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(BoardConfig::ACTIVE.touch.irq, OUTPUT);
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	1	pinMode(pin, INPUT_PULLUP);
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, INPUT);
-PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, INPUT_PULLUP);
+PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	3	pinMode(t.irq, INPUT_PULLUP);
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.irq, OUTPUT);
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	2	pinMode(t.powerEnable, OUTPUT);
 PINS	sdk:libs/hardware/InputManager/src/InputManager.cpp	6	pinMode(t.reset, OUTPUT);
@@ -876,6 +885,7 @@ RADIO	src/main.cpp	1	const esp_err_t err = esp_wifi_set_max_tx_power(static_cast
 RADIO	src/network/CrossPointWebServer.cpp	1	WiFi.setSleep(false);
 RADIO	src/network/CrossPointWebServer.cpp	2	const String ipAddr = apMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
 RADIO	src/network/CrossPointWebServer.cpp	1	const bool isInApMode = (wifiMode & WIFI_MODE_AP) && (WiFi.softAPgetStationNum() >= 0); // AP is running
+RADIO	src/network/CrossPointWebServer.cpp	1	s.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/", true);
 RADIO	src/network/WifiPowerSaveGuard.h	1	esp_err_t err = esp_wifi_set_ps(WIFI_PS_NONE);
 RADIO	src/network/WifiPowerSaveGuard.h	1	esp_err_t err = esp_wifi_set_ps(previous);
 RADIO	src/network/WifiPowerSaveGuard.h	1	if (esp_wifi_get_ps(&previous) != ESP_OK) previous = WIFI_PS_MIN_MODEM;
@@ -1291,14 +1301,16 @@ WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_dis(static_
 WAKE	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	gpio_hold_en(g);
 WAKE	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	1	gpio_hold_dis(static_cast<gpio_num_t>(s.i2cScl));
 WAKE	sdk:libs/hardware/BoardConfig/include/SharedI2c.h	1	gpio_hold_dis(static_cast<gpio_num_t>(s.i2cSda));
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include <driver/gpio.h> // gpio_hold_en/dis in prepareForDeepSleep()/begin()
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include <esp_private/esp_sleep_internal.h>
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_sleep_sub_mode_config(ESP_SLEEP_DIG_USE_RC_FAST_MODE, false);
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_sleep_sub_mode_config(ESP_SLEEP_DIG_USE_RC_FAST_MODE, lit);
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_timer_create_args_t args = {};
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	esp_timer_start_periodic(_monitorTimer, periodUs);
-WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_dis(g);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	gpio_hold_dis(g);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(gpio));
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_dis(static_cast<gpio_num_t>(pin));
-WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	gpio_hold_en(g);
+WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	gpio_hold_en(g);
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (esp_timer_create(&args, &_monitorTimer) != ESP_OK) _monitorTimer = nullptr;
 WAKE	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	if (pin >= 0) gpio_hold_dis(static_cast<gpio_num_t>(pin));
 WAKE	sdk:libs/hardware/HapticManager/src/HapticManager.cpp	1	esp_timer_create_args_t args{};

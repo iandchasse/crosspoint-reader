@@ -41,3 +41,16 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 - silkscreen: PIO 646.93s, exit=0 flash=5419802 ram=112756
 - silkscreen-368: PIO 580.58s, exit=0 flash=5403502 ram=112596
 - Reviewed: Retained the shared SDK (both required pins already contained), wake/light safeguards and keys beside touch; BMP long-press retains Confirm. Affected native tests (18) and local feature tests (5) passed; battery work remains uncommitted and unchanged CrossInk binaries were verified by source fingerprints.
+
+## 2026-10-30  SDK +38 (f1e1d2b), CrossPoint +9 (upstream/develop ad53eb64)
+
+- Merged: SDK +38 (f1e1d2b), CrossPoint +9 (upstream/develop ad53eb64). Validation checks 2m03s; census items: 17.
+- CrossInk +6 (upstream/development 88f311be); shared SDK contains both app pins.
+- crosspoint-reader/silkscreen-batlog: PIO 451.57s, exit=0 flash=5388098 ram=114308
+- crosspoint-reader/silkscreen: PIO 473.77s, exit=0 flash=5422618 ram=112756
+- crosspoint-reader/silkscreen-368: PIO 499.54s, exit=0 flash=5406218 ram=112588
+- crossink/silkscreen-batlog: PIO 892.07s, exit=0 flash=5659081 ram=130224
+- crossink/silkscreen: PIO 876.05s, exit=0 flash=5649417 ram=128672
+- crossink/silkscreen-368: PIO 1019.51s, exit=0 flash=5522889 ram=124912
+- PIO build total: 4212.51s; all six matching flash folders frozen.
+- Reviewed: Census read: captive redirect does not renew the awake lease; upstream generic sleep/light and Metalio touch changes preserve Silkscreen gates. Kept TXT key access, battery estimator, capped light/restore safeguards and SSD1677 refresh toggle. Both apps share the SDK containing their required pins; USB waits now poll the Silkscreen cutoff. Affected host checks passed (one optional supplied-font fixture skipped), and all six builds passed; battery work remains uncommitted.
