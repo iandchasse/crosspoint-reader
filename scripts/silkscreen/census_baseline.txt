@@ -1,4 +1,4 @@
-# silkscreen sync census; app 05f65e0a, sdk 4ae83f5; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 49547e70, sdk f5b453d; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -532,9 +532,9 @@ NET	src/activities/CatalogActivity.cpp	1	return HttpDownloader::postToFile(
 NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const auto result = HttpDownloader::downloadToFile(url, tmp, nullptr, nullptr, auth.username, auth.password, headers);
 NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const bool ok = HttpDownloader::fetchUrl(
 NET	src/activities/browser/OpdsBookBrowserActivity.cpp	1	const bool ok = HttpDownloader::postForm(freeink::content::LCP_UNLOCK_URL, request, response, &status);
-NET	src/activities/plugins/PluginCatalogActivity.cpp	1	const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_BROWSE_LIST_INDEX_RESPONSE,
-NET	src/activities/plugins/PluginCatalogActivity.cpp	1	const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_ITEM_DETAILS_RESPONSE,
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	const int status = pluginhttp::request(session.get(), url, "GET", "", {}, response, MAX_ITEM_DETAILS_RESPONSE, nullptr, abortAtCutoff);
 NET	src/activities/plugins/PluginCatalogActivity.cpp	1	return pluginhttp::request(session.get(), req.url, req.method, req.body, req.headers, out, MAX_API_RESPONSE, nullptr,
+NET	src/activities/plugins/PluginCatalogActivity.cpp	1	return pluginhttp::request(session.get(), url, "GET", "", substitutedHeaders(manifest.listsHeaders, nullptr),
 NET	src/activities/plugins/PluginCatalogActivity.cpp	1	return pluginhttp::requestToFile(session.get(), req.url, req.method, req.body, req.headers, BROWSE_TMP_PATH,
 NET	src/activities/settings/FontDownloadActivity.cpp	1	auto result = HttpDownloader::downloadToFile(
 NET	src/activities/settings/FontDownloadActivity.cpp	1	auto result = HttpDownloader::downloadToFile(FONT_MANIFEST_URL, MANIFEST_TMP, nullptr);
@@ -1118,6 +1118,7 @@ TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const unsigned long confirm
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && !currentPageLinks.empty() && SETTINGS.touchReaderControls && mappedInput.hasTouch()) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && SETTINGS.touchReaderControls && mappedInput.wasScreenLongPress(selectionX, selectionY)) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!mappedInput.hasTouch()) {
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!result.isCancelled && !mappedInput.hasTouch()) openDictionaryWordSelect();
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (BoardConfig::hasTouch() && !BoardConfig::hasFrontButtons()) return 0;
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (confirmLongPressed) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {

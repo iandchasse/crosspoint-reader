@@ -67,3 +67,16 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 - crossink/silkscreen-368: PIO 275.27s, exit=0 flash=5522885 ram=124912
 - PIO build total: 1519.02s; all six matching flash folders frozen.
 - Reviewed: Census read: plugin fetch and catalog changes preserve cutoff polling and radio release. CrossPoint +3 through e93f8d1f; CrossInk already current. Both apps retain shared SDK 4ae83f5, battery estimator, local cleanups, light limits/restore and SSD1677 refresh toggle. Battery-only Silkscreen redraw fix and all earlier battery WIP remain uncommitted. Redraw regression and catalog paging host tests passed; six firmware builds and image checks passed. Incoming plugin method/body requests inherit the SDK transport retry behavior; the code-level non-idempotent retry caveat is recorded in the run audit.
+
+## 2026-11-01  SDK +2 (2d383f8), CrossPoint +10 (upstream/develop 91e9efc3)
+
+- Merged: SDK +2 (2d383f8), CrossPoint +10 (upstream/develop 91e9efc3). Validation checks 1m19s; census items: 3.
+- CrossInk +5 through upstream/development 72e5c574; shared SDK contains both app pins.
+- crosspoint-reader/silkscreen-batlog: PIO 176.90s, exit=0 flash=5372922 ram=114332
+- crosspoint-reader/silkscreen: PIO 344.91s, exit=0 flash=5407642 ram=112796
+- crosspoint-reader/silkscreen-368: PIO 343.91s, exit=0 flash=5391042 ram=112628
+- crossink/silkscreen-batlog: PIO 742.10s, exit=0 flash=5663405 ram=130224
+- crossink/silkscreen: PIO 748.27s, exit=0 flash=5653713 ram=128672
+- crossink/silkscreen-368: PIO 735.62s, exit=0 flash=5527461 ram=124912
+- PIO build total: 3091.71s; all six matching flash folders frozen.
+- Reviewed: Census read: kept cutoff callbacks on mapped/retried catalog requests and guarded the new CrossInk streak download. CrossPoint +10, CrossInk +5; SDK takes app-required font pin 2d383f8, both apps share f5b453d. Original battery estimator/passive redraw, light safeguards and refresh toggle preserved. RV-8263 driver fix and all earlier WIP remain uncommitted; RTC sanitizers, 193 targeted native tests, font suites and six firmware builds passed. Physical RTC ticking/sleep retention still needs the owner test.
