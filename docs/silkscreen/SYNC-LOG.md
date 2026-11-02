@@ -80,3 +80,17 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 - crossink/silkscreen-368: PIO 735.62s, exit=0 flash=5527461 ram=124912
 - PIO build total: 3091.71s; all six matching flash folders frozen.
 - Reviewed: Census read: kept cutoff callbacks on mapped/retried catalog requests and guarded the new CrossInk streak download. CrossPoint +10, CrossInk +5; SDK takes app-required font pin 2d383f8, both apps share f5b453d. Original battery estimator/passive redraw, light safeguards and refresh toggle preserved. RV-8263 driver fix and all earlier WIP remain uncommitted; RTC sanitizers, 193 targeted native tests, font suites and six firmware builds passed. Physical RTC ticking/sleep retention still needs the owner test.
+
+## 2026-11-01  SDK +7 (5e94fe7), CrossPoint +6 (upstream/develop e8299b5f)
+
+- Merged: SDK +7 (5e94fe7), CrossPoint +6 (upstream/develop e8299b5f). CrossInk development already current (72e5c574); shared SDK pointer updated in both apps.
+- Standard checks passed; census: 4 added, 3 removed. Supported app host tests: 0 failed, 2 known Windows skips.
+- crosspoint-reader/silkscreen-batlog: PIO 515.87s, exit=0 flash=5406710 ram=114340
+- crosspoint-reader/silkscreen: PIO 471.84s, exit=0 flash=5441266 ram=112804
+- crosspoint-reader/silkscreen-368: PIO 559.24s, exit=0 flash=5425090 ram=112636
+- crossink/silkscreen-batlog: PIO 691.89s, exit=0 flash=5663449 ram=130224
+- crossink/silkscreen: PIO 450.12s, exit=0 flash=5653757 ram=128672
+- crossink/silkscreen-368: PIO 447.02s, exit=0 flash=5527477 ram=124912
+- PIO build total: 3135.98s; all six matching flash folders frozen.
+- Targeted refresh/light/battery/dictionary/translation regressions and display/battery/RTC/font host suites passed. Untouched upstream reproduces stale Picco assertions; test expectations corrected in both SDK working copies. Standalone PaperS3 host compile supplies initializer_list for the Arduino stub.
+- Reviewed: Census read: retain relay cutoff with upstream heap reserve; route registration does no transfer; light filtering does not enable the rail; dictionary Back remains key-accessible. Shared SDK 7162174 contains both app-required pins. All six builds passed; RTC, battery, frontlight and refresh work remains uncommitted. No publication or flashing.

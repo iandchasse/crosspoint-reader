@@ -1,4 +1,4 @@
-# silkscreen sync census; app 49547e70, sdk f5b453d; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 93acb3e7, sdk 7162174; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -323,12 +323,12 @@ LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &Cro
 LIGHT	src/SettingsList.cpp	1	emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightWarmth, {0, 100, 5}, "frontlightWarmth"));
 LIGHT	src/SettingsList.h	1	#include <HalFrontlight.h>
 LIGHT	src/SettingsList.h	1	if (!BoardConfig::hasHomeKey() && keyFrontlightAvailable()) {
-LIGHT	src/SettingsList.h	1	if (!Frontlight.present()) {
 LIGHT	src/SettingsList.h	1	if (keyFrontlightAvailable()) {
 LIGHT	src/SettingsList.h	1	if (value == CrossPointSettings::TOGGLE_FRONTLIGHT) return keyFrontlightAvailable();
 LIGHT	src/SettingsList.h	1	inline bool keyFrontlightAvailable() {
 LIGHT	src/SettingsList.h	1	inline int shortPowerButtonToggleFrontlightIndex() {
 LIGHT	src/SettingsList.h	1	return !BoardConfig::hasHomeKey() && keyFrontlightAvailable();
+LIGHT	src/SettingsList.h	1	return !Frontlight.present() || slideSwitchOwnsLight();
 LIGHT	src/SettingsList.h	1	return BoardConfig::isSilkscreen() && BoardConfig::hasPwmFrontlight();
 LIGHT	src/activities/Activity.h	1	virtual bool showsFrontlightNotice() const { return false; }
 LIGHT	src/activities/ActivityManager.cpp	1	#include "util/FrontlightPanelActivity.h"
@@ -542,10 +542,11 @@ NET	src/clippings/ClippingSync.cpp	1	const int status = http.sendRequest(upload 
 NET	src/network/CrossPointWebServer.cpp	1	LOG_DBG("WEB", "[MEM] Free heap after WebServer allocation: %d bytes", ESP.getFreeHeap());
 NET	src/network/CrossPointWebServer.cpp	1	NetworkClient client = server->client();
 NET	src/network/CrossPointWebServer.cpp	1	class CrossPointHttpServer final : public WebServer {
+NET	src/network/CrossPointWebServer.cpp	1	const int status = pluginhttp::request(
 NET	src/network/CrossPointWebServer.cpp	1	freeink::SecureHttpClient http; // redirects are not followed (SDK default)
-NET	src/network/CrossPointWebServer.cpp	1	pluginhttp::request(nullptr, url, method, body, headers, respBody, RELAY_BODY_LIMIT, &respHeaders, [] {
 NET	src/network/CrossPointWebServer.cpp	1	result = freeink::fetchResumable(
 NET	src/network/CrossPointWebServer.cpp	1	result.status = http.sendRequest(
+NET	src/network/CrossPointWebServer.cpp	1	server->addHandler(new RouteHandler(*this)); // Deleted with the WebServer (stop() resets it)
 NET	src/network/CrossPointWebServer.cpp	1	server->addHandler(new WebDAVHandler()); // Note: WebDAVHandler will be deleted by WebServer when server is stopped
 NET	src/network/CrossPointWebServer.h	1	class CrossPointWebServer {
 NET	src/network/HttpDownloader.cpp	1	HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
@@ -1103,7 +1104,7 @@ TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (swipe == MappedInput
 TOUCH	src/activities/reader/ClipSelectionActivity.cpp	1	if (swipe == MappedInputManager::SwipeDir::Right || swipe == MappedInputManager::SwipeDir::Down) {
 TOUCH	src/activities/reader/ClipSelectionActivity.h	1	bool handleHomeGesture() override;
 TOUCH	src/activities/reader/ClipSelectionActivity.h	1	bool touchInProgress() const;
-TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	const bool headerLongPress = longPress && HeaderBackTapTarget::contains(sx, sy);
+TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	const bool headerLongPress = longPress && HeaderBackTapTarget::containsUnpadded(sx, sy);
 TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	const bool longPress = lookup && mappedInput.wasScreenLongPress(sx, sy);
 TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	if (headerLongPress || mappedInput.wasReleased(MappedInputManager::Button::Back)) {
 TOUCH	src/activities/reader/DictionaryDefinitionActivity.cpp	1	if (longPress && SETTINGS.touchReaderControls) {
