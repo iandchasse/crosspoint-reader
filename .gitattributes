@@ -15,3 +15,6 @@ scripts/check_test_firmware.sh text eol=lf
 scripts/silkscreen/sync.sh text eol=lf
 scripts/silkscreen/pio_locked.sh text eol=lf
 scripts/silkscreen/publish.sh text eol=lf
+
+# Preserve the original whitespace in copied license texts.
+licenses/*.txt -whitespace
