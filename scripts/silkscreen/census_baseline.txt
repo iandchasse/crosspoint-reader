@@ -1,4 +1,4 @@
-# silkscreen sync census; app 93acb3e7, sdk 7162174; RULE<TAB>path<TAB>count<TAB>text
+# silkscreen sync census; app 796e5b20, sdk fe3c495; RULE<TAB>path<TAB>count<TAB>text
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::awakeCeilingPassed(const unsigned long sleepTimeoutMs) const {
 AWAKE	lib/hal/HalPowerManager.cpp	1	bool HalPowerManager::backgroundNetworkMustStop(const unsigned long sleepTimeoutMs) {
 AWAKE	lib/hal/HalPowerManager.cpp	1	const unsigned long ceilingMs = awakeCeilingMs(sleepTimeoutMs);
@@ -189,7 +189,7 @@ LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	constexpr bool 
 LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	eegoA4UidHasNoFrontlight(0xBB0418),
 LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	static_assert(!eegoA4UidHasNoFrontlight(0xBB0409) && !eegoA4UidHasNoFrontlight(0xBB0417) &&
 LIGHT	sdk:libs/hardware/FrontlightManager/src/EegoUnlitUnits.h	1	static_assert(eegoA4UidHasNoFrontlight(0xBB0408) && eegoA4UidHasNoFrontlight(0xBB040C) &&
-LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	#include "FrontlightManager.h"
+LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	2	#include "FrontlightManager.h"
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::Lm3630a) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	BoardConfig::ACTIVE.i2cFrontlight.controller == BoardConfig::I2cFrontlightController::PiccoDualLed) {
 LIGHT	sdk:libs/hardware/FrontlightManager/src/FrontlightManager.cpp	1	FrontlightManager::MonitorDiagnostics FrontlightManager::monitorDiagnostics() const {
@@ -352,7 +352,7 @@ LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	GUI.setCheckboxRow(menu
 LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	SETTINGS.frontlightOn = lightOn ? 1 : 0;
 LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	const bool lightOn = !Frontlight.isOn();
 LIGHT	src/activities/reader/EpubReaderMenuActivity.cpp	1	if (Frontlight.present() && !slideSwitchOwnsLight()) {
-LIGHT	src/activities/settings/AboutActivity.cpp	1	"Device", "Firmware", "Chip", "Flash", "Display Controller", "Resolution", "Touch", "Frontlight",
+LIGHT	src/activities/settings/AboutActivity.cpp	1	"Frontlight",
 LIGHT	src/activities/settings/AboutActivity.cpp	1	#include <HalFrontlight.h>
 LIGHT	src/activities/settings/AboutActivity.cpp	1	rowValues_[ITEM_FRONTLIGHT] = Frontlight.present() ? "Yes" : "No";
 LIGHT	src/activities/settings/SettingsActivity.cpp	1	#include "activities/util/FrontlightPanelActivity.h"
@@ -542,7 +542,7 @@ NET	src/clippings/ClippingSync.cpp	1	const int status = http.sendRequest(upload 
 NET	src/network/CrossPointWebServer.cpp	1	LOG_DBG("WEB", "[MEM] Free heap after WebServer allocation: %d bytes", ESP.getFreeHeap());
 NET	src/network/CrossPointWebServer.cpp	1	NetworkClient client = server->client();
 NET	src/network/CrossPointWebServer.cpp	1	class CrossPointHttpServer final : public WebServer {
-NET	src/network/CrossPointWebServer.cpp	1	const int status = pluginhttp::request(
+NET	src/network/CrossPointWebServer.cpp	1	const int status = pluginhttp::requestStream(
 NET	src/network/CrossPointWebServer.cpp	1	freeink::SecureHttpClient http; // redirects are not followed (SDK default)
 NET	src/network/CrossPointWebServer.cpp	1	result = freeink::fetchResumable(
 NET	src/network/CrossPointWebServer.cpp	1	result.status = http.sendRequest(
@@ -575,8 +575,8 @@ NET	src/network/WebDAVHandler.cpp	1	NetworkClient client = s.client();
 NET	src/network/WebDAVHandler.cpp	1	if (!Storage.readFileToStream(path.c_str(), out)) {
 NET	src/util/PluginEvents.cpp	1	const int st = pluginhttp::requestToFile(
 NET	src/util/PluginEvents.cpp	1	return pluginhttp::request(nullptr, drainSubstituted(handler->req.url, tok, config, meta, vars, ts, id),
-NET	src/util/PluginHttp.cpp	1	const int status = http.sendRequest(
-NET	src/util/PluginHttp.cpp	2	freeink::SecureHttpClient tmp;
+NET	src/util/PluginHttp.cpp	2	const int status = http.sendRequest(
+NET	src/util/PluginHttp.cpp	3	freeink::SecureHttpClient tmp;
 NET	src/util/PluginHttp.cpp	1	status = http.sendRequest(
 PINS	lib/hal/HalGPIO.cpp	1	pinMode(BAT_GPIO0, INPUT);
 PINS	lib/hal/HalGPIO.cpp	1	pinMode(UART0_RXD, INPUT);
@@ -610,12 +610,15 @@ PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.rs
 PINS	sdk:libs/display/FreeInkDisplay/src/driver/Ssd1677Driver.cpp	1	pinMode(d.sclk, OUTPUT);
 PINS	sdk:libs/hardware/AudioManager/src/AudioManager.cpp	1	pinMode(cfg.ampEnable, OUTPUT);
 PINS	sdk:libs/hardware/AudioManager/src/AudioManager.cpp	1	pinMode(cfg.enable, OUTPUT);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	const uint32_t c = analogReadMilliVolts(_adcPin);
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	for (uint8_t i = 0; i < n; ++i) sum += analogReadMilliVolts(ladder.pin);
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	for (uint8_t i = 0; i < samples; ++i) sum += analogReadMilliVolts(_adcPin);
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(_chargeStatusPin, BoardConfig::ACTIVE.batteryChargeStatusActiveHigh ? INPUT : INPUT_PULLUP);
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(ce, OUTPUT);
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(ladder.pin, INPUT); // no internal pulls: they would swamp a 1 M-class ladder
 PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	pinMode(pin, activeHigh ? INPUT_PULLDOWN : INPUT_PULLUP);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	uint32_t a = analogReadMilliVolts(_adcPin);
+PINS	sdk:libs/hardware/BatteryMonitor/src/BatteryMonitor.cpp	1	uint32_t b = analogReadMilliVolts(_adcPin);
 PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	1	9, // batteryAdc: stock firmware samples analogRead(9) for battery voltage
 PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	gpio_pulldown_dis(g);
 PINS	sdk:libs/hardware/BoardConfig/include/BoardConfig.h	2	gpio_pullup_dis(g);
@@ -800,7 +803,7 @@ RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteCha
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteCharacteristic* proto = hid->getCharacteristic(NimBLEUUID(kCharProtocolMode));
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteDescriptor* ref = c->getDescriptor(NimBLEUUID(kDescReportReference));
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	NimBLERemoteService* hid = client->getService(NimBLEUUID(kHidService));
-RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	3	NimBLEScan* scan = NimBLEDevice::getScan();
+RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	4	NimBLEScan* scan = NimBLEDevice::getScan();
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.printf("[BleHid] scan stop: wasScanning=%d devices=%u\n", NimBLEDevice::getScan()->isScanning() ? 1 : 0,
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.println("[BleHid] begin: NimBLE was already initialized; forcing deinit");
 RADIO	sdk:libs/network/BleKeyboardHost/src/BleKeyboardHost.cpp	1	Serial.println("[BleHid] begin: NimBLEDevice::init() failed");
@@ -1119,7 +1122,7 @@ TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	const unsigned long confirm
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && !currentPageLinks.empty() && SETTINGS.touchReaderControls && mappedInput.hasTouch()) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!atEndOfBook && SETTINGS.touchReaderControls && mappedInput.wasScreenLongPress(selectionX, selectionY)) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!mappedInput.hasTouch()) {
-TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!result.isCancelled && !mappedInput.hasTouch()) openDictionaryWordSelect();
+TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (!result.isCancelled && !mappedInput.hasTouch()) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (BoardConfig::hasTouch() && !BoardConfig::hasFrontButtons()) return 0;
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (confirmLongPressed) {
 TOUCH	src/activities/reader/EpubReaderActivity.cpp	1	if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {

@@ -94,3 +94,18 @@ The procedure is [UPSTREAM-SYNC.md](UPSTREAM-SYNC.md); older, hand-written recor
 - PIO build total: 3135.98s; all six matching flash folders frozen.
 - Targeted refresh/light/battery/dictionary/translation regressions and display/battery/RTC/font host suites passed. Untouched upstream reproduces stale Picco assertions; test expectations corrected in both SDK working copies. Standalone PaperS3 host compile supplies initializer_list for the Arduino stub.
 - Reviewed: Census read: retain relay cutoff with upstream heap reserve; route registration does no transfer; light filtering does not enable the rail; dictionary Back remains key-accessible. Shared SDK 7162174 contains both app-required pins. All six builds passed; RTC, battery, frontlight and refresh work remains uncommitted. No publication or flashing.
+
+## 2026-11-08  SDK +38 (fb7e926), CrossPoint +24 (upstream/develop 818a1540)
+
+- Merged: SDK +38 (fb7e926), CrossPoint +24 (upstream/develop 818a1540). CrossInk +32 (crossink/development 4a397886). Both apps share SDK fe3c495.
+- Standard sync checks passed; CrossPoint census: 10 added, 3 removed; CrossInk census: 84 added, 33 removed, 1 moved. Both censuses read.
+- SDK display/battery/frontlight/input/SD/network/BLE/RTC suites, board profile assertions, targeted app regressions, and selected native font/library/text/stats/drawer/HTTP/streamed-download tests passed. Two known Windows skips; two OpenSSL-dependent clipping suites could not configure on this host. Host-only fixture adapters recorded in task cache.
+- crosspoint-reader/silkscreen-batlog: PIO 1001.97s, exit=0 flash=5415442 ram=114108 warnings=0
+- crosspoint-reader/silkscreen: PIO 1071.05s, exit=0 flash=5450130 ram=112572 warnings=0
+- crosspoint-reader/silkscreen-368: PIO 936.74s, exit=0 flash=5434078 ram=112404 warnings=0
+- crossink/silkscreen-batlog: PIO 988.46s, exit=0 flash=5697781 ram=130144 warnings=7
+- crossink/silkscreen: PIO 1195.24s, exit=0 flash=5688057 ram=128576 warnings=7
+- crossink/silkscreen-368: PIO 1156.05s, exit=0 flash=5561473 ram=124816 warnings=7
+- Initial CrossInk battery-log build stopped at 296.12s: an extra begin(seamless) argument introduced during conflict resolution did not match the SDK. Restored begin(); seamless wake policy remains in the HAL. Warm retry used the existing cache.
+- Successful PIO build total: 6349.51s; initial failed attempt: 296.12s. All six flash folders frozen and hash-checked. Existing battery, frontlight, refresh and RTC fixes remain uncommitted. No push or flash.
+- Reviewed: Censuses read. Preserve real Silkscreen profiles beside upstream legacy-profile naming; retain cutoff/awake limits, key controls, refresh toggle, delayed/capped frontlight, battery estimator/redraw and RTC fixes. Picco power/estimator paths stay device-gated; Silkscreen avoids early frontlight initialization and duplicate panel probing. Shared SDK contains both required app pins; later unpinned main changes excluded. All six builds passed. Existing fixes remain uncommitted; no publication or flashing.
