@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
-// The Silkscreen render watchdog (docs/silkscreen/POWER.md, AW-04). Compiled into Silkscreen builds only: every hook
-// that uses it sits behind FREEINK_CAP_POWER_POLICY, and RenderWatchdog.cpp is empty elsewhere.
+// The Silkscreen render watchdog (docs/silkscreen/POWER.md, AW-04). Firmware hooks sit behind FREEINK_CAP_POWER_POLICY
+// (including RenderWatchdogProgress.h's shared helper), and RenderWatchdog.cpp is empty elsewhere.
 //
 // Silkscreen has no hardware off, and every way to sleep it (the power key, the auto-sleep timer, the awake ceiling,
 // the low-battery cutoff) ends in enterDeepSleep() and ActivityManager::goToSleep(), which takes the render lock and

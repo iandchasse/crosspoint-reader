@@ -49,8 +49,9 @@ LOGGING_CPP = ROOT / "lib/Logging/Logging.cpp"
 LOGGING_H = ROOT / "lib/Logging/Logging.h"
 TEST = Path(__file__).resolve().parent / "render_watchdog_host_test.cpp"
 GATE = "FREEINK_CAP_POWER_POLICY"
-# The long renders that re-stamp (renderwatchdog::progress() through each file's watchdogProgress()), with the fewest
+# The long renders that re-stamp through the shared watchdogProgress(), with the fewest
 # call sites each file must hold.
+PROGRESS_HEADER = "src/util/RenderWatchdogProgress.h"
 PROGRESS_FILES = {
     "src/activities/reader/EpubReaderActivity.cpp": 5,
     "src/activities/home/HomeActivity.cpp": 1,
@@ -265,7 +266,7 @@ def check_hooks(activity_manager: str, main: str) -> list[str]:
             at = next((i for i, l in enumerate(lines) if name in l), -1)
             need(at >= 0 and gated(lines, at), f"`{name}` must be defined behind #if {GATE}")
         else:
-            # Silkscreen's branch of the function, and the other boards' branch.
+            # Off-policy builds retain only an empty function.
             mine = [t for n, t in sig if gated(body, n)]
             others = [t for n, t in sig if not gated(body, n)]
         need("sleepWithoutDrivers();" in mine, f"`{name}` must end in sleepWithoutDrivers() on Silkscreen")
@@ -276,10 +277,7 @@ def check_hooks(activity_manager: str, main: str) -> list[str]:
             need(any("renderwatchdog::describe(" in t for t in mine),
                  "sleepIfRenderWatchdog() must say what it found with renderwatchdog::describe()")
         else:
-            # Boards without the power policy keep upstream's sequence in the function (the #else branch).
-            need("resolvePanelController();" in others and "powerManager.startDeepSleepMinimal(gpio);" in others
-                 and "gpio.resetTouchForSleep();" in others,
-                 "sleepIfResetLoop() must keep upstream's own sleep sequence for the other boards (the #else branch)")
+            need(others == ["{", "}"], f"sleepIfResetLoop() must be a no-op without #if {GATE}")
             if "sleepWithoutDrivers();" in mine:
                 at = mine.index("sleepWithoutDrivers();")
                 need(at > 0 and mine[at - 1] == "renderwatchdog::resetLoopSlept();",
@@ -335,23 +333,26 @@ def check_hooks(activity_manager: str, main: str) -> list[str]:
 
 HELPER = re.compile(r"inline void watchdogProgress\(\)\s*\{\s*#\s*if FREEINK_CAP_POWER_POLICY\s+renderwatchdog::progress\(\);"
                     r"\s*#\s*endif\s*\}")
-INCLUDE = re.compile(r'#\s*if FREEINK_CAP_POWER_POLICY\s+#\s*include\s+"util/RenderWatchdog\.h"\s+#\s*endif')
+INCLUDE = re.compile(r'#\s*if FREEINK_CAP_POWER_POLICY\s+#\s*include\s+"RenderWatchdog\.h"\s+#\s*endif')
 
 
 def check_progress(files: dict[str, str]) -> list[str]:
-    """The long renders re-stamp: every file has the gated helper, the gated include, the least number of calls, and
-    every section-build chunk that the render task runs is followed by one."""
+    """The shared helper is capability-gated; callers keep all long-render progress sites."""
     problems: list[str] = []
+    helper = files.get(PROGRESS_HEADER, "")
+    if not HELPER.search(helper):
+        problems.append(f"{PROGRESS_HEADER}: watchdogProgress() must call renderwatchdog::progress() behind #if {GATE}")
+    if not INCLUDE.search(helper):
+        problems.append(f'{PROGRESS_HEADER}: must include "RenderWatchdog.h" behind #if {GATE}')
+    if "#include <BoardConfig.h>" not in helper:
+        problems.append(f"{PROGRESS_HEADER}: must include BoardConfig.h before testing its capability")
     for path, least in PROGRESS_FILES.items():
         text = files.get(path)
         if text is None:
             problems.append(f"{path}: not found")
             continue
-        if not HELPER.search(text):
-            problems.append(f"{path}: watchdogProgress() must be `inline void` calling renderwatchdog::progress() behind "
-                            f"#if {GATE}")
-        if not INCLUDE.search(text):
-            problems.append(f'{path}: must include "util/RenderWatchdog.h" behind #if {GATE}')
+        if '#include "util/RenderWatchdogProgress.h"' not in text:
+            problems.append(f'{path}: must include "util/RenderWatchdogProgress.h"')
         code = strip_comments(text)
         sites = len(re.findall(r"^\s*watchdogProgress\(\);", code, re.M))
         if sites < least:
@@ -525,6 +526,37 @@ def build_and_run(header_dir: Path, work: Path) -> tuple[bool, str]:
     return True, output
 
 
+def check_progress_facade() -> tuple[bool, str]:
+    """Disabled builds link with no watchdog implementation; enabled builds forward each call."""
+    with tempfile.TemporaryDirectory(prefix="renderwd-progress-") as tmp:
+        work = Path(tmp)
+        source = work / "progress.cpp"
+        source.write_text('''#include "RenderWatchdogProgress.h"
+int calls = 0;
+#if FREEINK_CAP_POWER_POLICY
+void renderwatchdog::progress() { ++calls; }
+#endif
+int main() {
+  watchdogProgress();
+  watchdogProgress();
+  return calls == 2 * FREEINK_CAP_POWER_POLICY ? 0 : 1;
+}
+''', encoding="utf-8", newline="\n")
+        for enabled in (0, 1):
+            (work / "BoardConfig.h").write_text(f"#define FREEINK_CAP_POWER_POLICY {enabled}\n", encoding="utf-8")
+            exe = work / f"progress-{enabled}.exe"
+            cmd = [find_cxx(), "-std=c++17", "-I" + str(work).replace("\\", "/"),
+                   "-I" + str(HEADER.parent).replace("\\", "/"), "-o", str(exe).replace("\\", "/"),
+                   str(source).replace("\\", "/")]
+            built = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            if built.returncode != 0:
+                return False, built.stdout + built.stderr
+            ran = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
+            if ran.returncode != 0:
+                return False, f"progress facade failed (policy={enabled})\n" + ran.stdout + ran.stderr
+    return True, "progress facade: enabled forwarding and disabled no-op pass"
+
+
 # --- the negative controls --------------------------------------------------------------------------------------------
 
 
@@ -633,10 +665,12 @@ def source_controls() -> int:
         "ring not cleared": (am, mutate_re(main, r"    clearLastLogs\(\);[^\n]*\n", "")),
         "report without a description": (am, mutate(main, "  renderwatchdog::describe(event, what, sizeof(what));\n  LOG_ERR(\"PWR\", \"The session",
                                                     "  LOG_ERR(\"PWR\", \"The session")),
-        "own copy of the sleep sequence": (am, mutate(main, "  sleepWithoutDrivers();\n#else", "  resolvePanelController();\n#else")),
-        "other boards' sequence changed": (
-            am, mutate(main, "  gpio.resetTouchForSleep();\n  powerManager.startDeepSleepMinimal(gpio);\n#endif\n}",
-                       "  powerManager.startDeepSleepMinimal(gpio);\n#endif\n}")),
+        "own copy of the sleep sequence": (
+            am, mutate(main, "  renderwatchdog::resetLoopSlept();\n  sleepWithoutDrivers();",
+                       "  renderwatchdog::resetLoopSlept();\n  resolvePanelController();")),
+        "reset-loop body ungated": (
+            am, mutate(main, "static void sleepIfResetLoop() {\n#if FREEINK_CAP_POWER_POLICY",
+                       "static void sleepIfResetLoop() {\n#if 1")),
         "P9 sleep-entry hang before the mark": (
             am, mutate(mutate(main, "#if CROSSPOINT_TEST_SUITE\n  testsuite::watchdog::hangSleepEntryIfArmed();", "#if 0\n  (void)0;"),
                        "  renderwatchdog::beginSleepEntry();\n",
@@ -650,18 +684,19 @@ def source_controls() -> int:
             print(f"CONTROL NOT CAUGHT: the hook guard passes with `{name}`")
             bad += 1
     # The long renders.
-    files = {path: read(ROOT / path) for path in PROGRESS_FILES if (ROOT / path).exists()}
+    files = {path: read(ROOT / path) for path in (*PROGRESS_FILES, PROGRESS_HEADER) if (ROOT / path).exists()}
     epub = "src/activities/reader/EpubReaderActivity.cpp"
     home = "src/activities/home/HomeActivity.cpp"
     gate_block = "#if FREEINK_CAP_POWER_POLICY\n  renderwatchdog::progress();\n#endif\n"
     progress_controls = {
         "chunk loop without progress": {epub: drop_after(files[epub], CHUNK_MARKER, "watchdogProgress();\n")},
         "popup without progress": {epub: mutate_re(files[epub], r"(const auto popupFn = \[this\]\(\) \{\s*)watchdogProgress\(\);", r"\1")},
-        "helper ungated": {epub: mutate(files[epub], gate_block, "  renderwatchdog::progress();\n")},
-        "helper does not re-stamp": {home: mutate(files[home], gate_block, "")},
-        "include ungated": {epub: mutate(files[epub], '#if FREEINK_CAP_POWER_POLICY\n#include "util/RenderWatchdog.h"\n#endif\n',
-                                         '#include "util/RenderWatchdog.h"\n')},
-        "cover loop without progress": {home: drop_after(files[home], "inline void watchdogProgress()", "watchdogProgress();")},
+        "helper ungated": {PROGRESS_HEADER: mutate(files[PROGRESS_HEADER], gate_block, "  renderwatchdog::progress();\n")},
+        "helper does not re-stamp": {PROGRESS_HEADER: mutate(files[PROGRESS_HEADER], gate_block, "")},
+        "include ungated": {PROGRESS_HEADER: mutate(files[PROGRESS_HEADER], '#if FREEINK_CAP_POWER_POLICY\n#include "RenderWatchdog.h"\n#endif\n',
+                                                   '#include "RenderWatchdog.h"\n')},
+        "caller include removed": {home: mutate(files[home], '#include "util/RenderWatchdogProgress.h"', "")},
+        "cover loop without progress": {home: drop_after(files[home], "void HomeActivity::loadRecentCovers(", "watchdogProgress();")},
     }
     for name, changed in progress_controls.items():
         problems = check_progress({**files, **changed})
@@ -727,10 +762,13 @@ def main_() -> int:
             ok, output = build_and_run(HEADER.parent, Path(tmp))
         print(output.strip())
         failed += 0 if ok else 1
+        ok, output = check_progress_facade()
+        print(output.strip())
+        failed += 0 if ok else 1
     for problem in check_hooks(read(ACTIVITY_MANAGER), read(MAIN)):
         print("HOOK GUARD:", problem)
         failed += 1
-    files = {path: read(ROOT / path) for path in PROGRESS_FILES if (ROOT / path).exists()}
+    files = {path: read(ROOT / path) for path in (*PROGRESS_FILES, PROGRESS_HEADER) if (ROOT / path).exists()}
     for problem in check_progress(files):
         print("PROGRESS GUARD:", problem)
         failed += 1

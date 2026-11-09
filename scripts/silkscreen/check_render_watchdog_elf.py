@@ -25,11 +25,14 @@ one (loop() about beginRender, setup() about start, ...): every such question mu
 that the check can say no. The questions are the distinct (function, hook) pairs of the table, and the count printed is
 that number.
 
-The binutils come from $NM / $OBJDUMP, else PlatformIO's toolchain-xtensa-esp-elf (the RISC-V boards' images, for
+The binutils come from $NM / $OBJDUMP / $OBJCOPY, else PlatformIO's toolchain-xtensa-esp-elf (the RISC-V boards' images, for
 --absent, from toolchain-riscv32-esp). The whole image is disassembled once, in one pass, and every question is
 answered from that. A call is a direct call (callN <symbol>) or a call through a literal (l32r into a register, then
 callxN), which is how a call across the image's 5 MB of flash is made. Exit 0 when everything holds, 1 when something
-does not, 2 when the check cannot run.
+does not, 2 when the check cannot run. If Xtensa properties leave a watched function entirely undecoded, retry only
+that function from a temporary copy without .xt.prop, after verifying every allocated byte is unchanged. The real
+ELF, symbol table, literal values and expected call table remain the inspection's source of truth. Instruction
+evidence is bounded to original function symbol extents; padding up to objdump's next header is not function code.
 """
 import argparse
 import bisect
@@ -81,7 +84,7 @@ READER_ENTRIES = {"EpubReaderActivity::", "HomeActivity::", "TxtReaderActivity::
 
 MACHINE = 94
 HEADER = re.compile(r"^([0-9a-f]+) <(.*)>:$")
-INSN = re.compile(r"^\s*[0-9a-f]+:\t[0-9a-f ]+\t(\S+)\s*(.*)$")
+INSN = re.compile(r"^\s*([0-9a-f]+):\t[0-9a-f ]+\t(\S+)\s*(.*)$")
 
 
 def tool(name: str, env: str) -> str:
@@ -124,6 +127,9 @@ class Image:
                 return struct.unpack_from("<I", self.data, off + addr - base)[0]
         return None
 
+    def allocated_contents(self) -> list[tuple[int, bytes]]:
+        return sorted((addr, self.data[off:off + size]) for addr, off, size in self.sections)
+
 
 def symbols(elf: Path):
     """(address, size, demangled name) of every function symbol, sorted by address."""
@@ -148,10 +154,31 @@ class Analysis:
         self.test_firmware = any(name.startswith("testsuite::") for _, _, name in self.syms)
         self.calls: dict[int, set[str]] = {}
         if disassemble:
-            self._disassemble(elf, Image(elf))
+            image = Image(elf)
+            undecoded = self._disassemble(elf, image)
+            watched = {start for prefix in EXPECTED for start, _, _ in self.homes(prefix)}
+            undecoded &= watched
+            if MACHINE == 94 and undecoded:
+                # Some linked .xt.prop ranges make objdump show main.cpp code as .word directives. Do not weaken
+                # the call checks or decode unrelated data: retry only wholly undecoded, watched function symbols.
+                with tempfile.TemporaryDirectory(prefix="watchdog-elf-") as work:
+                    inspection = Path(work) / "inspection.elf"
+                    run([tool("objcopy", "OBJCOPY"), "--remove-section=.xt.prop", str(elf), str(inspection)])
+                    if Image(inspection).allocated_contents() != image.allocated_contents():
+                        sys.exit("check_render_watchdog_elf: inspection copy changed allocated ELF contents")
+                    self._disassemble(inspection, image, only=undecoded)
+                print(f"check_render_watchdog_elf: retried {len(undecoded)} undecoded watched function(s) "
+                      "without nonloaded Xtensa properties", file=sys.stderr)
 
-    def _disassemble(self, elf: Path, image: Image) -> None:
+    def _disassemble(self, elf: Path, image: Image, only: set[int] | None = None) -> set[int]:
         addrs = [s[0] for s in self.syms]
+        ends: dict[int, int] = {}
+        for start, size, _ in self.syms:
+            if size:
+                # Aliases share call evidence. Use the shorter nonzero extent if their sizes disagree.
+                ends[start] = min(ends.get(start, start + size), start + size)
+        seen: set[int] = set()
+        decoded: set[int] = set()
 
         def name_at(address: int) -> str:
             k = bisect.bisect_right(addrs, address) - 1
@@ -163,11 +190,18 @@ class Analysis:
             proc = subprocess.Popen([tool("objdump", "OBJDUMP"), "-d", "-C", str(elf)], stdout=subprocess.PIPE,
                                     stderr=errors, text=True, encoding="utf-8", errors="replace")
             current: set[str] | None = None
+            current_start = 0
+            current_end = 0
             literals: dict[str, int | None] = {}
             for line in proc.stdout:
                 head = HEADER.match(line)
                 if head:
-                    current = self.calls.setdefault(int(head.group(1), 16), set())
+                    current_start = int(head.group(1), 16)
+                    current_end = ends.get(current_start, current_start)
+                    selected = current_start in ends and (only is None or current_start in only)
+                    current = self.calls.setdefault(current_start, set()) if selected else None
+                    if current is not None:
+                        seen.add(current_start)
                     literals = {}
                     continue
                 if current is None:
@@ -175,7 +209,12 @@ class Analysis:
                 m = INSN.match(line)
                 if not m:
                     continue
-                op, args = m.group(1), m.group(2)
+                if not current_start <= int(m.group(1), 16) < current_end:
+                    continue
+                op, args = m.group(2), m.group(3)
+                if op.startswith("."):
+                    continue
+                decoded.add(current_start)
                 if op.startswith("l32r"):
                     a = re.match(r"(a\d+), ([0-9a-f]+)", args)
                     if a:
@@ -196,6 +235,7 @@ class Analysis:
                 errors.seek(0)
                 sys.exit(f"check_render_watchdog_elf: objdump failed: "
                          f"{errors.read().decode('utf-8', 'replace').strip()[:200]}")
+        return seen - decoded
 
     def homes(self, prefix: str):
         """The function symbols a table key names (`|` separates alternatives)."""

@@ -85,6 +85,7 @@ const char* BaseTheme::batteryLabel(char* buf, const size_t size, const uint16_t
                                     const bool showPercentage) {
   if (powerManager.noChargeableCell()) return tr(STR_NO_BATTERY);
   if (!showPercentage) return nullptr;
+  if (BoardConfig::isSilkscreen() && percentage > 100) return "--%";
   snprintf(buf, size, "%u%%", static_cast<unsigned>(percentage));
   return buf;
 }
@@ -92,6 +93,10 @@ const char* BaseTheme::batteryLabel(char* buf, const size_t size, const uint16_t
 void BaseTheme::fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const {
   if (powerManager.noChargeableCell()) return;  // empty, with no charge state
   const bool charging = gpio.isUsbConnected();
+  if (BoardConfig::isSilkscreen() && percentage > 100) {
+    if (charging) drawBatteryLightningBolt(renderer, rect.x + 4, rect.y + 2);
+    return;
+  }
 
   const int maxFillWidth = rect.width - 5;
   const int fillHeight = rect.height - 4;
@@ -346,7 +351,9 @@ void BaseTheme::applyHeaderStatus(const GfxRenderer& renderer, freeink::ui::Head
   // No chargeable cell on external power: an empty glyph and the message, with no
   // charge state.
   const bool noCell = powerManager.noChargeableCell();
-  status.battery.percent = noCell ? 0 : static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
+  status.battery.percent = noCell || (BoardConfig::isSilkscreen() && percentage > 100)
+                               ? 0
+                               : static_cast<uint8_t>(percentage > 100 ? 100 : percentage);
   status.battery.charging = !noCell && gpio.isUsbConnected();
   // Static label buffers: headers draw on the single render task, and the
   // strings only need to outlive the fui::header() call that consumes them.

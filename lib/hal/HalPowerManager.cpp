@@ -1,17 +1,27 @@
 #include "HalPowerManager.h"
 
 #include <BoardConfig.h>
+#if FREEINK_DEVICE_SILKSCREEN
+#include <BlePageTurner.h>
+#endif
 #include <Logging.h>
 #include <PowerManager.h>
 #include <SharedI2c.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 #include <soc/soc_caps.h>
 
 #include <algorithm>
 #include <cassert>
 
 #include "HalFrontlight.h"
+#if FREEINK_DEVICE_SILKSCREEN
+#include <Preferences.h>
+#include <esp_rtc_time.h>
+
+#include "HalDisplay.h"
+#endif
 #include "HalGPIO.h"
 
 #if FREEINK_DEVICE_EEGO_A4 || FREEINK_DEVICE_PICCO
@@ -24,11 +34,26 @@
 
 #if SILKSCREEN_BATLOG
 #include <BatteryLog.h>
+
+#include "HalStorage.h"
 #endif
 
 #if FREEINK_DEVICE_PAPERMONO
 #include <M5Pm1.h>
 #endif
+
+namespace {
+#if FREEINK_DEVICE_SILKSCREEN
+// RTC RAM, not flash: retain the last trusted display estimate through normal
+// sleep and maintenance restarts, including wakes while a cable is attached.
+struct RetainedBatteryDisplay {
+  uint32_t magic;
+  freeink::battery::BatteryChargeEstimator::Saved state;
+};
+RTC_NOINIT_ATTR volatile RetainedBatteryDisplay retainedBatteryDisplay;
+constexpr uint32_t BATTERY_DISPLAY_MAGIC = 0x42445032;  // BDP2
+#endif
+}  // namespace
 
 HalPowerManager powerManager;  // Singleton instance
 
@@ -44,6 +69,32 @@ void HalPowerManager::begin() {
   // Board charger setup (Picco SGM41562: stock charge voltage and limits); a
   // no-op on boards without a configurable charger.
   if (BatteryMonitor::configureCharger()) LOG_INF("PWR", "Charger configured");
+#if FREEINK_DEVICE_SILKSCREEN
+  if (BoardConfig::isSilkscreen()) {
+    Preferences preferences;
+    if (preferences.begin("silkbat", true)) {
+      const uint32_t packed = preferences.getUInt("cal", 0);
+      if ((packed >> 24) == 1)
+        batteryDisplay.setCalibration({static_cast<uint16_t>(packed), static_cast<uint8_t>(packed >> 16)});
+      preferences.end();
+    }
+    const auto reason = esp_reset_reason();
+    if ((reason == ESP_RST_DEEPSLEEP || reason == ESP_RST_SW) &&
+        retainedBatteryDisplay.magic == BATTERY_DISPLAY_MAGIC) {
+      freeink::battery::BatteryChargeEstimator::Saved saved{};
+      const auto* source = reinterpret_cast<const volatile uint8_t*>(&retainedBatteryDisplay.state);
+      auto* target = reinterpret_cast<uint8_t*>(&saved);
+      for (size_t i = 0; i < sizeof(saved); ++i) target[i] = source[i];
+      batteryDisplay.restore(saved);
+      batteryDisplayPercent.store(batteryDisplay.shown(), std::memory_order_release);
+#if SILKSCREEN_BATLOG
+      batteryDisplayTenths.store(batteryDisplay.save().tenths, std::memory_order_release);
+#endif
+    } else {
+      retainedBatteryDisplay.magic = 0;
+    }
+  }
+#endif
   normalFreq = getCpuFrequencyMhz();
   modeMutex = xSemaphoreCreateMutex();
   assert(modeMutex != nullptr);
@@ -287,10 +338,13 @@ bool HalPowerManager::noChargeableCell() const {
 
 #if FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_BATLOG
 namespace {
+
 // What Silkscreen shows for a whole-percent reading: truncated to a multiple of 5, and 100 from 98 up so a full
 // cell resting off the charger (about 4.18 V, 98-99%) reads 100 and not 95. Only the shown value; the average, the
 // cutoff and the gates keep the raw reading.
-constexpr int silkscreenShownPercent(const int percent) { return percent >= 98 ? 100 : percent / 5 * 5; }
+constexpr int silkscreenShownPercent(const int percent) {
+  return freeink::battery::BatteryDisplayFilter::quantize(percent);
+}
 
 constexpr bool silkscreenShownPercentHolds() {
   int previous = 0;
@@ -354,6 +408,95 @@ bool HalPowerManager::holdWhileUsbPowered(HalGPIO& gpio, void (*onStatus)(bool c
 }
 #endif
 
+#if FREEINK_DEVICE_SILKSCREEN
+bool HalPowerManager::updateBatteryDisplay() {
+  if (!BoardConfig::isSilkscreen()) return false;
+  using Estimator = freeink::battery::BatteryChargeEstimator;
+  using Supply = Estimator::Supply;
+  const uint16_t previous = batteryDisplay.shown();
+  const auto context = [&] {
+    Supply supply = Supply::Unknown;
+    switch (BatteryMonitor::chargeStatus()) {
+      case BoardConfig::ChargeState::Unknown:
+        break;
+      case BoardConfig::ChargeState::OnBattery:
+        supply = Supply::Battery;
+        break;
+      case BoardConfig::ChargeState::Charging:
+        supply = Supply::Charging;
+        break;
+      case BoardConfig::ChargeState::Complete:
+        supply = Supply::Complete;
+        break;
+      case BoardConfig::ChargeState::ExternalIdle:
+        supply = Supply::ExternalIdle;
+        break;
+      case BoardConfig::ChargeState::NoBattery:
+        supply = Supply::NoBattery;
+        break;
+    }
+    bool radioOn = WiFi.getMode() != WIFI_MODE_NULL;
+    const auto ble = bleturner::status();
+    radioOn = radioOn || ble.running || ble.starting || ble.stopping || ble.scanning || ble.connecting;
+    const bool lit = Frontlight.isOn() && Frontlight.brightness() > 0;
+    const uint16_t light = lit ? 1 + Frontlight.brightness() + (static_cast<uint16_t>(Frontlight.warmth()) << 7) : 0;
+    const bool ready = !lit || (!Frontlight.switchOnPending() && !Frontlight.fault() && !Frontlight.startupBlocked());
+    return Estimator::Context{supply, light, radioOn || display.batteryRefreshActive(),
+                              display.batteryRefreshRecent(millis(), Estimator::QUIET_MS), ready};
+  };
+  // RTC time survives normal sleep, so the unplug relaxation is not restarted
+  // at every wake. Boot divider settling still uses the new boot's uptime.
+  const auto now = [] { return static_cast<uint32_t>(esp_rtc_get_time_us() / 1000); };
+  batteryDisplay.observe(now(), context());
+#if SILKSCREEN_BATLOG
+  if (batteryDisplay.takeCompleteReference()) appendBatteryChargeRow(now(), "complete_ref");
+#endif
+  if (millis() >= 2500 && batteryDisplay.sampleDue(now())) {
+    if (batteryDisplay.canSample()) {
+      static const BatteryMonitor battery;
+      const auto before = context();
+      const uint16_t mv = battery.readMillivoltsAveraged(16);
+      const auto after = context();
+      // A render or light change can start on the other core during conversion.
+      batteryDisplay.observe(now(), after);
+      if (before.light == after.light && before.supply == after.supply && batteryDisplay.canSample()) {
+        if (batteryDisplay.sample(now(), mv, after)) {
+#if SILKSCREEN_BATLOG
+          appendBatteryChargeRow(now(), "sample");
+          if (previous == Estimator::UNKNOWN && batteryDisplay.shown() != Estimator::UNKNOWN)
+            freeink::batterylog::noteUiSeed(batteryDisplay.tenths());
+#endif
+        }
+      } else
+        batteryDisplay.skip();
+    } else
+      batteryDisplay.skip();
+  }
+  Estimator::Calibration calibration{};
+  if (batteryDisplay.takeCalibration(calibration)) {
+    Preferences preferences;
+    const uint32_t packed = (1UL << 24) | (static_cast<uint32_t>(calibration.count) << 16) | calibration.stepMv;
+    const bool opened = preferences.begin("silkbat", false);
+    const bool stored = opened && preferences.putUInt("cal", packed) == sizeof(packed);
+    if (opened) preferences.end();
+    LOG_INF("PWR", "Charge step %u mV (%u edges), NVS %s", calibration.stepMv, calibration.count,
+            stored ? "saved" : "failed");
+  }
+  const auto saved = batteryDisplay.save();
+  retainedBatteryDisplay.magic = 0;
+  const auto* source = reinterpret_cast<const uint8_t*>(&saved);
+  auto* target = reinterpret_cast<volatile uint8_t*>(&retainedBatteryDisplay.state);
+  for (size_t i = 0; i < sizeof(saved); ++i) target[i] = source[i];
+  std::atomic_thread_fence(std::memory_order_release);
+  retainedBatteryDisplay.magic = BATTERY_DISPLAY_MAGIC;
+#if SILKSCREEN_BATLOG
+  batteryDisplayTenths.store(saved.tenths, std::memory_order_release);
+#endif
+  batteryDisplayPercent.store(batteryDisplay.shown(), std::memory_order_release);
+  return previous != batteryDisplay.shown();
+}
+#endif
+
 uint16_t HalPowerManager::getBatteryPercentage() const {
   static const BatteryMonitor battery;
   if (BoardConfig::ACTIVE.batteryGauge.gaugeAddr != 0) {
@@ -371,43 +514,17 @@ uint16_t HalPowerManager::getBatteryPercentage() const {
     return _batteryCachedPercent;
   }
 
-  // smooth the battery %, in tenths of a percent.
-  int sampleTenths;
-  if (BoardConfig::isSilkscreen()) {
-    // No fuel gauge: the percentage is read off the divider's voltage. 16 conversions
-    // averaged (a quarter of one reading's noise), then read linearly between the
-    // curve's 10% notches, so the tracked value moves in 1% steps instead of snapping
-    // to a notch. The step size is as fine as the hardware resolves (about 3 mV per percent
-    // in the 20-40% band, 8-14 mV above 80%); how accurate it is depends on the ADC's
-    // calibration and the load at that moment (a lit light or a busy CPU reads lower).
-    sampleTenths = BatteryMonitor::percentTenthsFromMillivolts(battery.readMillivoltsAveraged(16));
-  } else {
-    sampleTenths = battery.readPercentage() * 10;
-  }
+#if FREEINK_DEVICE_SILKSCREEN
+  if (BoardConfig::isSilkscreen()) return batteryDisplayPercent.load(std::memory_order_acquire);
+#endif
+  // Preserve the other ADC boards' existing per-call smoothing and rounding.
+  const int sampleTenths = battery.readPercentage() * 10;
   if (_batteryCachedPercent == 0) {
     _batteryCachedPercent = sampleTenths;
-#if SILKSCREEN_BATLOG
-    freeink::batterylog::noteUiSeed(static_cast<uint16_t>(sampleTenths));
-#endif
-  } else if (BoardConfig::isSilkscreen()) {
-    // The same one-tenth-of-the-gap average, rounded to nearest in both directions:
-    // the truncating form below stops up to 0.9% short of a rising target (a full cell
-    // would settle at 99%).
-    const int delta = sampleTenths - _batteryCachedPercent;
-    _batteryCachedPercent += (delta + (delta >= 0 ? 5 : -5)) / 10;
   } else {
     _batteryCachedPercent = (_batteryCachedPercent * 9 + sampleTenths) / 10;
   }
-#if FREEINK_DEVICE_SILKSCREEN && !SILKSCREEN_BATLOG
-  // Silkscreen rounds to the nearest percent, then shows it in 5% steps (silkscreenShownPercent());
-  // the other boards floor, as before. The silkscreen-batlog image shows the 1% value.
-  return BoardConfig::isSilkscreen() ? silkscreenShownPercent((_batteryCachedPercent + 5) / 10)
-                                     : _batteryCachedPercent / 10;
-#else
-  // Silkscreen rounds to the nearest percent, so a cell resting just under 4.20 V off
-  // the charger still reads 100%; the other boards floor, as before.
-  return BoardConfig::isSilkscreen() ? (_batteryCachedPercent + 5) / 10 : _batteryCachedPercent / 10;
-#endif
+  return _batteryCachedPercent / 10;
 }
 
 HalPowerManager::Lock::Lock() {
@@ -434,3 +551,50 @@ HalPowerManager::Lock::~Lock() {
   }
   xSemaphoreGive(powerManager.modeMutex);
 }
+
+#if FREEINK_DEVICE_SILKSCREEN && SILKSCREEN_BATLOG
+namespace {
+// Main-loop only. One bounded batch, no file kept open between samples.
+char chargeLogBuffer[1024];
+size_t chargeLogUsed = 0;
+constexpr char CHARGE_LOG_PATH[] = "/silkscreen-battery/charge.csv";
+constexpr char CHARGE_LOG_HEADER[] =
+    "rtc_ms,uptime_ms,event,raw_mv,ladder,phase,step_mv,light_mv,comp_mv,tenths,shown,flags,cal_count,reference_ms,"
+    "reference_mv\n";
+}  // namespace
+
+void HalPowerManager::flushBatteryChargeLog() {
+  if (!BoardConfig::isSilkscreen() || !chargeLogUsed) return;
+  if (Storage.ready() && Storage.ensureDirectoryExists("/silkscreen-battery")) {
+    HalFile file = Storage.open(CHARGE_LOG_PATH, O_WRONLY | O_CREAT | O_APPEND);
+    if (file) {
+      // Bound diagnostic storage to 32 MiB; a full charge trace is much smaller.
+      bool ok = file.fileSize() < 32UL * 1024 * 1024;
+      if (ok && file.fileSize() == 0)
+        ok = file.write(CHARGE_LOG_HEADER, sizeof(CHARGE_LOG_HEADER) - 1) == sizeof(CHARGE_LOG_HEADER) - 1;
+      if (ok) ok = file.write(chargeLogBuffer, chargeLogUsed) == chargeLogUsed;
+      const bool closed = file.close();
+      if (!ok || !closed) LOG_ERR("BATLOG", "Charge sample log write failed or limit reached");
+    } else
+      LOG_ERR("BATLOG", "Charge sample log open failed");
+  }
+  // Best effort: never retain stale batches indefinitely or retry in a loop.
+  chargeLogUsed = 0;
+}
+
+void HalPowerManager::appendBatteryChargeRow(uint32_t now, const char* event) {
+  char row[192];
+  const auto saved = batteryDisplay.save();
+  const int length =
+      snprintf(row, sizeof(row), "%lu,%lu,%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%lu,%u\n", static_cast<unsigned long>(now),
+               static_cast<unsigned long>(millis()), event, batteryDisplay.rawMv(),
+               static_cast<unsigned>(BatteryMonitor::chargeStatus()), static_cast<unsigned>(batteryDisplay.phase()),
+               batteryDisplay.stepMv(), batteryDisplay.lightCorrectionMv(), batteryDisplay.compensatedMv(),
+               saved.tenths, saved.shown, batteryDisplay.flags(), batteryDisplay.calibration().count,
+               static_cast<unsigned long>(batteryDisplay.completeReferenceAt()), batteryDisplay.completeReferenceMv());
+  if (length <= 0 || static_cast<size_t>(length) >= sizeof(row)) return;
+  if (chargeLogUsed + length > sizeof(chargeLogBuffer)) flushBatteryChargeLog();
+  memcpy(chargeLogBuffer + chargeLogUsed, row, length);
+  chargeLogUsed += length;
+}
+#endif

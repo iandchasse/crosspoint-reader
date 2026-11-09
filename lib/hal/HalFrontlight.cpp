@@ -36,8 +36,9 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
     if (!shutdownHandlerRegistered) LOG_ERR("LIGHT", "No shutdown handler slot; the light may stay lit into a restart");
   }
 
-  lastBrightness = brightness > 100 ? 100 : brightness;
-  lit = on;
+  lastBrightness = normalizeBrightness(brightness);
+  restoreWaiting = on && fl.restoreHoldoffMs != 0;
+  lit = on && !restoreWaiting;
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   if (lit && !manager.restoreAllowed()) {
     LOG_INF("LIGHT", "Frontlight not restored: no light answered its last switch-on");
@@ -54,7 +55,7 @@ void HalFrontlight::begin(const uint8_t brightness, const uint8_t warmth, const 
 }
 
 void HalFrontlight::setBrightness(const uint8_t percent) {
-  lastBrightness = percent > 100 ? 100 : percent;
+  lastBrightness = normalizeBrightness(percent);
   if (lit) manager.setBrightness(lastBrightness);
 }
 
@@ -66,6 +67,7 @@ void HalFrontlight::setWarmth(const uint8_t warmPercent) {
 }
 
 void HalFrontlight::setOn(const bool on) {
+  restoreWaiting = false;
   // Off is judged on the user's state and the fault, not isOn(): a tripped light
   // still has lit set, and switching it off must clear both (re-arming the monitor).
   if (on ? isOn() : !lit && !manager.fault()) return;
@@ -75,6 +77,22 @@ void HalFrontlight::setOn(const bool on) {
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   pending = Pending::None;  // a new switch-on: an earlier one's result no longer counts
   noteSwitchOn(Pending::User);
+#endif
+}
+
+void HalFrontlight::updateRestore(const uint32_t firstPaintMs) {
+  if (!restoreWaiting ||
+      !freeink::frontlight::restoreDue(millis(), firstPaintMs, BoardConfig::ACTIVE.frontlight.restoreHoldoffMs))
+    return;
+  restoreWaiting = false;
+  if (!manager.restoreAllowed()) {
+    LOG_INF("LIGHT", "Restore skipped: last switch-on found no frontlight");
+    return;
+  }
+  lit = true;
+  manager.setBrightness(lastBrightness);
+#if FREEINK_CAP_FRONTLIGHT_PROBE
+  noteSwitchOn(Pending::Restore);
 #endif
 }
 
@@ -100,6 +118,25 @@ void HalFrontlight::noteSwitchOn(const Pending who) {
 }
 
 void HalFrontlight::settleSwitchOn(const bool userAsked) {
+  if (lit && manager.fault() && !userAsked && !manager.startupBlocked()) {
+    lit = false;
+    const bool noLoad = manager.load() == freeink::frontlight::Load::Absent;
+    manager.setBrightness(0);
+    if (noLoad)
+      restoreNoLightNotice = true;
+    else
+      startupNotice = true;
+    return;
+  }
+
+  if (lit && manager.startupBlocked()) {
+    lit = false;
+    manager.setBrightness(0);
+    startupNotice = true;
+    LOG_ERR("LIGHT", "Frontlight startup check failed; saved wake preference retained");
+    return;
+  }
+
   if (!lit || !manager.fault() || manager.load() != freeink::frontlight::Load::Absent) return;
   lit = false;
   manager.setBrightness(0);  // dark and re-armed; the SDK's record keeps "no light"

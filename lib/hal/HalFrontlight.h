@@ -19,6 +19,21 @@ class HalFrontlight {
   // blended or not.
   bool hasColourSelect() const;
 
+  static uint8_t normalizeBrightness(uint8_t percent) { return FrontlightManager::normalizeBrightness(percent); }
+  static uint8_t brightnessStep() { return FrontlightManager::brightnessStep(); }
+  static uint8_t migrateLegacyBrightness(uint8_t percent, bool tenLevelSource = false) {
+    return FrontlightManager::migrateLegacyBrightness(percent, tenLevelSource);
+  }
+  // Called by the loop with the display's first completed paint timestamp.
+  void updateRestore(uint32_t firstPaintMs);
+  bool startupBlocked() const { return manager.startupBlocked(); }
+  bool takeStartupNotice() {
+    update();
+    const bool notice = startupNotice;
+    startupNotice = false;
+    return notice;
+  }
+
   void setBrightness(uint8_t percent);
   void setWarmth(uint8_t warmPercent);
   void setOn(bool on);
@@ -85,7 +100,10 @@ class HalFrontlight {
   // Take the light dark and release its pads before deep sleep. begin() also
   // runs it from a shutdown handler before every software restart, so the
   // driver is dark before the reset lets COLOR_SEL fall to its pull-down.
-  void prepareForSleep() { manager.prepareForSleep(); }
+  void prepareForSleep() {
+    restoreWaiting = false;
+    manager.prepareForSleep();
+  }
 
  private:
 #if CROSSPOINT_TEST_SUITE
@@ -98,6 +116,8 @@ class HalFrontlight {
   // toggling back on restores it.
   uint8_t lastBrightness = 60;
   bool lit = false;
+  bool restoreWaiting = false;
+  bool startupNotice = false;
 #if FREEINK_CAP_FRONTLIGHT_PROBE
   // Who asked for the switch-on still deciding its load.
   enum class Pending : uint8_t { None, User, Restore };

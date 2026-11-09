@@ -368,6 +368,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t uiTheme = LYRA;
   // Sunlight fading compensation
   uint8_t fadingFix = 0;
+  // Silkscreen SSD1677: select the standard HALF waveform for this panel.
+  uint8_t standardHalfRefresh = 0;
   // Power button return from footnotes (1 = enabled, 0 = disabled)
   uint8_t pwrBtnFootnoteBack = 1;
   // Use book's embedded CSS styles for EPUB rendering (1 = enabled, 0 = disabled)
@@ -413,10 +415,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t showReaderMenu = READER_MENU_TAP;
   // Frontlight quick-panel state. Category-less SettingsList entries persist
   // these without adding them to the regular Settings screen.
+#if FREEINK_DEVICE_SILKSCREEN
+  uint8_t frontlightBrightness = 100;  // 1..100% spans the profile's reduced legacy range
+#else
   uint8_t frontlightBrightness = 60;
+#endif
   uint8_t frontlightWarmth = 50;  // 0 = cool .. 100 = warm
   uint8_t frontlightOn = 0;
-  // Restore the saved on/off state after a normal boot or wake. Brightness and
+  // Restore the saved on/off state on wake (Silkscreen excludes cold/error resets). Brightness and
   // warmth are always remembered even when this is disabled.
   uint8_t frontlightRestoreOnWake = 1;
   // What the slide switch controls (boards with one): frontlight on/off or

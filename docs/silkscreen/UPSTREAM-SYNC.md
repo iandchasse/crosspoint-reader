@@ -1,16 +1,19 @@
 # Silkscreen upstream sync
 
-One command brings the Silkscreen repos up to their upstreams:
+One command brings the shared Silkscreen SDK line and CrossPoint up to their upstreams. Run it from
+`crosspoint-reader/` in Git Bash:
 
 ```
 scripts/silkscreen/sync.sh              # the shared SDK line, then CrossPoint
-scripts/silkscreen/sync.sh crossink     # then CrossInk (after the shared SDK head moved)
 ```
 
-It needs minutes and no agent. A person or an agent is needed only when a merge stops on conflicts or the census lists
-something to read. The long procedure this page replaced (every lens, every rule the history taught) is kept as
-[UPSTREAM-SYNC-REFERENCE.md](UPSTREAM-SYNC-REFERENCE.md): read it for a hard conflict or an unusual upstream change, not
-as a checklist.
+CrossInk is synced separately, using the [manual steps below](#crossink-sync). `sync.sh crossink` and `sync.sh all`
+are not implemented: both exit 2. CrossInk must use the same shared SDK head as CrossPoint.
+
+A person or an agent is needed when a merge stops on conflicts or the census lists something to read. The long procedure
+this page replaced (every lens, every rule the history taught) is kept as
+[UPSTREAM-SYNC-REFERENCE.md](UPSTREAM-SYNC-REFERENCE.md): use its merge guidance for a hard conflict or an unusual upstream
+change, not its old build matrix or reviewer rounds as a routine checklist.
 
 ## What the command does
 
@@ -29,8 +32,47 @@ round the same day, no hand-written records. `build_matrix.sh --full` is still t
 The bench firmware (`silkscreen-test`, `silkscreen-368-test`) is built when asked: `--also "silkscreen-test silkscreen-368-test"`.
 It has routing stubs of its own, so an upstream change to `ActivityManager` or `CrossPointSettings` can break it alone.
 
-Options: `--envs`, `--also`, `--no-merge` (run the guards, census, builds on the tree as it is), `--no-build`,
+Options: `--envs`, `--also`, `--no-merge` (validate the current tree against the already-fetched upstream snapshot), `--no-build`,
 `--no-freeze`, `--dry-run`, `--accept`, `--note`. `sync.sh --help` lists them.
+
+## CrossInk sync
+
+This is a manual sync after the shared SDK / CrossPoint sync. Use step 3 of
+[the reference procedure](UPSTREAM-SYNC-REFERENCE.md#the-steps) and the SDK-pin cases and drain checklist in
+CrossInk's `docs/silkscreen/PORTING.md`. Keep the routine work lean:
+
+1. In the clean `crossink/` checkout on `silkscreen`, run `git fetch crossink`, inspect the incoming commits, then
+   `git merge crossink/development`. Keep upstream's intent and re-apply the required Silkscreen differences.
+2. Resolve the SDK gitlink to the shared `silkscreen` head in `crosspoint-reader/freeink-sdk`, including when the merge
+   reports no conflict. If CrossInk's incoming SDK pin is already an ancestor of that head, keep the shared head. If it
+   is a newer commit on Free-Ink `main`, merge it into the shared line first and update both apps' gitlinks. For a
+   pre-merge SDK PR pin, keep the shared head; if new app code requires that API, wait for it to land in Free-Ink `main`.
+   Never take CrossInk's pin with `--theirs` without checking. Fetch `silkscreen-sdk` in `crossink/freeink-sdk` as needed,
+   then run `git submodule update` after resolving the gitlink so the SDK checkout matches it.
+3. Keep every `Silkscreen:` CHANGELOG line under `## [Unreleased]` (recreate the heading if a release renamed it).
+   Read the incoming hunks against CrossInk's drain and key-access rules, and retain the battery-log and watchdog hooks.
+   From `crosspoint-reader/`, `scripts/silkscreen/upstream_status.sh --no-fetch` checks both apps' pins and hooks.
+   Its pin checks read committed `HEAD` gitlinks; pending pin changes remain flagged until approved commits exist.
+4. Build the three routine CrossInk envs under the shared lock. Starting in `crosspoint-reader/`:
+
+   ```bash
+   cd ../crossink
+   ../crosspoint-reader/scripts/silkscreen/pio_locked.sh "crossink-sync" \
+     bash scripts/silkscreen/build_matrix.sh silkscreen-batlog silkscreen silkscreen-368
+   ```
+
+   Explicit envs avoid the script's default matrix and proxy builds. The script runs CrossInk's sleep-wake and render
+   watchdog guards and image checks. Build `silkscreen-368-batlog` too only when that image is needed.
+5. After successful builds and resolved findings, return to `crosspoint-reader/` (`cd ../crosspoint-reader` after
+   the build above) and freeze:
+
+   ```bash
+   python -I -X utf8 scripts/silkscreen/freeze_images.py --repo crossink --prefix crossink- \
+     silkscreen-batlog silkscreen silkscreen-368
+   ```
+
+`sync.sh`'s resume state, census, exit codes and `--accept` / `SYNC-LOG.md` record cover the shared SDK and CrossPoint
+only. They do not automate or accept the CrossInk sync. Commit only with the owner's approval; publish only when asked.
 
 ## When it stops
 
@@ -86,6 +128,11 @@ A new pattern belongs in `RULES` in `sync_census.py`; after the census was read,
   held, upstream's number stays and Silkscreen's moves after it (the owner re-picks the shortcut).
 - **One `pio` at a time**, across both checkouts: every build takes `.pio-build.lock` (`scripts/silkscreen/pio_locked.sh`),
   because pioarduino rewrites a shared package while a build runs.
+  CrossInk's `lib_ignore = BLE` can also leave BT include paths removed after a
+  sequential build. If CrossPoint then cannot find `esp_bt.h`, preserve the
+  active `esp32s3/pioarduino-build.py` and restore its matching packaged
+  `pioarduino-build.py.esp32s3` backup under that same lock before retrying.
+  The packaged S3 script's `bt/include/esp32c3/include` path is intentional.
 - **The SDK has no `.clang-format`**: format SDK edits by hand; run clang-format 21 on the app files you touched.
 - A guard is a grep and cannot see `#if`: a new device-gated block with sleep calls of its own needs the guard's exemption read
   before the guard is widened.

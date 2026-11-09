@@ -176,26 +176,43 @@ inline bool keyFrontlightAvailable() {
 #endif
 }
 
+struct ButtonSettingOption {
+  StrId label;
+  uint8_t value;
+};
+
+struct ButtonSettingOptions {
+  ButtonSettingOption entries[std::max(static_cast<size_t>(CrossPointSettings::LONG_PRESS_MENU_FUNCTION_COUNT),
+                                       static_cast<size_t>(CrossPointSettings::SHORT_PWRBTN_COUNT))];
+  uint8_t count;
+};
+
+inline int buttonSettingIndex(const ButtonSettingOptions& options, const uint8_t value) {
+  for (uint8_t i = 0; i < options.count; ++i) {
+    if (options.entries[i].value == value) return i;
+  }
+  return -1;
+}
+
 // The long-press Confirm values this board offers, in list order: upstream's (Reader Menu
 // only with a Home key, then Save Clipping and Footnotes) and, after them, Silkscreen's
 // front-light panel, only with a light and no Home key (a Home-key board reaches the light
 // through its Home actions). The setting maps its list positions to these values, and the
 // value is what is saved, so a value is never renumbered: upstream's keep theirs (Save
 // Clipping 5, Footnotes 6).
-struct LongPressMenuValues {
-  uint8_t value[CrossPointSettings::LONG_PRESS_MENU_FUNCTION_COUNT];
-  uint8_t count;
-};
-
-inline LongPressMenuValues longPressMenuValues() {
-  LongPressMenuValues v = {{CrossPointSettings::LP_MENU_KOSYNC, CrossPointSettings::LP_MENU_DISABLED,
-                            CrossPointSettings::LP_MENU_BOOKMARK, CrossPointSettings::LP_MENU_DICTIONARY},
-                           4};
-  if (BoardConfig::hasHomeKey()) v.value[v.count++] = CrossPointSettings::LP_MENU_READER_MENU;
-  v.value[v.count++] = CrossPointSettings::LP_MENU_CREATE_CLIPPING;
-  v.value[v.count++] = CrossPointSettings::LP_MENU_FOOTNOTES;
+inline ButtonSettingOptions longPressMenuValues() {
+  ButtonSettingOptions v = {{{StrId::STR_KOSYNC, CrossPointSettings::LP_MENU_KOSYNC},
+                             {StrId::STR_DISABLED, CrossPointSettings::LP_MENU_DISABLED},
+                             {StrId::STR_BOOKMARK_OPTION, CrossPointSettings::LP_MENU_BOOKMARK},
+                             {StrId::STR_DICTIONARY, CrossPointSettings::LP_MENU_DICTIONARY}},
+                            4};
+  if (BoardConfig::hasHomeKey()) {
+    v.entries[v.count++] = {StrId::STR_READER_MENU, CrossPointSettings::LP_MENU_READER_MENU};
+  }
+  v.entries[v.count++] = {StrId::STR_SAVE_CLIPPING, CrossPointSettings::LP_MENU_CREATE_CLIPPING};
+  v.entries[v.count++] = {StrId::STR_FOOTNOTES, CrossPointSettings::LP_MENU_FOOTNOTES};
   if (!BoardConfig::hasHomeKey() && keyFrontlightAvailable()) {
-    v.value[v.count++] = CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL;
+    v.entries[v.count++] = {StrId::STR_FRONTLIGHT, CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL};
   }
   return v;
 }
@@ -215,33 +232,7 @@ inline std::vector<StrId> buildLongPressMenuValues() {
   std::vector<StrId> labels;
   labels.reserve(v.count);
   for (uint8_t i = 0; i < v.count; ++i) {
-    switch (v.value[i]) {
-      case CrossPointSettings::LP_MENU_KOSYNC:
-        labels.push_back(StrId::STR_KOSYNC);
-        break;
-      case CrossPointSettings::LP_MENU_BOOKMARK:
-        labels.push_back(StrId::STR_BOOKMARK_OPTION);
-        break;
-      case CrossPointSettings::LP_MENU_DICTIONARY:
-        labels.push_back(StrId::STR_DICTIONARY);
-        break;
-      case CrossPointSettings::LP_MENU_READER_MENU:
-        labels.push_back(StrId::STR_READER_MENU);
-        break;
-      case CrossPointSettings::LP_MENU_CREATE_CLIPPING:
-        labels.push_back(StrId::STR_SAVE_CLIPPING);
-        break;
-      case CrossPointSettings::LP_MENU_FOOTNOTES:
-        labels.push_back(StrId::STR_FOOTNOTES);
-        break;
-      case CrossPointSettings::LP_MENU_FRONTLIGHT_PANEL:
-        labels.push_back(StrId::STR_FRONTLIGHT);
-        break;
-      case CrossPointSettings::LP_MENU_DISABLED:
-      default:
-        labels.push_back(StrId::STR_DISABLED);
-        break;
-    }
+    labels.push_back(v.entries[i].label);
   }
   return labels;
 }
@@ -249,16 +240,13 @@ inline std::vector<StrId> buildLongPressMenuValues() {
 // The saved value's position in this board's list; one the board does not offer shows as Disabled.
 inline uint8_t longPressMenuDisplayValue() {
   const auto v = longPressMenuValues();
-  const auto* it = std::find(v.value, v.value + v.count, SETTINGS.longPressMenuFunction);
-  if (it == v.value + v.count) {
-    it = std::find(v.value, v.value + v.count, static_cast<uint8_t>(CrossPointSettings::LP_MENU_DISABLED));
-  }
-  return static_cast<uint8_t>(it - v.value);
+  const int index = buttonSettingIndex(v, SETTINGS.longPressMenuFunction);
+  return static_cast<uint8_t>(index >= 0 ? index : buttonSettingIndex(v, CrossPointSettings::LP_MENU_DISABLED));
 }
 
 inline void setLongPressMenuFromDisplayValue(const uint8_t displayValue) {
   const auto v = longPressMenuValues();
-  if (displayValue < v.count) SETTINGS.longPressMenuFunction = v.value[displayValue];
+  if (displayValue < v.count) SETTINGS.longPressMenuFunction = v.entries[displayValue].value;
 }
 
 inline SettingInfo buildLongPressMenuSetting() {
@@ -266,38 +254,33 @@ inline SettingInfo buildLongPressMenuSetting() {
                                   setLongPressMenuFromDisplayValue, "longPressMenuFunction", StrId::STR_CAT_CONTROLS);
 }
 
-struct ShortPowerButtonOption {
-  StrId label;
-  uint8_t value;
-};
-
 // Menu order differs from the persisted enum order, so map by value. Upstream's entries come
 // first, in upstream's order, then Silkscreen's Toggle Frontlight (keyFrontlightAvailable()).
 // Choosing it turns the power double-click off (CrossPointSettings::powerDoubleClickLight()),
 // which would otherwise toggle twice.
-inline std::vector<ShortPowerButtonOption> shortPowerButtonOptions() {
-  std::vector<ShortPowerButtonOption> options = {{StrId::STR_IGNORE, CrossPointSettings::IGNORE},
-                                                 {StrId::STR_SLEEP, CrossPointSettings::SLEEP},
-                                                 {StrId::STR_PAGE_TURN, CrossPointSettings::PAGE_TURN},
-                                                 {StrId::STR_FORCE_REFRESH, CrossPointSettings::FORCE_REFRESH},
-                                                 {StrId::STR_FOOTNOTES, CrossPointSettings::FOOTNOTES}};
-  options.reserve(CrossPointSettings::SHORT_PWRBTN_COUNT);
+inline ButtonSettingOptions shortPowerButtonOptions() {
+  ButtonSettingOptions options = {{{StrId::STR_IGNORE, CrossPointSettings::IGNORE},
+                                   {StrId::STR_SLEEP, CrossPointSettings::SLEEP},
+                                   {StrId::STR_PAGE_TURN, CrossPointSettings::PAGE_TURN},
+                                   {StrId::STR_FORCE_REFRESH, CrossPointSettings::FORCE_REFRESH},
+                                   {StrId::STR_FOOTNOTES, CrossPointSettings::FOOTNOTES}},
+                                  5};
   if (BoardConfig::hasTouch()) {
-    options.push_back({StrId::STR_CONFIRM, CrossPointSettings::PWR_CONFIRM});
+    options.entries[options.count++] = {StrId::STR_CONFIRM, CrossPointSettings::PWR_CONFIRM};
   } else {
-    options.push_back({StrId::STR_SAVE_CLIPPING, CrossPointSettings::CREATE_CLIPPING});
+    options.entries[options.count++] = {StrId::STR_SAVE_CLIPPING, CrossPointSettings::CREATE_CLIPPING};
   }
   // Touch boards without a home key have no button for these shortcuts. Silkscreen keeps its keys
   // with touch (hasFrontButtons(): upstream's boards answer !hasTouch(), so nothing else changes), and
   // its power double-click defers every short-click action, which these (acted on at the release in
   // MappedInputManager::update()) do not wait for.
   if (BoardConfig::hasTouch() && !BoardConfig::hasHomeKey() && !BoardConfig::hasFrontButtons()) {
-    options.push_back({StrId::STR_BOOKMARK_OPTION, CrossPointSettings::PWR_BOOKMARK});
-    options.push_back({StrId::STR_KOSYNC, CrossPointSettings::PWR_SYNC});
-    options.push_back({StrId::STR_READER_MENU, CrossPointSettings::PWR_READER_MENU});
+    options.entries[options.count++] = {StrId::STR_BOOKMARK_OPTION, CrossPointSettings::PWR_BOOKMARK};
+    options.entries[options.count++] = {StrId::STR_KOSYNC, CrossPointSettings::PWR_SYNC};
+    options.entries[options.count++] = {StrId::STR_READER_MENU, CrossPointSettings::PWR_READER_MENU};
   }
   if (keyFrontlightAvailable()) {
-    options.push_back({StrId::STR_TOGGLE_FRONTLIGHT, CrossPointSettings::TOGGLE_FRONTLIGHT});
+    options.entries[options.count++] = {StrId::STR_TOGGLE_FRONTLIGHT, CrossPointSettings::TOGGLE_FRONTLIGHT};
   }
   return options;
 }
@@ -316,23 +299,24 @@ inline bool shortPowerButtonValueAccepted(const uint8_t value) {
 }
 
 inline std::vector<StrId> buildShortPowerButtonValues() {
+  const auto options = shortPowerButtonOptions();
   std::vector<StrId> values;
-  for (const auto& option : shortPowerButtonOptions()) values.push_back(option.label);
+  values.reserve(options.count);
+  for (uint8_t i = 0; i < options.count; ++i) values.push_back(options.entries[i].label);
   return values;
 }
 
 // The saved value's position in this board's list; one the board does not offer shows as Ignore.
 inline uint8_t shortPowerButtonDisplayValue() {
   const auto options = shortPowerButtonOptions();
-  for (size_t i = 0; i < options.size(); i++) {
-    if (options[i].value == SETTINGS.shortPwrBtn) return static_cast<uint8_t>(i);
-  }
-  return CrossPointSettings::IGNORE;
+  const int index = buttonSettingIndex(options, SETTINGS.shortPwrBtn);
+  return index >= 0 ? static_cast<uint8_t>(index) : CrossPointSettings::IGNORE;
 }
 
 inline void setShortPowerButtonFromDisplayValue(const uint8_t displayValue) {
   const auto options = shortPowerButtonOptions();
-  SETTINGS.shortPwrBtn = displayValue < options.size() ? options[displayValue].value : CrossPointSettings::IGNORE;
+  SETTINGS.shortPwrBtn =
+      displayValue < options.count ? options.entries[displayValue].value : CrossPointSettings::IGNORE;
 }
 
 // Where Toggle Frontlight sits in this board's list, or -1 where it is not offered. The web
@@ -340,10 +324,7 @@ inline void setShortPowerButtonFromDisplayValue(const uint8_t displayValue) {
 // with the touch panel (Confirm is listed only with one).
 inline int shortPowerButtonToggleFrontlightIndex() {
   const auto options = shortPowerButtonOptions();
-  for (size_t i = 0; i < options.size(); i++) {
-    if (options[i].value == CrossPointSettings::TOGGLE_FRONTLIGHT) return static_cast<int>(i);
-  }
-  return -1;
+  return buttonSettingIndex(options, CrossPointSettings::TOGGLE_FRONTLIGHT);
 }
 
 inline SettingInfo buildShortPowerButtonSetting() {
@@ -376,6 +357,13 @@ size_t countBaseSettings();
 // True if this board hides the setting at runtime. UI-only: the probes have not
 // run at load time, so the base list keeps these keys persisted.
 inline bool isHiddenOnDevice(const SettingInfo& s) {
+#if FREEINK_DEVICE_SILKSCREEN && !FREEINK_SILKSCREEN_368
+  // Keep this key persisted before the panel probe; filter only runtime lists.
+  if (s.valuePtr == &CrossPointSettings::standardHalfRefresh &&
+      BoardConfig::ACTIVE.displayController != BoardConfig::DisplayController::SSD1677) {
+    return true;
+  }
+#endif
   switch (s.nameId) {
     // Frontlit and lightless variants of a board share one binary (EEGO A4);
     // presence is the I2C probe result from Frontlight.begin(). The slide

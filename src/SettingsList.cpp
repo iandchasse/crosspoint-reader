@@ -208,6 +208,10 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
            .withWebHidden());
 
   // --- System ---
+#if FREEINK_DEVICE_SILKSCREEN && !FREEINK_SILKSCREEN_368
+  emit(SettingInfo::Toggle(StrId::STR_STANDARD_HALF_REFRESH, &CrossPointSettings::standardHalfRefresh,
+                           "standardHalfRefresh", StrId::STR_CAT_SYSTEM));
+#endif
   emit(SettingInfo::Value(
       StrId::STR_TIME_TO_SLEEP, &CrossPointSettings::sleepTimeoutMinutes,
       {CrossPointSettings::MIN_SLEEP_TIMEOUT_MINUTES, CrossPointSettings::MAX_SLEEP_TIMEOUT_MINUTES, 1},
@@ -233,8 +237,8 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
 
   // Frontlight quick-panel state: persisted and web-exposed, but hidden
   // from the on-device Settings screen because the swipe panel owns it.
-  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightBrightness, {0, 100, 5},
-                          "frontlightBrightness"));
+  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightBrightness,
+                          {0, 100, static_cast<uint8_t>(BoardConfig::isSilkscreen() ? 1 : 5)}, "frontlightBrightness"));
 #if FREEINK_CAP_WARMLIGHT
   emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightWarmth, {0, 100, 5}, "frontlightWarmth"));
 #endif

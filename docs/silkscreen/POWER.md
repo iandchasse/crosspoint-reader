@@ -11,6 +11,7 @@ Silkscreen has no hardware off (§3.5): 3V3 is live whenever a cell or USB is pr
 It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis followed by an independent verification pass, and the verifier's corrections are applied here.
 
 - **As of 2026-09-30 nothing here had been measured on a board.** The owner's unit has since run the battery-log firmware (its first CSV, 2026-10-10, holds 27 rows over 5.7 days from one build, `1.6.5-batlog`); that is a log of battery readings, not a meter reading, and the figures below are as written.
+- **Hardware revision.** The figures are for the as-built Rev 1.0 board. Rev 1.02 (the current files in `de-link_pcb`, not yet built) moves the Fix-4 charge-enable gate (`Q2`, `R81`, `R82`) from 3V3 to `USB_VBUS` and raises `R79`/`R80` tenfold (1 MΩ and 10 MΩ), so the detector rows read 0 and ≈0.34 µA and the floor ≈48 µA typical (≈85 µA maximum). Rows and notes marked *Rev 1.02* give the new value; unmarked figures are Rev 1.0's.
 - `§` refers to `de-link_pcb/docs/HARDWARE.md` ([iandchasse/silkscreen-pcb](https://github.com/iandchasse/silkscreen-pcb)).
 - Tags: **[DS]** datasheet figure, **[calc]** Ohm's law on netlist values, **[est]** engineering estimate.
 - Code paths: app paths are relative to this repo, SDK paths to `freeink-sdk/libs/`.
@@ -35,12 +36,12 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 | 2 | U4 pad leakage, pins held above 0 V | ~0 | 0.4 [DS] | 50 nA × about 8 pins | S3 DS v2.2 Table 5-4 |
 | 3 | U3 TLV75533P IQ at no load (LDO_IN) | 25 [DS] | 33 [DS, 85 °C] | EN tied to IN | TI SBVS320D §5.5 |
 | 4 | U3 extra ground current at the real 20-40 µA load | 0-15 [est] | unknown | Not characterized below 1 mA (≈145 µA at 1 mA). An adaptive-bias curve could add ≈20 µA at 30 µA. **Measure.** | SBVS320D Fig 5-17/5-18 |
-| 5 | R81 + R82, Fix-4 detector (3V3) | 6.6 [calc] | 6.9 | Correct cell fitted | netlist |
-| 6 | R79 + R80 across the raw cell | 3.4 [calc] | 3.8 | 3.7 / 4.2 V | netlist |
+| 5 | R81 + R82, Fix-4 detector (3V3) | 6.6 [calc] | 6.9 | Correct cell fitted. Rev 1.02: R81/R82 (100 kΩ/10 kΩ) run from USB_VBUS, so 0 on battery | netlist |
+| 6 | R79 + R80 across the raw cell | 3.4 [calc] | 3.8 | 3.7 / 4.2 V. Rev 1.02: 1 MΩ + 10 MΩ, 0.34 / 0.38 | netlist |
 | 7 | R56 + R57, Q3 gate bias (raw cell) | 0.37 [calc] | 0.42 | Outside the protection FETs | netlist |
 | 8 | U5 DW01A (clone) (P+) | 3.0 [DS] | 6.0 [DS] | FETs on | DW01A ICC; clone datasheet not obtained |
 | 9 | U2 TPS2116 on VIN2 (P+) | 1.35 [DS] | 3.7 [DS] | VIN1 = 0 V | TI SLVSFG1A §6.5 |
-| 10 | U11 TP4056 BAT pin, VCC = 0 (P+) | 1.0 [DS] | 2.0 [DS] | CE held at 3V3 by Fix-4 (no datasheet row for that) | TOPPOWER TP4056 p.5 |
+| 10 | U11 TP4056 BAT pin, VCC = 0 (P+) | 1.0 [DS] | 2.0 [DS] | CE held at 3V3 by Fix-4 (no datasheet row for that). Rev 1.02: CE is 0 V on battery (Q2's source is USB_VBUS) | TOPPOWER TP4056 p.5 |
 | 11 | BAT_MONIT R12/R10 1M/1M (P+) | 1.85 [calc] | 2.1 | IO8 with no pulls | §3.6 |
 | 12 | USB_STAT R70 1M + R17 2M (3V3) | 1.1 [calc] | 2.1 [calc] | On battery; max assumes the unpowered TP4056 status pins clamp | §3.7 |
 | 13 | LED_MONIT R39/R41 1M/120k from LED_SW via U10's body diode (LDO_IN) | 2.9 [calc/est] | 3.4 | Light off; in §16 since its 2026-09-30 re-itemization | TI SNVSCN8A §7.3.3 |
@@ -53,9 +54,9 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 | 20 | ESD/TVS parts (TPD4E1U06 ×5, CR2/CR3 SD05C, D3, CR1, D8) | 0.05 [est] | 2 [DS bounds] | SD05C clones rated 1 µA max at 5 V each | TI SLVSBQ9D; SD05C-01FTG Rev 1.4 |
 | 21 | MLCC insulation leakage, always-on rails | 0.05 [est] | 0.5 [est] | Room temperature | Murata GRM21BR61E226ME44 |
 | 22 | Idle pull networks (R4, R28, R5, R7, R13, R40, R47, R48, R62/R76, R38/R51), D2, R49/R50 | 0 | 0 | Nothing driven against them, no key held, USB absent. R49/R50 (1 MΩ LED bleeders) and Q6 draw nothing because each FT01C string is 5 LEDs (≈15 V Vf) against LED_SW ≈3.2 V | netlist |
-| **Σ** | **Floor, no touch** | **≈58** (57.9) | **≈95** (94.8) | ≈91 (90.9) with the high-voltage leakage specs of rows 18-20 discounted; 58-73 typ and up to ≈110 max once row 4 is counted | rows re-added by the verifier from the netlist |
+| **Σ** | **Floor, no touch** | **≈58** (57.9) | **≈95** (94.8) | ≈91 (90.9) with the high-voltage leakage specs of rows 18-20 discounted; 58-73 typ and up to ≈110 max once row 4 is counted. Rev 1.02 (rows 5-6 as marked): ≈48 (48.2) typ (48-63 once row 4 is counted), ≈85 (84.5) max, ≈81 (80.6) discounted | rows re-added by the verifier from the netlist |
 
-- 58 µA ≈ 1.4 mAh/day; 95 µA ≈ 2.3 mAh/day. The cell capacity is still an open question.
+- 58 µA ≈ 1.4 mAh/day; 95 µA ≈ 2.3 mAh/day (Rev 1.02: 48 µA ≈ 1.2 mAh/day; 85 µA ≈ 2.0 mAh/day). The cell capacity is still an open question.
 - **Not in the budget** (small, unquantified):
   - U10's SW-pin off-state leakage from LDO_IN (SNVSCN8A specifies shutdown current for VIN only);
   - the 3V3 → L1 → D5 → PREVGH/VGH path (C14 4.7 µF/50 V), live through sleep;
@@ -65,26 +66,26 @@ It comes from the battery-drain audit of 2026-09-30. That audit was a synthesis 
 
 | Scenario | Adder µA | Total µA | In this firmware |
 |---|---|---|---|
-| FT6336U tail on J4, hibernated (`0xA5 = 0x03`), TP_RST HIGH | +55 typ [DS, at 2.8 V, no max] | ≈113 (≈2.7 mAh/day) | Every normal sleep entry with the tail fitted. The lowest possible while J4 VDD is unswitched (HW-02). |
-| Tail in Monitor mode | +220 typ [DS] | ≈278 | A tail that missed the cold-boot probe and did not take the one best-effort write, until the next cold boot. The abnormal-reset sleep resets the controller and sends hibernate, and a 4.26" Silkscreen build with `FREEINK_CAP_TOUCH=0` no longer compiles (the 3.68" variant has no tail and is built with it). |
+| FT6336U tail on J4, hibernated (`0xA5 = 0x03`), TP_RST HIGH | +55 typ [DS, at 2.8 V, no max] | ≈113 (≈2.7 mAh/day); Rev 1.02 ≈103 (≈2.5 mAh/day) | Every normal sleep entry with the tail fitted. The lowest possible while J4 VDD is unswitched (HW-02). |
+| Tail in Monitor mode | +220 typ [DS] | ≈278 (Rev 1.02 ≈268) | A tail that missed the cold-boot probe and did not take the one best-effort write, until the next cold boot. The abnormal-reset sleep resets the controller and sends hibernate, and a 4.26" Silkscreen build with `FREEINK_CAP_TOUCH=0` no longer compiles (the 3.68" variant has no tail and is built with it). |
 | TP_RST held LOW with the tail fitted | ≈+1100 [est: 3.3 V into the ~3 kΩ RSTN pull-up] plus the reset-state current | ≈1150 (≈28 mAh/day) | This port's profile did this until freeink-sdk `a26e398`, which holds IO11 HIGH. |
 | GPIO47/48 pads unpowered in sleep, so R5 and panel BUSY back-feed VDD_SPI | +100-300 [est]; the R5 path alone ≤ ≈280 | ≈160-360 | Open hardware risk (HW-01). Measure ([section 4](#4-measurement-and-bench-checks)). |
 | Near-empty cell: LDO_IN below ≈3.3-3.35 V, U3 in dropout | IQ 25 → ≈190-225 at 25 °C, ≈260 at 85 °C [DS typ curve] | ≈250-300 | The reason for the 3.4 V cutoff (BAT-01). Unavoidable for a device stored empty. |
 | Power button held or stuck | +30 [calc, R62 + R76] | ≈88 | Firmware sleeps after 5 s and wakes on the release (PB-01). |
-| After a DW01A over-discharge trip | 2.5-6.5 from the raw cell | — | DW01A IPD ≤ 4 [DS] + R79/R80 + R56/R57 (HW-09). |
+| After a DW01A over-discharge trip | 2.5-6.5 from the raw cell (Rev 1.02: 0.5-4.5) | — | DW01A IPD ≤ 4 [DS] + R79/R80 + R56/R57 (HW-09). |
 | EPD SCLK/MOSI/DC floating | 0 to tens [est] | — | Fixed: held LOW (freeink-sdk `983f2a7`). |
 | DS3231 EN32KHZ left set | +0.1 at 25 °C, +0.8 at 85 °C [DS] | — | Does not occur here: `Rtc.cpp` `beginDevice()` clears it (freeink-sdk `abca595`). |
 
 ### Against HARDWARE.md §16
 
-§16 was re-itemized on 2026-09-30 from this budget, part by part, and now agrees with it:
+§16 was re-itemized on 2026-09-30 from this budget, part by part, and agreed with it (it now describes Rev 1.02, so its detector rows and totals differ by the Rev 1.02 amounts marked here):
 
-- ≈58 µA typical (≈56 µA without the panel) and ≈91-95 µA maximum, with the ESP32 at 7 µA typ for ext1. Every row above is in it, the LED_MONIT divider and the panel included.
+- ≈58 µA typical (≈56 µA without the panel) and ≈91-95 µA maximum, with the ESP32 at 7 µA typ for ext1. Every row above is in it, the LED_MONIT divider and the panel included. For Rev 1.02 the same §16 reads ≈48 µA typical (≈46 µA without the panel) and ≈81-85 µA maximum.
 - It states the touch-tail case (+55 µA hibernated, ≈220 µA in Monitor, ≈1.1 mA with TP_RST LOW) and the near-empty cell (LDO dropout).
 - Like this budget, its maximum leaves out the LDO's load term (row 4) and the GPIO47/48 back-feed (HW-01), and names both.
 - It has no row for the custom UC8279D panel, whose deep-sleep figure is not in hand (row 17).
 - **Double counts to avoid** (both documents follow them):
-  - §3.3's "≈7 µA incl. DW01A" overlaps the Fix-4 figure (R79/R80).
+  - §3.3's "≈7 µA incl. DW01A" (Rev 1.02: ≈3.8 µA) overlaps the Fix-4 figure (R79/R80).
   - DS3231M conversions are already in its IBATT.
   - R77 and Q7 leakage are one current.
   - TPS2116 ISTBY,VIN1 does not apply on battery.
@@ -158,7 +159,7 @@ The same board and budget with the Xteink X3's panel in place of the GDEQ0426T82
 | ZD-05 | CS HIGH, SCLK/MOSI/DC LOW, all held in sleep. | **Done.** SILKSCREEN `parkedPins` (SDK `983f2a7`); `BoardConfig::holdPowerRails()` releases them at boot. |
 | ZD-06 | Never pull down or hold IO48 in sleep. | **Done.** `powerDownRailsForSleep()` (busyPullDown and busyPullUp branch); IDF also strips the pulls of every unheld digital pad at sleep entry. |
 | ZD-07 | SD off: write back, unmount, deinit, bus LOW with pulls off, IO10 HIGH, ≥20 ms; held in sleep; never a pull-down on IO10. | **Done.** SDK `SDCardManager::shutdown()` (via `HalStorage::prepareForDeepSleep`), `SdmmcParkedMount.cpp` (a failed mount parks), `powerDownRailsForSleep()` holds the bus (SDK `983f2a7`), `holdRailOff` IO10 HIGH. `shutdown()` first writes SdFat's cached directory/data and FAT sectors back (`SDCardManager::syncVolume()`, SDK `65660a6`): `FsVolume::end()` writes nothing, so a sector left dirty would otherwise be lost with the card's power. The USB Drive handoff (`detachFilesystemForRawAccess()`) writes back the same way before the host takes the card. A file still open for writing keeps its own directory entry (its size) until it is closed; activities close their files on exit. **2026-10-12 (upstream's `2ca5e31`):** `SdmmcBlockDevice::begin()` now clears the holds on the six bus pads first, for every board (Picco holds them LOW before its rail drops, in code behind `FREEINK_DEVICE_PICCO` that this board does not compile). Here `holdPowerRails()` has already released them at boot (`parkSdmmcBus()`: IO5, IO6, IO7, IO15, IO16 and IO17), so the loop finds nothing held and changes no level, direction or pull; it runs after the early wake decision (WK-01), and the park and the hold in `powerDownRailsForSleep()` are as they were. |
-| ZD-08 | Light dark, LEDC detached, IO42 and IO40 held LOW in sleep; never `gpio_reset_pin` on them; restore the light only after a verified wake. | **Done.** SDK `FrontlightManager::prepareForSleep()` from `HalPowerManager::sleepImpl()` before the parked holds (SDK `82fe8ab`, app `ccf474d2`), and from a shutdown handler before every software restart (`HalFrontlight::begin()`), so COLOR_SEL never changes under current. On the sleep path `enterDeepSleep()` (`src/main.cpp`) calls it first, right after the trip check, so the light is dark before the sleep entry's plugin delivery (popup, Wi-Fi join, handlers); `sleepImpl()`'s call then returns early, and the saved preference (Restore Light on Wake) is unchanged. `Frontlight.begin()` runs after the wake decision in `setup()`. An over-voltage trip switches the light and its saved preference off, so no wake, restart or power cycle drives the boost into the fault again. **Load probe** (`FrontlightConfig::loadProbeWindowMs`/`loadProbePeriodMs`, on the monitor timer since SDK `65660a6`): the boost runs only inside a switch-on the user asks for or Restore Light on Wake, never by itself at a boot or wake; each enable reads LED_MONIT every 20 ms for 500 ms on the monitor's timer, so the caller does not wait, and a string with no load goes dark at the first reading above the trip (U10 sees one OVP event). A switch-on that finds no light waits for the LED rail before trying the second string, on the same timer (about 1-3 s, at most 4 s), while the loop runs on; a Restore Light on Wake that finds no light (once per cold boot, and once after a wake if the light was removed during the sleep) no longer delays the first paint. The reader then shows "No front light detected" with the 10 s connect advice, after a restore, a trip and a second string the rail blocked too, from the second loop pass. After a no-light result the light panel's slider and brightness keys only set the level, so one gesture runs the probe once. A "no light" result is kept in RTC memory (8 bytes, trusted after a deep-sleep wake or a software restart only), so later wakes do not restore into nothing; a user's no-light result also saves the light as off. Nothing new runs in sleep or on a ghost wake: the probe adds no wake source, hold or pull, and `prepareForSleep()` only waits (at most 4 s, and only right after a trip) for the rail before COLOR_SEL rests LOW. |
+| ZD-08 | Light dark, LEDC detached, IO42 and IO40 held LOW in sleep; never `gpio_reset_pin` on them; restore the light only after a verified wake. | **Done.** SDK `FrontlightManager::prepareForSleep()` from `HalPowerManager::sleepImpl()` before the parked holds (SDK `82fe8ab`, app `ccf474d2`), and from a shutdown handler before every software restart (`HalFrontlight::begin()`), so COLOR_SEL never changes under current. On the sleep path `enterDeepSleep()` (`src/main.cpp`) calls it first, right after the trip check, so the light is dark before the sleep entry's plugin delivery (popup, Wi-Fi join, handlers); `sleepImpl()`'s call then returns early, and the saved preference (Restore Light on Wake) is unchanged. `Frontlight.begin()` runs after the wake decision in `setup()`. An over-voltage trip switches the light and its saved preference off, so no wake, restart or power cycle drives the boost into the fault again. **Load probe** (`FrontlightConfig::loadProbeWindowMs`/`loadProbePeriodMs`, on the monitor timer since SDK `65660a6`): the boost runs only inside a switch-on the user asks for or Restore Light on Wake, never by itself at a boot or wake; each enable reads LED_MONIT every 20 ms for 500 ms on the monitor's timer, so the caller does not wait, and a string with no load goes dark at the first reading above the trip (U10 sees one OVP event). A switch-on that finds no light waits for the LED rail before trying the second string, on the same timer (about 1-3 s, at most 4 s), while the loop runs on; a Restore Light on Wake that finds no light (on an eligible wake if the light was removed during sleep) no longer delays the first paint. The reader then shows "No front light detected" with the 10 s connect advice, after a restore, a trip and a second string the rail blocked too, from the second loop pass. After a no-light result the light panel's slider and brightness keys only set the level, so one gesture runs the probe once. A "no light" result is kept in RTC memory (8 bytes, trusted after a deep-sleep wake or a software restart only), so later wakes do not restore into nothing; a user's no-light result also saves the light as off. Nothing new runs in sleep or on a ghost wake: the probe adds no wake source, hold or pull, and `prepareForSleep()` only waits (at most 4 s, and only right after a trip) for the rail before COLOR_SEL rests LOW. |
 | TP-01 | TP_RST held HIGH; FT6336U hibernate `0xA5 = 0x03` at every sleep entry; TP_INT unheld. | **Done.** `parkedPins {11, High, High}`; SDK `InputManager::prepareTouchForSleep()` via `HalGPIO::prepareForSleep()` in `sleepImpl()` (SDK `a26e398`, app `88d14b28`). The abnormal-reset sleep resets the controller (≥5 ms, ≥300 ms) and sends hibernate once (`InputManager::resetAndHibernateTouch()`), after reading back its FocalTech chip id. A device at 0x38 with another id (a J6 accessory, `TouchConfig::requireFocalTechId`) gets no write at all, at the probe or at any sleep entry, and the reader logs the refusal: a genuine tail refused by the id check is never hibernated and draws its Monitor current (about 220 µA, about 165 µA over hibernate) in every sleep, so B9's accepted id is a release gate. A 4.26" Silkscreen build with `FREEINK_CAP_TOUCH=0` fails a `static_assert`; the 3.68" variant is the one build with no tail, and has no touch code at all. The release-wake sleep sends nothing: the controller is as the last sleep entry left it. |
 | TP-02 | If the hibernate write NACKs (Monitor mode closes the port), reset (≥5 ms, ≥300 ms) and retry. | **Done** for a controller found at boot (`pulseTouchReset()` then one retry). With none found: one best-effort write, no reset. |
 | TP-03 | GT911: INT LOW ≥5 ms, `0x8040 = 0x05`, ≥58 ms, hold INT LOW; release it before the next reset. | **Done** (contingency: the -FT01C drawing names an FT6336U, and the GT911 fallback is built only with `-DSILKSCREEN_TOUCH_ALT_JUMPERS=1`, so a default build never drives IO41). A GT911 tail on the alternate jumpers running a default image is reset awake by the FT probe (at 0x14) and never gets its sleep command: about 3.3 mA in every deep sleep. P2 reports it as `touch_not_probed`; such a board needs the alternate-jumper build. If the command NACKs, INT is released rather than held. The abnormal-reset sleep in an alternate-jumper build never pulses TP_RST, which would restart a GT911 awake: it sends the sleep command at 0x5D or 0x14 (and caches the GT911 for the next wake), holding INT LOW even with no answer. The INT hold ends at the wake, so with the probe cached as GT911 (its address kept in RTC memory) INT is driven LOW at `begin(false)`, a ghost-wake sleep re-sends the sleep command (and holds INT LOW even on a NACK), and a release-wake sleep re-holds INT LOW. |
@@ -289,7 +290,7 @@ Also not covered:
 
 **Expected results**
 
-- Without touch: ≈58-73 µA. With an FT6336U hibernated: ≈113-130 µA. The 3.68" variant has no touch; its figure is the first, adjusted by this panel's own draw (row 17), which is what the J2 flex A/B finds.
+- Without touch: ≈58-73 µA (Rev 1.02: ≈48-63 µA). With an FT6336U hibernated: ≈113-130 µA (Rev 1.02: ≈103-120 µA). The 3.68" variant has no touch; its figure is the first, adjusted by this panel's own draw (row 17), which is what the J2 flex A/B finds.
 - Above ≈150 µA, A/B one change at a time: J4 tail out, J2 flex out, R5 lifted, card out.
 - **What a high reading points at** (BRING_UP §6; the test firmware's P5 lists these above the budget):
   - +0-15 µA: U3's extra ground current at its real load (row 4; BRING_UP §6 says 0-20);
@@ -359,7 +360,7 @@ After every session the device stays awake until auto-sleep, and this tail outwe
 
 - The idle path: 3 s at the normal clock (`IDLE_POWER_SAVING_MS`), then 80 MHz (`HalPowerManager::LOW_POWER_FREQ` on PSRAM boards) in the loop's delay slices. The prebuilt core has no `CONFIG_PM_ENABLE` or tickless idle.
 - **Draw:** ≈22-36 mA for the chip at 80 MHz with the CPU waiting [DS, S3 DS v2.2 Table 5-9]. PSRAM standby and a powered, mounted SD card (0.2-2 mA) take the board to ≈25-40 mA [est].
-- **Default 10-min auto-sleep:** ≈3.7-6 mAh per session (chip only; ≈4-6.5 mAh for the board [est]). That equals 2.7-4.3 days of the 58 µA floor.
+- **Default 10-min auto-sleep:** ≈3.7-6 mAh per session (chip only; ≈4-6.5 mAh for the board [est]). That equals 2.7-4.3 days of the 58 µA floor (3.2-5.2 days of Rev 1.02's 48 µA floor).
 - **Awake ceiling** (screens that hold auto-sleep off, or Never), 15 min, or up to 30 min when the user's sleep timeout is longer:
   - radio off: ≈5.5-9 mAh per 15 min;
   - Wi-Fi on: power saving is forced off, so full clock plus the radio at tens to over 100 mA gives ≈12-30 mAh per 15 min [est].
@@ -380,19 +381,19 @@ After every session the device stays awake until auto-sleep, and this tail outwe
   - The cost if these pads are unpowered: R5 and the SSD1677's HIGH BUSY output back-feed flash/PSRAM through the ESD diodes, ≈100-300 µA [est].
   - The fix: move RST and BUSY to VDD3P3_RTC or VDD3P3_CPU pads. IO3 is free for RST. BUSY needs a strap-safe pad: not IO45, and IO46 only after checking the boot-mode strap table.
   - HARDWARE.md §6.1 carries it as a first-article check since 2026-09-30.
-- **HW-02: J4 touch VDD is always on (0 Ω R42).** A hibernated FT6336U still draws ≈55 µA and a GT911 70-120 µA. Only a load switch on J4 VDD reaches the ≈58 µA floor with touch. That switch needs bus isolation, or TP_RST/TP_INT held LOW, because R47/R48 and the control lines back-power an unpowered controller.
+- **HW-02: J4 touch VDD is always on (0 Ω R42).** A hibernated FT6336U still draws ≈55 µA and a GT911 70-120 µA. Only a load switch on J4 VDD reaches the ≈58 µA floor with touch (≈48 µA on Rev 1.02). That switch needs bus isolation, or TP_RST/TP_INT held LOW, because R47/R48 and the control lines back-power an unpowered controller.
 - **HW-03: the U3 TLV75533P is the largest floor term.** Its 25 µA IQ has an uncharacterized light-load term, and it rises to ≈190-260 µA in dropout. The fix: an LDO with flat dropout IQ and nA shutdown, rated for Wi-Fi peaks, with EN driven by a supervisor or load switch that disconnects the system below ≈3.4 V.
 - **HW-04: the LED_MONIT divider (R39/R41) is always fed from LED_SW,** ≈2.9-3.4 µA with the light off. Scale it ×10 or gate it, after checking the ADC and monitor settling.
 - **HW-05: RTC choice.** U14 RV-8263-C7 (0.19/0.24 µA) instead of U13 DS3231MZ (2/3 µA) saves ≈1.8-3 µA. The firmware already probes 0x51 as the fallback.
-- **HW-06: the Fix-4 detector (≈10 µA) and BAT_MONIT (1.85 µA) are deliberate.** An N-FET gate on BAT_MONIT would save ≈1.9 µA.
+- **HW-06: the Fix-4 detector (≈10 µA; ≈0.4 µA on Rev 1.02, where R81/R82 run from USB_VBUS and R79/R80 are ten times larger) and BAT_MONIT (1.85 µA) are deliberate.** An N-FET gate on BAT_MONIT would save ≈1.9 µA.
 - **HW-07: clone parts have unverified leakage** (SD05C-01FTG, TPD4E1U06, DW01A, 74LVC1G04, BSS138). Only a board measurement settles them.
-- **HW-08: TP4056 CE is held at 3V3 while its VCC is 0 V on battery.** No datasheet row covers this. If CE, CHRG or STDBY conduct into VCC, D2 lights (≈500 µA) and USB_STAT reads ≈1.2 V ("charging"). Bench check in [section 4](#4-measurement-and-bench-checks). The firmware no longer trusts such a reading near empty: Charging/Complete with `P+` at or below the cutoff and not rising for 5 min is treated as on battery, and logged once. T2 stage 1 checks the level on each board (`hw08_clamp`).
+- **HW-08: TP4056 CE is held at 3V3 while its VCC is 0 V on battery (Rev 1.0; on Rev 1.02 CE is 0 V there, because Q2's source is USB_VBUS, and only the CHRG/STDBY half of this stands).** No datasheet row covers this. If CE, CHRG or STDBY conduct into VCC, D2 lights (≈500 µA) and USB_STAT reads ≈1.2 V ("charging"). Bench check in [section 4](#4-measurement-and-bench-checks). The firmware no longer trusts such a reading near empty: Charging/Complete with `P+` at or below the cutoff and not rising for 5 min is treated as on battery, and logged once. T2 stage 1 checks the level on each board (`hw08_clamp`).
   - **Contingency: a `P+` trend check. Not implemented; implement it only if T2 stage 1 fails `hw08_clamp` on real boards.** With the clamp, a board on its cell decodes "Charging" and is taken for one on USB. The cutoff still protects the cell (the cross-check above, about 5 min late), but until then the battery-only timeouts (the 15-min ceiling, the 60-min input cap, the 3-min wake timeout) do not apply, USB presence reads connected and the UI shows a charge.
   - The check would extend the HW-08 cross-check above the cutoff (`BatteryMonitor::pollChargeStatus()`). While the ladder decodes Charging, a real charge holds `P+` at the charger's output, rising in CC or at the 4.2 V float in CV, so `P+` falling across a window means the cell carries the load, and the state would be published as OnBattery, as the cross-check does today.
   - It would sample once a minute and 16× averaged, as the cross-check does, but (unlike it) only at a quiet moment, since the 0.24-0.35 Ω path reads low under load (§3.6), and with the window restarted on any ladder change (the cross-check restarts it only when the state leaves Charging/Complete).
   - The window and the fall that counts must come from the board: log T1 and T2 on a clamped board, on the cell and on a charger, before choosing them. Complete is harder, since a charged cell relaxes after termination.
   - It adds no wake source, hold or pull, and nothing in sleep.
-- **HW-09: 2.5-6.5 µA keep flowing from the raw cell after a DW01A over-discharge trip.** §3.3's "years from 2.4 V to flat" is doubtful; months is more likely.
+- **HW-09: 2.5-6.5 µA keep flowing from the raw cell after a DW01A over-discharge trip (Rev 1.02: 0.5-4.5 µA, because R79/R80 are ten times larger).** §3.3's "years from 2.4 V to flat" is doubtful; months is more likely.
 - **HW-10: held keys.** A held power button draws 30 µA through R62/R76, and a held ladder key 50-330 µA. Higher-value ladder resistors are the only mitigation.
 - **HW-11: no GPIO senses VBUS.** A VBUS divider to a spare RTC pad (IO3) would make cable-pull detection deterministic; today USB_STAT stands in for it.
 - **HW-12: TP_INT (IO41) is a digital pad and cannot wake the chip** (§8). That is fine for power. A GT911's INT hold works only because `gpio_deep_sleep_hold_en` is set, and it ends at the wake reset, so the firmware re-drives it on every boot and sleep entry before the probe. An RTC pad (or a board pull-down) would keep it LOW through the wake.
@@ -433,3 +434,73 @@ After every session the device stays awake until auto-sleep, and this tail outwe
 - **Gating the SD card between accesses while awake** (0.2-2 mA against a ≈200 ms remount): a product decision.
 - **Do the prebuilt Arduino-ESP32 3.3.11 IDF libraries match the local framework-espidf 5.5 source** that these conclusions read (pad isolation, pull routing, VDD_SPI power-down)?
 - **The cell capacity (mAh),** needed to turn these figures into storage-life claims.
+
+## Startup and brightness policy
+
+Silkscreen keeps all 100 brightness percentages. The shared profile's
+`maximumLegacyPercent = 50` maps new 1% to original 1% and new 100% to
+original 50%, interpolating the original gamma table at
+`1 + (percent - 1) * 49 / 99` before rounding to PWM duty. The current maximum
+is 325/1023; new 1% remains one PWM count. This limit applies to **total** duty
+before colour blending, including direct SDK and 8-bit brightness calls.
+The required 150 us enable pulse remains. Other board profiles keep their
+existing brightness curve and range.
+
+Both CrossPoint and CrossInk restore automatically only after deep sleep or a
+validated silent software restart. Restore waits 250 ms after the first
+completed screen paint. Cold, flash, brown-out and crash/watchdog resets start
+dark without clearing the saved on preference. Explicit user toggles cancel a
+pending restore. CrossInk's wake schedule follows the same reset gate.
+
+The first enable after reset checks LED_MONIT before the pulse: the LED rail
+must read 1-6 V. Each existing 500 ms probe window needs a valid ADC reading
+and an observed LED rail of at least 6 V (including supported J6 strips).
+These broad bounds are derived from the expected circuit behaviour,
+**not healthy-board measurements**. Verify idle and rise readings throughout
+the range and in every colour on a healthy board before relying on them;
+lowest-level rise may need tuning. ADC unavailability fails closed.
+Low rail/no rise does not classify a string as absent or try the other string.
+The existing over-voltage and safe colour-switch rail waits remain active.
+A startup failure leaves the light off, logs its reason, and shows a one-line
+notice while retaining the saved wake preference. A deliberate toggle permits
+one retry per boot; slider/key repeats cannot retry a blocked startup.
+These are best-effort checks and do not detect every fault.
+
+Saved brightness migrates **downward by actual output**, clipped to the new
+maximum. Unmarked settings use the original gamma curve; scale 1 uses the
+previous ten-level build's fixed duties (1 through 180), solely for migration.
+Scale 2 marks the corrected percentage range and prevents repeat migration.
+Equal-duty migration ties prefer the lower percentage, preserving the 1%
+night setting. An installed scale-1 value of 100 becomes 69%, so it does not
+jump from 180 to 325 duty counts. Values 1..100 remain selectable without
+quantization; 0 is off for SDK/web callers. PWM rounding can repeat counts
+at the dim end.
+
+| New percentage | Duty /1023 | Nominal current (mA) |
+| --- | ---: | ---: |
+| 1% | 1 | 0.013 |
+| 10% | 8 | 0.104 |
+| 25% | 34 | 0.442 |
+| 50% | 105 | 1.365 |
+| 75% | 203 | 2.639 |
+| 100% | 325 | 4.225 |
+
+Currents are calculated from 13.3 mA at full duty, not measured. T9 samples
+10/25/50/75/100% in cool/warm/mix, compares dVf at 100% and 25%, and runs colour
+switches at 100%, 66% and 25%, reporting actual duty counts. These percentages
+use the corrected range; earlier full-duty and ten-level directions are superseded.
+
+## RV-8263 timekeeping
+
+The RV-8263-C7 uses the SDK's PCF85063 register path at 0x51. Setting the time
+now stops the divider for the calendar write, clears external-test/12-hour mode,
+restarts it, and checks the running and oscillator flags before reporting success.
+STOP, test mode, 12-hour mode or an uncleared oscillator-stop flag make a read
+untrusted; the existing resync path can set it again on the next Wi-Fi connection.
+Boot and deep-sleep wake do not reset the calendar or its offset calibration.
+CLKOUT remains disabled on Silkscreen. The DS3231 path is unchanged.
+
+After updating a stopped RV-8263, sync once, confirm that later reads advance,
+then sleep for at least ten minutes and compare the wake time with a reference.
+The fix has host coverage; physical oscillator operation and sleep retention
+still need verification on the fitted module.

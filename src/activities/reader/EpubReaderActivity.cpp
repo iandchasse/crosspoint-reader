@@ -61,21 +61,10 @@
 #include "fontIds.h"
 #include "util/BookmarkUtil.h"
 #include "util/ButtonNavigator.h"
+#include "util/RenderWatchdogProgress.h"
 #include "util/ScreenshotUtil.h"
-#if FREEINK_CAP_POWER_POLICY
-#include "util/RenderWatchdog.h"
-#endif
 
 namespace {
-// Silkscreen's render watchdog (docs/silkscreen/POWER.md, AW-04): this render() has just made progress (one chunk of a
-// section build, the popup of a build that starts), so its five minutes start over. Does nothing from any task but the
-// render task, and on other boards.
-inline void watchdogProgress() {
-#if FREEINK_CAP_POWER_POLICY
-  renderwatchdog::progress();
-#endif
-}
-
 // The X4 Pro and X4 Classic carry the X4's panel but sit outside isXteinkDevice()
 // (that helper also gates power management). Overlay refresh choices are per-panel:
 // this family runs the grayscale anti-aliasing pass, so chrome painted over a

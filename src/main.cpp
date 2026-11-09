@@ -204,8 +204,7 @@ static void showFrontlightNotFound() {
 //   left it off): the light is saved as off, as it now is. The light panel shows
 //   the message itself while it is open (Activity::showsFrontlightNotice()).
 // - a restore at boot that found none (Restore Light on Wake, or a silent
-//   restart's replay): the saved "on" stays (a cold boot clears the SDK's record,
-//   so a restore may try once again).
+//   restart's replay): the saved "on" stays for the next eligible wake.
 // - a trip in use, or a switch-on whose second string the rail blocked
 //   (handleFrontlightTrip() saves the light as off).
 // The light controls stay where they are, so switching it on again is the retry.
@@ -216,6 +215,16 @@ static void showFrontlightNotFound() {
 // From the loop task only.
 static void handleFrontlightNotices() {
   static bool firstPassDone = false;
+  static bool startupNoticeDue = false;
+  if (Frontlight.takeStartupNotice()) startupNoticeDue = true;
+#if FREEINK_DEVICE_SILKSCREEN
+  if (startupNoticeDue && firstPassDone && display.firstPaintMs() != 0) {
+    startupNoticeDue = false;
+    activityManager.requestUpdateAndWait();
+    RenderLock lock;
+    GUI.drawPopup(renderer, tr(STR_FRONTLIGHT_STARTUP_FAILED));
+  }
+#endif
   static bool noticeDue = false;
   if (handleFrontlightTrip()) noticeDue = true;
   if (Frontlight.takeRestoreNoLightNotice()) noticeDue = true;
@@ -546,7 +555,8 @@ static void deliverSleepPluginEvents(const bool unattended, const bool allowNetw
   // sleep.enter: reader.session is queued while reading and delivered on this
   // same sleep, and a progress-sync plugin usually subscribes to it alone.
   if (!pluginevents::wantsConnectAny()) return;
-  if (powerManager.getBatteryPercentage() < 20) return;
+  const uint16_t batteryPercent = powerManager.getBatteryPercentage();
+  if (batteryPercent < 20 || (BoardConfig::isSilkscreen() && batteryPercent > 100)) return;
   // Sleep can be the first WiFi use since boot or deep-sleep wake.
   WIFI_STORE.loadFromFile();
   const auto cred = WIFI_STORE.findCredential(WIFI_STORE.getLastConnectedSsid());
@@ -712,6 +722,7 @@ void enterDeepSleep(bool fromTimeout = false, bool unattended = false) {
 #endif
 
 #if SILKSCREEN_BATLOG
+  powerManager.flushBatteryChargeLog();
   BatteryLogWriter::flushAtEntry();  // a row the loop never flushed, with the card still mounted
 #endif
 
@@ -834,6 +845,7 @@ static void sleepWithoutDrivers() {
 // loop then costs one short boot per power-button press instead of boot after
 // boot at tens of mA; the press's deep-sleep wake starts a new count.
 static void sleepIfResetLoop() {
+#if FREEINK_CAP_POWER_POLICY
   const uint8_t limit = BoardConfig::powerPolicy().abnormalResetLimit;
   if (limit == 0) return;
   const auto aborted = freeink::PowerManager::takeAbortedSleepInfo();
@@ -848,22 +860,10 @@ static void sleepIfResetLoop() {
   }
   LOG_ERR("PWR", "%u abnormal resets in a row; sleeping until the power button", count);
   freeink::PowerManager::clearAbnormalResets();
-#if FREEINK_CAP_POWER_POLICY
   // A render watchdog restart that is still waiting for its sleep is spent by this one: the next boot reports it and
   // does not sleep again (a no-op without one).
   renderwatchdog::resetLoopSlept();
   sleepWithoutDrivers();
-#else
-  // No sleep entry has put the panel or a touch controller on an always-on rail
-  // to sleep since the crash, and a crash after a fast refresh leaves the panel's
-  // analog block on. Reset each and send its sleep command without its driver
-  // (no-ops on boards whose profile does not call for it). The controller is
-  // resolved first so the panel gets its own command; after a crash that is a
-  // probe, which is only a reset and a register read.
-  resolvePanelController();
-  if (freeink::PowerManager::sleepPanelWithoutDriver()) LOG_DBG("PWR", "Panel reset and asleep");
-  gpio.resetTouchForSleep();
-  powerManager.startDeepSleepMinimal(gpio);
 #endif
 }
 
@@ -1004,6 +1004,9 @@ void sleepIfBatteryEmptyAtBoot() {
 void setupDisplayAndFonts(bool seamless = false) {
   resolvePanelController();
   display.begin(seamless);
+#if FREEINK_DEVICE_SILKSCREEN && !FREEINK_SILKSCREEN_368
+  display.setStandardHalfRefresh(SETTINGS.standardHalfRefresh != 0);
+#endif
   renderer.begin();
   activityManager.begin();
   LOG_DBG("MAIN", "Display initialized");
@@ -1073,6 +1076,7 @@ void setup() {
   const bool isSilentReboot = (silentRebootMagic == SILENT_REBOOT_MAGIC);
   const uint32_t snapshotTarget =
       (isSilentReboot && silentRebootTarget <= SILENT_REBOOT_TARGET_MAX) ? silentRebootTarget : 0;
+  const bool validSilentLightRestore = isSilentReboot && silentRebootTarget <= SILENT_REBOOT_TARGET_MAX;
   const bool silentRebootLightOn = isSilentReboot && (silentRebootPayload & SILENT_REBOOT_LIGHT_ON) != 0;
   silentRebootMagic = 0;
   silentRebootTarget = 0;
@@ -1297,16 +1301,21 @@ void setup() {
   }
 #endif
 
-  // Brightness and warmth are always restored. A normal wake starts with the
+  // Brightness and warmth are always restored. A deep-sleep wake starts with the
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
   // nor light up against the user's wake preference. Only after the wake
   // decision above, so a wake that goes straight back to sleep never drives the
   // light.
-  const bool restoreLightOn = isSilentReboot ? silentRebootLightOn
-                              : slideSwitchOwnsLight()
-                                  ? gpio.isToggleSwitchOn()
-                                  : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0);
+  const bool restoreResetAllowed =
+      !BoardConfig::isSilkscreen() ||
+      freeink::frontlight::restoreEligible(esp_reset_reason() == ESP_RST_DEEPSLEEP, esp_reset_reason() == ESP_RST_SW,
+                                           validSilentLightRestore);
+  const bool restoreLightOn =
+      restoreResetAllowed &&
+      (isSilentReboot           ? silentRebootLightOn
+       : slideSwitchOwnsLight() ? gpio.isToggleSwitchOn()
+                                : (SETTINGS.frontlightOn != 0 && SETTINGS.frontlightRestoreOnWake != 0));
 #if CROSSPOINT_TEST_SUITE
   // Only a front-light test lights the boost, after the operator confirms a load:
   // no restore on wake and no replay after a silent restart.
@@ -1314,6 +1323,9 @@ void setup() {
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, /*on=*/false);
 #else
   Frontlight.begin(SETTINGS.frontlightBrightness, SETTINGS.frontlightWarmth, restoreLightOn);
+#endif
+#if FREEINK_DEVICE_SILKSCREEN && !CROSSPOINT_TEST_SUITE
+  powerManager.updateBatteryDisplay();
 #endif
 
   LOG_DBG("MAIN", "Starting CrossPoint version " CROSSPOINT_VERSION);
@@ -1484,9 +1496,20 @@ void loop() {
     if (lock.ownsLock()) gaugeCapacityPending = BatteryMonitor::loadDesignCapacity();
   }
 
+#if FREEINK_DEVICE_SILKSCREEN && !CROSSPOINT_TEST_SUITE
+  // Keep the estimate current; ordinary UI redraws pick up battery changes.
+  powerManager.updateBatteryDisplay();
+#endif
+
   renderer.setFadingFix(SETTINGS.fadingFix);
+#if FREEINK_DEVICE_SILKSCREEN && !FREEINK_SILKSCREEN_368
+  display.setStandardHalfRefresh(SETTINGS.standardHalfRefresh != 0);
+#endif
 
 #if FREEINK_CAP_FRONTLIGHT_PROBE && !CROSSPOINT_TEST_SUITE
+#if FREEINK_DEVICE_SILKSCREEN
+  Frontlight.updateRestore(display.firstPaintMs());
+#endif
   handleFrontlightNotices();
   keepWarmthOnPresentString();
 #else
@@ -1815,13 +1838,13 @@ void loop() {
     }
   }
 
-  // Refresh the battery icon when USB is plugged or unplugged.
+  // Other boards refresh the battery icon when USB is plugged or unplugged.
   // Placed after sleep guards so we never queue a render that won't be processed.
   // Not while reading: there a repaint is a full page re-render (visible
   // flash, the AA pass re-running, and a frontlight dip under the refresh
   // load); the reader's status bar picks the charging state up on the next
   // page turn instead.
-  if (gpio.wasUsbStateChanged() && !activityManager.isReaderActivity()) {
+  if (!BoardConfig::isSilkscreen() && gpio.wasUsbStateChanged() && !activityManager.isReaderActivity()) {
     activityManager.requestUpdate();
   }
 

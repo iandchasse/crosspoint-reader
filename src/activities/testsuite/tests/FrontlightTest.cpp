@@ -1,18 +1,18 @@
 #if CROSSPOINT_TEST_SUITE
 // T9: front light (bring-up B8). The boost lights only after the operator names
 // the LED load, at every Confirm that lights it. Both strings step through
-// five brightness levels while LED_MONIT (IO2) is read through freeink::adc and
+// 10/25/50/75/100% brightness while LED_MONIT (IO2) is read through freeink::adc and
 // the SDK's monitor record is watched for trips: the trip handler in the main
 // loop switches the light off before this screen could see fault(), so a trip
 // shows here as the light dropping out and the record's count rising. Every
 // switch-on and string change also runs the SDK's load probe, on its timer: the
 // screen waits for it to decide, then shows and records its result (a load or
 // none, and which strings answered). The record carries each string's LED_SW at
-// full and about 10 % duty and their difference (dVf, BRING_UP section 7.2).
+// maximum and one tenth of its duty and their difference (dVf, BRING_UP section 7.2).
 // Where the SDK blends (FrontlightConfig::colorBlendHz), Left also offers Mix: a
 // 50 % warmth on COLOR_SEL's blend carrier, read through the same steps.
 // While lit, the switch run (BRING_UP section 7.3) repeats the reader's colour
-// change at about 100, 50 and 10 % duty for a scope on TP3 and COLOR_SEL, and
+// change at 100%, 66% and 25% for a scope on TP3 and COLOR_SEL, and
 // fails on any trip or a light that goes out.
 #include <Arduino.h>
 #include <BoardConfig.h>
@@ -33,26 +33,23 @@
 namespace testsuite {
 namespace {
 
-constexpr uint8_t STEPS[] = {10, 25, 50, 75, 100};  // brightness %, the SDK's perceptual curve
+constexpr uint8_t STEPS[] = {10, 25, 50, 75, 100};
 constexpr int STEP_COUNT = static_cast<int>(sizeof(STEPS) / sizeof(STEPS[0]));
 constexpr unsigned long SAMPLE_MS = 1000;
 constexpr unsigned long REDRAW_MS = 3000;
-// Readings right after a light-up (fl-j3-mapping-risk): LED_SW over 22 V this
-// soon is an open or reverse-wired load on its way to U10's OVP.
 constexpr unsigned long EARLY_CHECK_MS[] = {50, 100, 200};
-constexpr uint32_t J6_MIN_RISE_MV = 1000;  // lit LED_SW above the dark rail: the boost runs
-// dVf (BRING_UP section 7.2): the settled readings of the full step and of the
-// 25 % step, which the SDK's curve runs at about 10 % duty.
+constexpr uint32_t J6_MIN_RISE_MV = 1000;
+// dVf at the capped maximum and one tenth of that output.
 constexpr int STEP_FULL = 4;
 constexpr int STEP_TENTH_DUTY = 1;
-static_assert(STEPS[STEP_FULL] == 100 && STEPS[STEP_TENTH_DUTY] == 25, "dVf reads the 100 % and 25 % steps");
-
-// The switch run (BRING_UP section 7.3): the reader's colour change while lit
-// (dark for the dwell, COLOR_SEL, the enable pulse, the load probe), repeated at
-// three duties. The brightness values sit on the SDK's curve at about 100, 50
-// and 10 % duty.
+static_assert(STEPS[STEP_FULL] == 100 && STEPS[STEP_TENTH_DUTY] == 25, "dVf uses 100% and 25%");
 constexpr uint8_t SWITCH_BRIGHTNESS[] = {100, 66, 25};
-constexpr uint8_t SWITCH_DUTY_PCT[] = {100, 50, 10};
+constexpr uint16_t SWITCH_DUTY[] = {static_cast<uint16_t>(freeink::frontlight::mappedDuty(
+                                        100, 1023, BoardConfig::SILKSCREEN.frontlight.maximumLegacyPercent)),
+                                    static_cast<uint16_t>(freeink::frontlight::mappedDuty(
+                                        66, 1023, BoardConfig::SILKSCREEN.frontlight.maximumLegacyPercent)),
+                                    static_cast<uint16_t>(freeink::frontlight::mappedDuty(
+                                        25, 1023, BoardConfig::SILKSCREEN.frontlight.maximumLegacyPercent))};
 constexpr int SWITCH_DUTIES = static_cast<int>(sizeof(SWITCH_BRIGHTNESS));
 constexpr int SWITCHES_PER_DUTY = 10;
 // One switch a second: the probe window (500 ms) and a settled reading fit in it.
@@ -65,7 +62,8 @@ constexpr const char* SEEN_ANSWERS[] = {"Both, brighter each step", "Only one st
 constexpr const char* SEEN_CODES[] = {"both", "one_string", "no_rise_or_flicker", "never_lit"};
 constexpr char SEEN_HEADING[] = "What did the light do?";
 constexpr char SEEN_BODY[] =
-    "Cool and warm through 10-100 %: did each string light, get brighter at every step, and stay free of flicker?";
+    "Cool and warm through 10/25/50/75/100%: did each string light, get brighter at every step, and stay free of "
+    "flicker?";
 
 constexpr int QUESTION_SWITCH = 2;
 constexpr const char* SWITCH_ANSWERS[] = {"Clean: re-slew within 350 us, below 23 V", "Spike, slow re-slew or dropout",
@@ -77,7 +75,7 @@ constexpr char SWITCH_BODY[] =
     "at most) and stays below 23 V.";
 
 constexpr char INTRO[] =
-    "Confirm lights the boost once you name the load. Up/Down: brightness 10-100 %. Left: cool/warm (and mix). "
+    "Confirm lights the boost once you name the load. Up/Down: 10/25/50/75/100%. Left: cool/warm (and mix). "
     "Right, lit: 30 colour switches for a scope. Take both strings through every step, switch off, then Record "
     "(Right).";
 constexpr char SCOPE_NOTE[] =
@@ -318,6 +316,15 @@ class FrontlightTest final : public TestScreen {
   // The switch-on probe found no load on any string it tried, and the HAL left the
   // light off. FAIL: the operator named a load.
   bool checkNoLight() {
+    if (Frontlight.startupBlocked()) {
+      lit = false;
+      startupFailed = true;
+      offAt = millis();
+      afterOffPending = true;
+      record(Verdict::Fail, "fails=startup_check (frontlight startup check failed; light off)");
+      redraw();
+      return true;
+    }
     if (Frontlight.isOn() || !Frontlight.noLightFound()) return false;
     lit = false;
     noLight = true;
@@ -440,7 +447,9 @@ class FrontlightTest final : public TestScreen {
       sw.readPending = true;
     }
     if (!Frontlight.isOn()) {
-      failSwitchRun(Frontlight.noLightFound() ? "no_light" : "light_off");
+      failSwitchRun(Frontlight.startupBlocked() ? "startup_check"
+                    : Frontlight.noLightFound() ? "no_light"
+                                                : "light_off");
       return;
     }
     if (sw.readPending) {
@@ -524,14 +533,15 @@ class FrontlightTest final : public TestScreen {
     const auto probe = light::probe();
     monitorNow = monitor;
     probeNow = probe;
-    record(verdict,
-           "mode=colour_switch load=%s switches=%d at_duty=%u:%d,%u:%d,%u:%d vf_%u=%s vf_%u=%s vf_%u=%s led=%u-%u "
-           "trips=%u probe_trips=%u scope=%s stop=%s fails=%s",
-           load == LightLoad::J3Panel ? "J3" : "J6", sw.total, SWITCH_DUTY_PCT[0], sw.perDuty[0], SWITCH_DUTY_PCT[1],
-           sw.perDuty[1], SWITCH_DUTY_PCT[2], sw.perDuty[2], SWITCH_DUTY_PCT[0], vf[0], SWITCH_DUTY_PCT[1], vf[1],
-           SWITCH_DUTY_PCT[2], vf[2], static_cast<unsigned>(sw.minLedMv), static_cast<unsigned>(sw.maxLedMv),
-           static_cast<unsigned>(monitor.trips - sw.trips0), static_cast<unsigned>(probe.trips - sw.probeTrips0),
-           answer >= 0 ? SWITCH_CODES[answer] : "none", sw.stop, fails[0] != '\0' ? fails : "none");
+    record(
+        verdict,
+        "mode=colour_switch load=%s switches=%d at_duty_counts=%u:%d,%u:%d,%u:%d vf_%u=%s vf_%u=%s vf_%u=%s led=%u-%u "
+        "trips=%u probe_trips=%u scope=%s stop=%s fails=%s",
+        load == LightLoad::J3Panel ? "J3" : "J6", sw.total, SWITCH_DUTY[0], sw.perDuty[0], SWITCH_DUTY[1],
+        sw.perDuty[1], SWITCH_DUTY[2], sw.perDuty[2], SWITCH_DUTY[0], vf[0], SWITCH_DUTY[1], vf[1], SWITCH_DUTY[2],
+        vf[2], static_cast<unsigned>(sw.minLedMv), static_cast<unsigned>(sw.maxLedMv),
+        static_cast<unsigned>(monitor.trips - sw.trips0), static_cast<unsigned>(probe.trips - sw.probeTrips0),
+        answer >= 0 ? SWITCH_CODES[answer] : "none", sw.stop, fails[0] != '\0' ? fails : "none");
   }
 
   // --- dVf (BRING_UP section 7.2) ------------------------------------------------
@@ -556,8 +566,7 @@ class FrontlightTest final : public TestScreen {
     return table[colour][s] != 0 ? light::ledFromPin(table[colour][s]) : 0;
   }
 
-  // vf: "<cool full>/<cool 10 %>,<warm full>/<warm 10 %>"; dvf: warm - cool at
-  // full and at 10 % duty. LED_SW in mV, "-" where a reading is missing.
+  // vf: cool/warm at 100% and 25%; dvf: warm - cool at those outputs. LED_SW in mV, "-" where a reading is missing.
   void formatVf(char* vf, const size_t vfSize, char* dvf, const size_t dvfSize) const {
     char cool[24];
     char warmPair[24];
@@ -655,6 +664,7 @@ class FrontlightTest final : public TestScreen {
     if (overVoltage || maxLitLedMv > light::LIT_MAX_LED_MV) addFailure(fails, sizeof(fails), "over_22v");
     const uint32_t trips = light::monitor().trips - tripsAtOpen;
     if (tripped || trips != 0) addFailure(fails, sizeof(fails), "trip");
+    if (startupFailed) addFailure(fails, sizeof(fails), "startup_check");
     bool inWindow = true;
     for (const auto& colour : table) {
       for (const uint32_t mv : colour) {
@@ -683,11 +693,11 @@ class FrontlightTest final : public TestScreen {
     if (padFails & PAD_ADIM_STATE) addFailure(fails, sizeof(fails), "io42_state");
     if (padFails & PAD_COLOR_STATE) addFailure(fails, sizeof(fails), "io40_state");
     if (answer > 0) addFailure(fails, sizeof(fails), "operator");
-    char cool[40];
-    char warmSteps[40];
+    char cool[64];
+    char warmSteps[64];
     formatSteps(cool, sizeof(cool), 0);
     formatSteps(warmSteps, sizeof(warmSteps), 1);
-    char mixSteps[40];
+    char mixSteps[64];
     formatSteps(mixSteps, sizeof(mixSteps), MIX);
     char vf[48];
     char dvf[24];
@@ -726,13 +736,15 @@ class FrontlightTest final : public TestScreen {
       return;
     }
     page.paragraph(INTRO, 5);
+    if (startupFailed) page.paragraph("Frontlight startup check failed; light off.", 1);
     page.gap(4);
     page.setCompact(true);
     const auto& fl = BoardConfig::ACTIVE.frontlight;
     page.row("Load", !loadKnown ? "not named yet" : load == LightLoad::J3Panel ? "J3 panel light" : "J6 LED strip");
     if (options::cutDown()) page.row("J6 LED strip", "N/A: cut-down board (OPT)");
-    page.rowf("Light", "%s, %s, %u %% (level %u of 255)", lit ? "on" : "off", COLOUR_NAMES[lit ? litColour() : colour],
-              static_cast<unsigned>(STEPS[step]), static_cast<unsigned>(STEPS[step]) * 255U / 100U);
+    page.rowf("Light", "%s, %s, %u%% (duty %u/1023)", lit ? "on" : "off", COLOUR_NAMES[lit ? litColour() : colour],
+              static_cast<unsigned>(STEPS[step]),
+              static_cast<unsigned>(freeink::frontlight::mappedDuty(STEPS[step], 1023, fl.maximumLegacyPercent)));
     const auto& probe = probeNow;
     page.rowf("Switch-on probe found", "load %s; cool %s, warm %s", light::loadToken(probe.record.load),
               light::stringToken(probe.record.cool), light::stringToken(probe.record.warm));
@@ -750,9 +762,9 @@ class FrontlightTest final : public TestScreen {
               static_cast<unsigned>(monitor.lastLedMv / 1000U), static_cast<unsigned>(monitor.lastLedMv % 1000U / 10U),
               static_cast<unsigned>(monitor.samples), static_cast<unsigned>(monitor.skippedSamples));
     if (darkTaken) {
-      page.rowf("Dark (healthy 0.25-0.55 V)", "%u mV", static_cast<unsigned>(dark.pinMv));
+      page.rowf("Dark pin (expected 0.25-0.55 V)", "%u mV", static_cast<unsigned>(dark.pinMv));
     } else {
-      page.row("Dark (healthy 0.25-0.55 V)", "settling");
+      page.row("Dark pin (expected 0.25-0.55 V)", "settling");
     }
     if (afterOff.pinMv != 0) page.rowf("After switching off", "%u mV", static_cast<unsigned>(afterOff.pinMv));
     page.rowf("Trips: this screen / boot", "%u / %u", static_cast<unsigned>(monitor.trips - tripsAtOpen),
@@ -765,21 +777,21 @@ class FrontlightTest final : public TestScreen {
     }
     page.rowf("Trip level", "%u mV LED_SW = %u mV pin", fl.monitorTripMv,
               static_cast<unsigned>(light::pinFromLed(fl.monitorTripMv)));
-    char steps[40];
+    char steps[64];
     formatSteps(steps, sizeof(steps), 0);
-    page.row("Cool 10/25/50/75/100 %, pin mV", steps);
+    page.row("Cool 10/25/50/75/100%, pin mV", steps);
     if (Frontlight.hasColourSelect()) {
       formatSteps(steps, sizeof(steps), 1);
-      page.row("Warm 10/25/50/75/100 %, pin mV", steps);
+      page.row("Warm 10/25/50/75/100%, pin mV", steps);
       if (light::blends() || colourMeasured(MIX)) {
         formatSteps(steps, sizeof(steps), MIX);
-        page.row("Mix 10/25/50/75/100 %, pin mV", steps);
+        page.row("Mix 10/25/50/75/100%, pin mV", steps);
       }
       char vf[48];
       char dvf[24];
       formatVf(vf, sizeof(vf), dvf, sizeof(dvf));
-      page.row("LED_SW mV, C / W at 100 / 10 % duty", vf);
-      page.row("dVf mV (W - C) at 100 / 10 % duty", dvf);
+      page.row("LED_SW mV, C / W at 100 / 25%", vf);
+      page.row("dVf mV (W - C) at 100 / 25%", dvf);
     }
     page.rowf("Lit window", "%s", load == LightLoad::J6Strip ? "above dark +1 V, below 22 V" : "11-18 V (about 15 V)");
     page.rowf("IO42 / IO40 / pulls", "%s / %s / %s", padText(adim, true), padText(colorSel, false),
@@ -804,7 +816,7 @@ class FrontlightTest final : public TestScreen {
     page.paragraph(SWITCH_NOTE, 4);
     page.gap(4);
     page.setCompact(true);
-    page.rowf("Duty / switch", "%u %% / %d of %d (%d of %d in all)", SWITCH_DUTY_PCT[sw.duty], sw.doneAtDuty,
+    page.rowf("Duty / switch", "%u/1023 / %d of %d (%d of %d in all)", SWITCH_DUTY[sw.duty], sw.doneAtDuty,
               SWITCHES_PER_DUTY, sw.total, SWITCHES_PER_DUTY * SWITCH_DUTIES);
     page.rowf("Lit now", "%s", light::selectsWarm() ? "warm" : "cool");
     if (current.ledMv != 0) {
@@ -814,7 +826,7 @@ class FrontlightTest final : public TestScreen {
     for (int d = 0; d < SWITCH_DUTIES; ++d) {
       char label[32];
       char pair[24];
-      snprintf(label, sizeof(label), "LED_SW mV C / W at %u %%", SWITCH_DUTY_PCT[d]);
+      snprintf(label, sizeof(label), "LED_SW mV C / W, duty %u/1023", SWITCH_DUTY[d]);
       formatPair(pair, sizeof(pair), sw.vf[d][0], sw.vf[d][1]);
       page.row(label, pair);
     }
@@ -858,6 +870,7 @@ class FrontlightTest final : public TestScreen {
   bool everLit = false;
   int colour = COOL;  // asked for: COOL, WARM or MIX
   bool tripped = false;
+  bool startupFailed = false;
   bool noLight = false;  // a switch-on's probe found no load
   bool overVoltage = false;
   bool darkTaken = false;

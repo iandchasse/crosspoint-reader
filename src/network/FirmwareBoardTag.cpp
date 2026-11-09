@@ -35,6 +35,8 @@
 #define CROSSPOINT_BOARD_NAME "murphy"
 #elif FREEINK_DEVICE_DELINK
 #define CROSSPOINT_BOARD_NAME "delink"
+#elif FREEINK_SILKSCREEN_750
+#define CROSSPOINT_BOARD_NAME "silkscreen-750"
 #elif FREEINK_SILKSCREEN_368 && CROSSPOINT_TEST_SUITE
 // The Silkscreen 3.68" panel variant is a board class of its own: OTA and the SD update refuse an image
 // built for the 4.26" panel, and the other way round. Its test firmware has a tag of its own too.

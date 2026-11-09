@@ -190,6 +190,9 @@ void SettingsActivity::rebuildRowItems() {
   for (size_t i = 0; i < settings.size(); i++) {
     fui::ListItem item;
     item.label = I18N.get(settings[i].nameId);
+#if FREEINK_DEVICE_SILKSCREEN
+    if (settings[i].nameId == StrId::STR_RESTORE_LIGHT_ON_WAKE) item.subtitle = tr(STR_RESTORE_LIGHT_ON_WAKE_HELP);
+#endif
     item.actionValue = static_cast<int16_t>(i);
     rowItems_.push_back(item);
   }

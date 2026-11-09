@@ -7,6 +7,7 @@
 #include <DeviceSecret.h>
 #include <FsHelpers.h>
 #include <HalDisplay.h>
+#include <HalFrontlight.h>
 #include <HalGPIO.h>
 #include <HalMemory.h>
 #include <HalPowerManager.h>
@@ -1765,7 +1766,9 @@ void CrossPointWebServer::handlePostSettings() {
         const int val = doc[s.key].as<int>();
         if (val >= s.valueRange.min && val <= s.valueRange.max) {
           if (s.valuePtr) {
-            SETTINGS.*(s.valuePtr) = static_cast<uint8_t>(val);
+            SETTINGS.*(s.valuePtr) = s.valuePtr == &CrossPointSettings::frontlightBrightness
+                                         ? HalFrontlight::normalizeBrightness(static_cast<uint8_t>(val))
+                                         : static_cast<uint8_t>(val);
           }
           applied++;
         }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <HalFrontlight.h>
+
 #include "CrossPointSettings.h"
 #include "activities/Activity.h"
 #include "components/UiAppHost.h"
@@ -75,7 +77,7 @@ class FrontlightPanelActivity final : public Activity, private UiAppHost {
   // light: then the slider and the steps only set the level, so one drag or held
   // key does not run the unloaded probe again on every event, and the lamp toggle
   // is the retry.
-  bool levelSwitchesOn() const { return !noLightNote; }
+  bool levelSwitchesOn() const { return !noLightNote && !Frontlight.startupBlocked(); }
 #else
   void noteSwitchOnResult() {}
   bool warmthLocked() const { return false; }

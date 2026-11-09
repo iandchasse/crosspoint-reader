@@ -10,6 +10,13 @@
 
 #include "HalGPIO.h"
 
+#if FREEINK_DEVICE_SILKSCREEN
+#include <BatteryChargeEstimator.h>
+#include <SilkscreenBattery.h>
+
+#include <atomic>
+#endif
+
 class HalPowerManager;
 extern HalPowerManager powerManager;  // Singleton
 
@@ -21,6 +28,24 @@ class HalPowerManager {
   mutable unsigned long _batteryLastPollMs = 0;  // Timestamp of last battery read in milliseconds
   mutable bool _noCellCached = false;            // noChargeableCell()'s last answer
   mutable unsigned long _noCellPolledMs = 0;     // and when it was read, 0 = never
+
+#if FREEINK_DEVICE_SILKSCREEN
+#if SILKSCREEN_BATLOG
+  static constexpr int BATTERY_UI_STEP = 1;
+  std::atomic<uint32_t> batteryDisplayTenths{0};
+#else
+  static constexpr int BATTERY_UI_STEP = 5;
+#endif
+  freeink::battery::BatteryChargeEstimator batteryDisplay{
+      {BoardConfig::silkscreen_battery::CAPACITY_MAH, BoardConfig::silkscreen_battery::CHARGE_CURRENT_MA,
+       BoardConfig::silkscreen_battery::DEFAULT_STEP_MV, BoardConfig::silkscreen_battery::STEP_CREEP_PERMILLE},
+      BatteryMonitor::percentTenthsFromMillivolts,
+      BATTERY_UI_STEP};
+  std::atomic<uint32_t> batteryDisplayPercent{freeink::battery::BatteryChargeEstimator::UNKNOWN};
+#if SILKSCREEN_BATLOG
+  void appendBatteryChargeRow(uint32_t now, const char* event);
+#endif
+#endif
 
   enum LockMode { None, NormalSpeed };
   LockMode currentLockMode = None;
@@ -119,12 +144,25 @@ class HalPowerManager {
   bool firmwareUpdateBlockedByBattery() const;
 
   // Get battery percentage (range 0-100)
+  // Silkscreen returns 101 until a trusted estimate is available; themes show --%.
   uint16_t getBatteryPercentage() const;
+#if FREEINK_DEVICE_SILKSCREEN
+  // Main-loop owner. True when the cached estimate changed; no repaint is requested.
+  bool updateBatteryDisplay();
+#if SILKSCREEN_BATLOG
+  void flushBatteryChargeLog();
+#endif
+#endif
 
 #if SILKSCREEN_BATLOG
   // The battery log's reads of state this class keeps: the smoothed battery value in tenths of a percent (0 before
   // the first read) and whether the CPU is at its normal clock.
-  int batteryCachedTenths() const { return _batteryCachedPercent; }
+  int batteryCachedTenths() const {
+#if FREEINK_DEVICE_SILKSCREEN
+    if (BoardConfig::isSilkscreen()) return batteryDisplayTenths.load(std::memory_order_acquire);
+#endif
+    return _batteryCachedPercent;
+  }
   bool atFullClock() const { return !isLowPower; }
 #endif
 

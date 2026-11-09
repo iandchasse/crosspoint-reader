@@ -621,7 +621,9 @@ PASS:
 - **60 s check:** RTC and CPU within 50 ms: both ends are timed to a seconds tick, polled every 5 ms (5 ppm is 0.3 ms). The check holds auto-sleep off while it runs (about 61 s);
 - **Bench:** no error at either clock (rtc-i2c-bench-verify). Scope the SDA/SCL edges at 400 kHz before raising `SensorsConfig::i2cHz` (B7).
 
-After the first cell insert, Record first (OSF reads 1: the oscillator has not kept time), then set the time here or in T15, and Record again (rtc-osf-check). The test never writes the control register, so EOSC stays 0. It writes the status register only through `Rtc::set()`, which clears OSF, and EN32KHZ with it on this board.
+After the first cell insert, Record first (OSF reads 1: the oscillator has not kept time), then set the time here or in T15, and Record again (rtc-osf-check). On DS3231 the test does not change EOSC; it stays 0. It writes the status register only through `Rtc::set()`, which clears OSF, and EN32KHZ with it on this board.
+
+RV-8263 recovery: set or sync once after updating. In the raw Control1 dump (0x00), TEST (bit 7), STOP (bit 5) and 12_24 (bit 1) must be clear. Rtc::set() now writes and restarts the clock in normal 24-hour mode, then verifies the running and oscillator flags; it does not reset the calendar at boot or wake. Run the 60 s check, then T14, to verify the physical module.
 
 ### T14 RTC across deep sleep
 
@@ -848,7 +850,7 @@ The pinned settings, the no-write rule and the tests left out (P6 forced panics,
 - **Front light across sleep and restarts** (B8):
   - Restore Light on Wake;
   - with no light connected: switching it on shows "No front light detected" with the 10 s advice, and the light control stays for a retry; in the light panel, dragging the slider afterwards only sets the level (no new `load probe` lines until the lamp toggle);
-  - a restore that finds no light (the light unplugged while asleep) shows the same message once the first screen is up and is not repeated at the next wake; a power cycle tries once;
+  - a restore that finds no light (the light unplugged while asleep) shows the same message once the first screen is up and is not repeated at the next wake; a power cycle stays dark; a deliberate user toggle can try again;
   - a light trip shows the same message;
   - a single-colour J6 strip: the warmth row names the one string there is and ignores input, and after a power cycle the first switch-on lights that string at once (the saved warmth);
   - a ghost wake (short tap) must not light the LEDs;
@@ -912,3 +914,24 @@ Bench checks no test firmware screen can make, for a meter, a scope or esptool:
 - `tests/Supply.h` reads what powers the board (P+, USB power, a cell) for a gate or a judgement on the cell; `tests/Sha256.h` wraps mbedTLS's SHA-256.
 - A test holds auto-sleep off or skips the loop delay (`preventAutoSleep()`, `skipLoopDelay()`) only while a bounded run is on (P3, T4's scope loop, T9's switch run, T10, T13's 60 s check, T15, U1, U2), and every such run has a time limit of its own.
 - `TestPage::paragraph(text, maxLines)` ends the last line with an ellipsis when the text needs more lines: give instruction text a cap that fits it, and keep it short on screens with many rows (the full procedure is in this file). `ask()` bodies show up to 12 lines.
+
+## T9 percentage-range update (2026-10-24)
+
+T9 samples 10/25/50/75/100% of the corrected range, whose 100% is original 50%.
+Its switch run uses 100%, 66% and 25%, reporting actual duty counts; dVf
+compares 100% and 25%. The old full-duty and ten-level directions above no
+longer apply. Before accepting startup bounds, record dark LED_MONIT and
+each sample's rise/settled LED_SW in cool, warm and mix on a healthy board.
+T9 starts at 10%; separately use the reader at 1% to check manual enable after
+a cold boot, restore after deep-sleep wake, and cool/warm/blend operation.
+The night minimum should remain stable without a spurious startup rejection.
+Check USB-only and battery operation, deep-sleep wake, cold/software/crash
+resets, and saved-on preservation. The first automatic enable must occur no
+earlier than 250 ms after the first complete paint. Opening/closing the
+light panel or changing warmth alone must not erase saved-on while suppressed.
+After a startup rejection, verify a single deliberate toggle can retry and a
+second failed attempt stays off; held brightness keys and drags must not retry.
+Check 1% adjustments, percentage labels and settings help in all four
+orientations with keys and touch. Verify migration from both original and
+ten-level saved settings without a light-output increase. Host tests do not
+establish these electrical bounds.

@@ -1,6 +1,7 @@
 #include "CrossPointSettings.h"
 
 #include <BlePageTurnerJson.h>
+#include <HalFrontlight.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
@@ -79,6 +80,9 @@ bool CrossPointSettings::powerDoubleClickLight() const {
 }
 
 void CrossPointSettings::toJson(JsonDocument& doc) const {
+#if FREEINK_DEVICE_SILKSCREEN
+  doc["frontlightBrightnessScale"] = 2;
+#endif
   const CrossPointSettings& s = *this;
 
   auto visit = [&](const SettingInfo& info) {
@@ -328,6 +332,19 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   if (!bleturner::readJson(ble, doc)) {
     needsResave = true;
   }
+
+#if FREEINK_DEVICE_SILKSCREEN
+  const uint8_t loadedBrightness = frontlightBrightness;
+  const int brightnessScale = doc["frontlightBrightnessScale"] | 0;
+  if (brightnessScale < 2) {
+    const uint8_t legacyBrightness = doc["frontlightBrightness"] | static_cast<uint8_t>(60);
+    frontlightBrightness = HalFrontlight::migrateLegacyBrightness(legacyBrightness, brightnessScale == 1);
+    needsResave = true;
+  } else {
+    frontlightBrightness = HalFrontlight::normalizeBrightness(frontlightBrightness);
+    if (frontlightBrightness != loadedBrightness) needsResave = true;
+  }
+#endif
 
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");

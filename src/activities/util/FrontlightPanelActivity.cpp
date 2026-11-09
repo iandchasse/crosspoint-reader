@@ -42,6 +42,7 @@ constexpr int16_t kQuickIconSize = 32;
 // One percent per press, on the -/+ buttons and on the physical Left/Right keys
 // alike (both repeat while held), so a level can be set exactly.
 constexpr int BRIGHTNESS_STEP = 1;
+constexpr int WARMTH_STEP = 1;
 // The dimmest setting is 1%, not 0: turning the light off is what the lamp
 // button next to the slider is for, so a 0% "on" level would only be a second,
 // worse way to reach the same place.
@@ -99,12 +100,13 @@ void FrontlightPanelActivity::persistLightSettings() {
   // against SETTINGS here only fires on a genuine user change. lightOn has
   // no such guarantee (see lightOnChanged's declaration), so it's gated on
   // the user actually having touched it this session instead.
+  const bool saveLightOn = lightOnChanged && !Frontlight.startupBlocked();
   const bool changed = SETTINGS.frontlightBrightness != brightness || SETTINGS.frontlightWarmth != warmth ||
-                       (lightOnChanged && SETTINGS.frontlightOn != (lightOn ? 1 : 0));
+                       (saveLightOn && SETTINGS.frontlightOn != (lightOn ? 1 : 0));
   if (changed) {
     SETTINGS.frontlightBrightness = brightness;
     SETTINGS.frontlightWarmth = warmth;
-    if (lightOnChanged) SETTINGS.frontlightOn = lightOn ? 1 : 0;
+    if (saveLightOn) SETTINGS.frontlightOn = lightOn ? 1 : 0;
     SETTINGS.saveToFile();
   }
 }
@@ -117,7 +119,8 @@ void FrontlightPanelActivity::onExit() {
 void FrontlightPanelActivity::onBrightnessEvent(const fui::ActionEvent& event, void* user) {
   auto* self = static_cast<FrontlightPanelActivity*>(user);
   if (event.dragPermille < 0) return;
-  self->brightness = std::max(MIN_BRIGHTNESS, percentFromPermille(event.dragPermille));
+  self->brightness =
+      HalFrontlight::normalizeBrightness(std::max(MIN_BRIGHTNESS, percentFromPermille(event.dragPermille)));
   Frontlight.setBrightness(self->brightness);
   if (!self->lightOn && self->levelSwitchesOn() && !slideSwitchOwnsLight()) {
     self->lightOn = true;
@@ -208,7 +211,7 @@ void FrontlightPanelActivity::adjustBrightness(const int delta) {
   if (next < MIN_BRIGHTNESS) next = MIN_BRIGHTNESS;
   if (next > 100) next = 100;
   if (next == brightness) return;
-  brightness = static_cast<uint8_t>(next);
+  brightness = HalFrontlight::normalizeBrightness(static_cast<uint8_t>(next));
   Frontlight.setBrightness(brightness);
   if (!lightOn && levelSwitchesOn() && !slideSwitchOwnsLight()) {
     lightOn = true;
@@ -233,7 +236,7 @@ void FrontlightPanelActivity::adjustWarmth(const int delta) {
 
 void FrontlightPanelActivity::stepWarmthByKey(const bool warmer) {
   if (!Frontlight.warmthIsSelection()) {
-    adjustWarmth(warmer ? BRIGHTNESS_STEP : -BRIGHTNESS_STEP);
+    adjustWarmth(warmer ? WARMTH_STEP : -WARMTH_STEP);
     return;
   }
   const uint8_t target = warmer ? 100 : 0;
@@ -432,8 +435,8 @@ void FrontlightPanelActivity::addSliderRow(UiScreen& screen, const char* label, 
   rowProps.sliderAction = sliderAction;
   rowProps.decrement = stepAction;
   rowProps.increment = stepAction;
-  rowProps.decrementValue = -BRIGHTNESS_STEP;
-  rowProps.incrementValue = BRIGHTNESS_STEP;
+  rowProps.decrementValue = -(showToggle ? BRIGHTNESS_STEP : WARMTH_STEP);
+  rowProps.incrementValue = showToggle ? BRIGHTNESS_STEP : WARMTH_STEP;
   if (showToggle) {
     // Lamp on/off after the +: the sliders set the level, this kills the light
     // outright. Filled glyph = on, outline = off.

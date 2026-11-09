@@ -37,16 +37,18 @@ Both firmwares carry the same log through the same SDK code. CrossPoint's page i
   `pio run -e silkscreen-368-gh_release -t upload`. It is the same log code and hooks (the variant is the same device and
   `Board::Silkscreen`); it costs 8,668 B of flash and 528 B of RAM over the 368 release image (5,911,434 against 5,902,766 B at the
   2026-10-12 builds; it was 8,992 B at the 2026-10-11 ones, before the variant became UC8279d-only). Two things differ for the
-  analyzer. The panel's deep-sleep current is not in hand (POWER.md row 17), so its reference floor (the no-touch 58 µA plus
+  analyzer. The panel's deep-sleep current is not in hand (POWER.md row 17), so its reference floor (the no-touch 58 µA (Rev 1.02: 48 µA) plus
   self-discharge, chosen because the `cfg` column's touch bit is 0 on this build) is the 4.26" board's: a floor a few µA
   above it is not by itself a fault, and the first campaign sets this panel's. And the version must not end in
   `-silkscreen-batlog`, which the analyzer reads as CrossInk's (its early-wake limit is 500 ms, not 300).
-- **The screen keeps 1% steps.** The release image shows the battery percentage in 5% steps (truncated, 100 from 98
-  up; [PORTING.md](PORTING.md)). This image leaves that out, so what its screen shows still matches the log: `e_ui`
-  and `w_ui` are tenths of a percent read from the raw cache and from the first fresh burst, so the display step would
-  never have coarsened them, but the analyzer derives the percent the screen showed from them (`ui_pct()`, rounded to
-  the nearest percent), and that is only what a 1% screen shows. Apart from the log, it is the one place this image
-  behaves differently from the release image.
+- **The screen keeps 1% steps.** The release image uses 5% steps. Both now apply
+  the [trusted display policy](#trusted-display-percentage), including its charge compensation and
+  deadband. `e_ui` records the filtered estimate in tenths of a percent, while
+  `w_ui` comes from the wake sample. Neither necessarily equals the number drawn.
+  The existing analyzer rounds these fields to 1%; it does not reconstruct the
+  display's new hysteresis or charge compensation. Older examples below describe the
+  earlier display behavior. The CSV format and raw voltage measurements are unchanged.
+
 - **No setting, no screen.** There is no toggle, settings entry, i18n string, Quick Action or reserve change. The log
   runs whenever the image has the macro, and "off" means flashing the release env.
 - **Gated in code.** The macro comes only from this env's `build_flags` and is never defined in code. Every line of the
@@ -519,8 +521,8 @@ CrossInk drain checklist, and a grep of the new files for `esp_timer`, `xTaskCre
 ## 10. Measuring the sleep current with a DMM
 
 The log cannot see the microamp floor. A digital multimeter in series on J5 can, on a **spare board**, and it needs no
-firmware change. This is MEAS-01 ([POWER.md §4](POWER.md#4-measurement-and-bench-checks)): expect about 58-73 µA without a
-touch tail and about 113-130 µA with an FT6336U hibernated; above about 150 µA, A/B one change at a time. Measure R and L
+firmware change. This is MEAS-01 ([POWER.md §4](POWER.md#4-measurement-and-bench-checks)): expect about 58-73 µA (Rev 1.02: 48-63) without a
+touch tail and about 113-130 µA (Rev 1.02: 103-120) with an FT6336U hibernated; above about 150 µA, A/B one change at a time. Measure R and L
 the same way to compare them (M1).
 
 **Recipe**
@@ -551,9 +553,10 @@ the same way to compare them (M1).
 - A reading from the spare board stands in for the logged board's floor only as far as the two are alike (the same touch
   tail, panel and card): say in the notes which board it came from.
 
-## 11. Rules the log keeps
+## 11. Rules the wake/sleep log keeps
 
-The drain rules are POWER.md **BL-01** (and OPT-01 for the RTC memory); CrossInk's is item 11 of its drain checklist. In short:
+The following rules describe the original wake/sleep logger, not the separate
+per-sample charge log below. The drain rules are POWER.md **BL-01** (and OPT-01 for the RTC memory); CrossInk's is item 11 of its drain checklist. In short:
 
 - No pin call, pull, hold, timer, task, wake source, I2C, Wi-Fi, NTP, light call or temperature read is added, and the front
   light is never lit or probed.
@@ -564,3 +567,165 @@ The drain rules are POWER.md **BL-01** (and OPT-01 for the RTC memory); CrossInk
   `Storage.prepareForDeepSleep()`, never a file left open, no NVS or flash write.
 - After each upstream sync, the SDK's BatteryLog files and the apps' hooks are re-checked
   ([UPSTREAM-SYNC.md](UPSTREAM-SYNC.md)).
+
+## Trusted display percentage
+
+CrossPoint and CrossInk use the same Silkscreen-only `BatteryChargeEstimator.h`
+in their shared SDK line, owned by the main loop through `HalPowerManager`.
+The SDK is a submodule; the estimator, profile constants and host tests are
+mirrored in both local SDK checkouts. Both apps follow the shared SDK line.
+The voltage curve, cutoff, external-power disproof and ladder windows/debounce
+are unchanged. Other boards retain their existing battery paths.
+
+The estimator keeps updating while awake, including charging and Complete.
+Battery percentage and USB-state changes do not request a screen redraw on
+Silkscreen; the next ordinary UI redraw paints the current value and charging
+icon. These updates do not consume the reader refresh cadence. Battery logs
+report the cached estimate, which may be newer than the number still on paper.
+
+- Sample 16 averaged ADC conversions about once per second while awake. Skip
+  while Wi-Fi is enabled (also BLE in CrossPoint), during refresh, and for
+  2 seconds after those loads. This conservative radio gate covers scans and
+  transfers that do not report client traffic. It can leave the display stale.
+- Battery estimates use quiet history 4-8 seconds old, beyond the ladder's
+  2-3 second Charging publication delay. Initial battery seeding requires three
+  quiet readings within a three-second window, allowing loop/ADC timing jitter.
+  This prevents the plug-in voltage lift entering the starting
+  estimate before the ladder reports it. Unknown history displays `--%`.
+- Keep the usual 5% display steps with a 2-point deadband; the battery-log build
+  retains 1% resolution. An ordinary on-battery increase must reach 15 points
+  above the shown value. Only the decoded Complete state can newly show 100%;
+  the charging estimate can reach 99%.
+- At a battery light on/off, brightness or warmth change, compare quiet readings
+  before and after settling. Add the measured sag back at that stable light
+  level, so discharge continues to update during long lit sessions. Short slider
+  drags retain the original quiet baseline. Reject noisy or implausible steps;
+  an unmeasured lit level holds the percentage until a usable calibration or
+  light-off. A cached battery-light correction is not added again under USB.
+- At Battery -> Charging, compare quiet history from before the delayed ladder
+  edge with settled readings after it (roughly 5-6 seconds after physical plug).
+  Reject the measurement if the light changed. Use that session's step S; keep
+  a running mean of valid normal charge edges in NVS, one write per learned
+  edge. Boot/wake already charging uses that mean, or 150 mV before calibration.
+  Complete -> Charging measures a new session step without teaching the normal
+  constant-current mean from a small top-off step. Already confirmed 100% stays
+  at 100% through top-off.
+- During charging, use curve(P+ - S), with a fixed pre-plug light reference when
+  needed. Only increase the estimate, at no more than 250 mA / 500 mAh, about
+  0.833 percentage points per minute. Held or asleep time creates no catch-up
+  allowance. A named factor can ramp S over the first 20 minutes; its default
+  1.0 leaves S unchanged until a real trace supports another value.
+- After an observed rise of at least 10 mV, a quiet relative plateau lasting
+  3 minutes enables a 20-minute-time-constant approach to 99%, still rate capped.
+  No fixed 4.20 V ADC threshold is used. A flat rail seen from boot cannot prove
+  the transition into taper; it waits for evidence or Complete. Weak USB can
+  make voltage-based phase detection ambiguous; this is an estimate.
+- After unplug, retain the estimate for 10 seconds of settling, then permit only
+  voltage-driven decreases for 30 minutes. Normal battery behavior follows.
+  Unknown, NoBattery and ExternalIdle hold the last trusted estimate; existing
+  missing-cell notices still apply. RTC memory carries the estimate, session
+  reference and unplug deadline through normal sleep/software restarts.
+
+`BoardConfig/include/SilkscreenBattery.h` names the 500 mAh capacity, 250 mA
+charging current, 150 mV initial step and `STEP_CREEP_PERMILLE=1000`.
+The estimator names the noise limits (8 mV), normal USB step range (30-400 mV),
+light correction range (0-150 mV), settling times and plateau/taper criteria.
+The actual step, creep and phase thresholds need a logged charge on a real board;
+the curve itself is still the existing generic voltage-to-charge curve.
+
+### Per-sample charge log (battery-log builds)
+
+A separate `/silkscreen-battery/charge.csv` records accepted raw ADC samples,
+including samples held for light/edge settling. Its columns are:
+
+```text
+rtc_ms,uptime_ms,event,raw_mv,ladder,phase,step_mv,light_mv,comp_mv,tenths,shown,flags,cal_count,reference_ms,reference_mv
+```
+
+`ladder`: 0 Unknown, 1 Battery, 2 Charging, 3 Complete, 4 ExternalIdle, 5 NoBattery.
+`phase`: 0 Unknown, 1 Battery, 2 Step, 3 Charging, 4 Taper, 5 Complete, 6 Relax.
+`flags` is a bitmask: 1 unmeasured lit level held, 2 busy, 4 rejected USB step,
+8 learned USB step, 16 previously confirmed full. `light_mv` is the current
+battery correction or the fixed charge-session reference. `step_mv` is S;
+`comp_mv` includes the configured creep adjustment. `tenths` is the internal
+estimate; `shown` is the UI percentage (101 means unknown).
+
+`complete_ref` rows retain the last accepted raw voltage and its RTC timestamp
+before decoded Charging -> Complete. Complete takes eight stable ladder samples,
+so this is a diagnostic reference near completion, not the exact physical
+termination voltage. It never calibrates the ADC or percentage curve.
+
+The BATLOG-only writer uses a bounded 1 KiB batch, closes the file after each
+append, flushes the remaining batch before normal sleep/storage shutdown, and
+stops appending at 32 MiB. Abrupt resets can lose the last buffered samples.
+It does not run during early minimal sleep or exclusive raw USB-card access.
+The existing `/silkscreen-battery/battery.csv` wake/sleep format and analyzer
+remain unchanged. The per-sample log adds SD activity while awake; do not use
+it as proof of release-firmware current consumption.
+
+For tuning: start near 40%, turn radios off, and allow 10 seconds of quiet
+awake readings before plugging in. Charge 30 minutes, unplug, then rest
+30 minutes. Samples exist only while awake; logging never extends the normal
+sleep limits. Use normal interaction to keep a continuous awake trace, or record
+the sleep/wake gaps. Keep the light/radio state stable around the edges. Check S, the
+corrected rise, the light-hold flags and Complete reference before tuning the
+creep factor. Also test a long light-on discharge and brightness changes.
+
+### Host evidence
+
+Run `freeink-sdk/libs/hardware/BatteryMonitor/test/host/run.sh`. The pure-class
+traces compile the production notch table and its existing static assertions.
+They cover delayed edges, boot already charging, learned/default offsets, rate
+and gap limits, noisy light steps, slider changes, fixed USB light references,
+Complete/top-off, unplug relaxation and timestamp wrap.
+
+For sustained quiet changes after smoothing converges, with a 5% display:
+
+| Starting voltage (shown) | Old decrease / increase | New decrease / increase |
+| --- | --- | --- |
+| 3750 mV (20%) | 16 / 5 mV | 28 / 31 mV |
+| 3850 mV (55%) | 10 / 20 mV | 20 / 73 mV |
+| 4000 mV (80%) | 26 / 20 mV | 38 / 136 mV |
+
+These are directional changes from the named starting voltage, not a universal
+noise tolerance. Upward thresholds include the deliberate 15-point recovery
+gate. The new history adds time lag; short transient changes may never appear.
+
+The scripted 40% -> charge 30 min -> rest 30 min trace at 1 Hz gives:
+
+| Time since plug | Original display | New display |
+| --- | --- | --- |
+| Before plug | 40% | 40% |
+| 1 minute | 70% | 40% |
+| 5 minutes | 75% | 40% |
+| 15 minutes | 80% | 50% |
+| 30 minutes, unplug | 85% | 60% |
+| 31 minutes | 65% | 60% |
+| 45 minutes | 65% | 60% |
+| 60 minutes | 65% | 60% |
+
+This synthetic trace includes a 150 mV plug step and 15 mV slow creep; its
+underlying state rises from 40% to 65%. The final new internal estimate is 64.6%,
+with 5% display hysteresis holding 60%. The original comparison uses its ADC
+smoothing at the same 1 Hz cadence; real old UI getter cadence varied. These are
+host results, not a measured charge curve. The separate full-charge trace
+reaches 99% in taper and 100% only when Complete is explicitly supplied.
+
+### Build verification (2026-10-28)
+
+All six reader builds passed, with sleep/wake and render-watchdog checks, OTA
+partition fit and the 3.68-inch no-touch audits. The BatteryMonitor host suite
+passed, including the charge estimator and existing ladder/gauge/USB tests.
+CrossInk reports existing icon/UI narrowing warnings. No board was flashed.
+
+| Folder | App bytes | Flash used | Static RAM | PIO seconds |
+| --- | --- | --- | --- | --- |
+| silkscreen-batlog | 5382672 | 5377362 | 114316 | 306.16 |
+| silkscreen | 5417264 | 5411954 | 112756 | 742.95 |
+| silkscreen-368 | 5401152 | 5395874 | 112596 | 379.92 |
+| crossink-silkscreen-batlog | 5619104 | 5613881 | 130080 | 1521.44 |
+| crossink-silkscreen | 5609552 | 5604325 | 128520 | 403.36 |
+| crossink-silkscreen-368 | 5483360 | 5478153 | 124768 | 531.11 |
+
+The bundle includes all four flash parts per folder, ESP Web Tools manifests,
+SHA-256 sums and source fingerprints covering the source used for each build.
